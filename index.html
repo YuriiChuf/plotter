@@ -1,266 +1,227 @@
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Автобус №324ж - Расписание и карта</title>
+    <title>Расписание автобусов</title>
     <style>
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
         
         body {
-            font-family: Arial, sans-serif;
-            height: 100vh;
-            width: 100vw;
-            overflow: hidden;
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+            padding: 20px;
         }
         
-        /* Основной контейнер */
-        .main-container {
-            display: flex;
-            height: 100vh;
-            width: 100vw;
-            position: relative;
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
         }
         
-        /* Контейнеры для таблицы и карты */
-        .panel-container {
-			         width: 50%;
-			         height: 100%;
-            position: relative;
-            flex: 1;
-            min-width: 0;
-            overflow: hidden;
-            transition: all 0.3s ease;
-        }
-        
-        .table-container {
-            border-right: 1px solid #ddd;
-        }
-        
-        /* Iframe стили */
-        .panel-iframe {
-            width: 100%;
-            height: 100%;
-            border: none;
-        }
-        
-        /* Кнопки развертывания */
-        .expand-btn {
-            position: absolute;
-            bottom: 15px;
-            right: 15px;
-            width: 100px;
-            height: 40px;
-            border-radius: 50%;
-            background-color: rgba(52, 152, 219, 0.8);
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #1e5799 0%, #207cca 51%, #2989d8 100%);
             color: white;
-            border: none;
-            font-size: 15px;
-            cursor: pointer;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 100;
-            transition: all 0.5s;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
         
-        .expand-btn:hover {
-            background-color: rgba(41, 128, 185, 0.9);
-            transform: scale(1.1);
+        h1 {
+            font-size: 2.2rem;
+            margin-bottom: 10px;
         }
         
-        .map-container .expand-btn {
-            background-color: rgba(155, 89, 182, 0.8);
+        .description {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            max-width: 800px;
+            margin: 0 auto;
         }
         
-        .map-container .expand-btn:hover {
-            background-color: rgba(142, 68, 173, 0.9);
+        .warning {
+            background-color: #fff3cd;
+            color: #856404;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 5px solid #ffeeba;
+            font-size: 0.95rem;
         }
         
-        /* Полноэкранный режим */
-        .fullscreen {
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100vw !important;
-            height: 100vh !important;
-            z-index: 1000;
+        .buttons-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        
+        .card {
             background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
         }
         
-        .fullscreen .expand-btn {
-            display: none;
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
         }
         
-        .close-fullscreen {
-            position: fixed;
-            top: 15px;
-            right: 15px;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background-color: rgba(231, 76, 60, 0.8);
+        .card-header {
+            background: #2989d8;
             color: white;
+            padding: 15px;
+            font-size: 1.3rem;
+            font-weight: bold;
+        }
+        
+        .card-body {
+            padding: 20px;
+        }
+        
+        .card-description {
+            margin-bottom: 20px;
+            font-size: 0.95rem;
+            color: #555;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #2989d8;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            transition: background 0.3s ease;
             border: none;
-            font-size: 20px;
             cursor: pointer;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1001;
+            width: 100%;
+            text-align: center;
         }
         
-        .close-fullscreen:hover {
-            background-color: rgba(192, 57, 43, 0.9);
-            transform: scale(1.1);
+        .btn:hover {
+            background: #1c6bb8;
         }
         
-        /* Мобильная версия */
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            padding: 20px;
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
         @media (max-width: 768px) {
-            .main-container {
-                flex-direction: column;
+            h1 {
+                font-size: calc(1rem + 0.5vw);
             }
             
-            .panel-container {
-                height: 50%;
-				width: 100% !important;
+            .description {
+                font-size: calc(0.9rem + 0.5vw);
             }
+			.warning {
+				padding: 15px;
+				border-radius: 4px;
+				margin: 20px 0;
+				font-size: calc(0.8rem + 0.5vw);
+			}
             
-            .table-container {
-                border-right: none;
-                border-bottom: 1px solid #ddd;
+            .buttons-grid {
+                grid-template-columns: 1fr;
             }
-            
-            .expand-btn {
-                width: 100px;
-                height: 20px;
-				transform: rotate(270deg);
-                font-size: 12px;
-                bottom: 50%;
-                right: -4%;
-            }
+			.card-header {
+				padding: 10px;
+				font-size: calc(0.8rem + 0.5vw);
+			}
+			.card-body {
+				padding: 20px;
+			}
+			.card-description {
+				margin-bottom: 20px;
+				font-size: calc(0.8rem + 0.5vw);
+			}
         }
-		@media (max-width: 320px) {
-		            .main-container {
-                flex-direction: column;
+        
+        @media (max-width: 320px) {
+            .container {
+                padding: 10px;
             }
             
-            .panel-container {
-                height: 50%;
-				width: 100% !important;
+            header {
+                padding: 10px;
             }
             
-            .table-container {
-                border-right: none;
-                border-bottom: 1px solid #ddd;
+            h1, .card-header, .btn{
+                font-size: 12px;
+            }
+			.description, .warning,
+			.card-description {
+				font-size: 10px;
+			}
+
+            
+            .card-header {
+                padding: 5px;
             }
             
-            .expand-btn {
-                width: 60px;
-                height: 14px;
-				transform: rotate(270deg);
-                font-size: 10px;
-                bottom: 50%;
-                right: -8%;
+            .card-body {
+                padding: 10px;
             }
         }
     </style>
 </head>
 <body>
-    <div class="main-container">
-        <!-- Контейнер таблицы -->
-        <div class="panel-container table-container">
-            <iframe src="324Gtable.html" class="panel-iframe" id="table-frame"></iframe>
-            <button class="expand-btn" id="expand-table">развернуть</button>
+    <div class="container">
+        <header>
+            <h1>Расписание автобусов</h1>
+            <p class="description">Информация о маршрутах и движении общественного транспорта</p>
+        </header>
+        
+        <div class="warning">
+            <strong>Внимание:</strong> Представленное расписание действует в будние дни. Информация может изменяться. Используйте на свой страх и риск.
         </div>
         
-        <!-- Контейнер карты -->
-        <div class="panel-container map-container">
-            <iframe src="324Gmap.html" class="panel-iframe" id="map-frame"></iframe>
-            <button class="expand-btn" id="expand-map">развернуть</button>
+        <div class="buttons-grid">
+            <div class="card">
+                <div class="card-header">Расписание маршрута 414</div>
+                <div class="card-body">
+                    <p class="card-description">Подробное расписание движения автобуса с указанием всех остановок и времени прибытия.</p>
+                    <a href="414table.html" class="btn">Открыть расписание</a>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">Карта движения 414</div>
+                <div class="card-body">
+                    <p class="card-description">Текущее положение автобуса на карте с отображением маршрута и остановок.<br>&nbsp;</p>
+                    <a href="414map.html" class="btn">Открыть карту</a>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">Схема маршрутов</div>
+                <div class="card-body">
+                    <p class="card-description">Интерактивная схема нескольких маршрутов в стиле метро для удобного планирования поездки.</p>
+                    <a href="metroBus.html" class="btn">Открыть схему</a>
+                </div>
+            </div>
         </div>
+        
+        <footer>
+            <p>Рекомендуется уточнять расписание перед поездкой.</p>
+        </footer>
     </div>
-    
-    <script>
-        // Элементы DOM
-        const tablePanel = document.querySelector('.table-container');
-        const mapPanel = document.querySelector('.map-container');
-        const expandTableBtn = document.getElementById('expand-table');
-        const expandMapBtn = document.getElementById('expand-map');
-        
-        // Переменные состояния
-        let isTableFullscreen = false;
-        let isMapFullscreen = false;
-        let closeBtn = null;
-        
-        // Функция для развертывания панели
-        function togglePanelFullscreen(panel, isFullscreenFlag) {
-            if (isFullscreenFlag) {
-                // Выходим из полноэкранного режима
-                panel.classList.remove('fullscreen');
-                if (closeBtn) closeBtn.remove();
-                
-                if (panel === tablePanel) {
-                    isTableFullscreen = false;
-                    expandTableBtn.style.display = 'flex';
-                } else {
-                    isMapFullscreen = false;
-                    expandMapBtn.style.display = 'flex';
-                }
-            } else {
-                // Входим в полноэкранный режим
-                panel.classList.add('fullscreen');
-                
-                // Создаем кнопку закрытия
-                closeBtn = document.createElement('button');
-                closeBtn.className = 'close-fullscreen';
-                closeBtn.innerHTML = '×';
-                closeBtn.onclick = function() {
-                    togglePanelFullscreen(panel, true);
-                };
-                document.body.appendChild(closeBtn);
-                
-                if (panel === tablePanel) {
-                    isTableFullscreen = true;
-                    expandTableBtn.style.display = 'none';
-                } else {
-                    isMapFullscreen = true;
-                    expandMapBtn.style.display = 'none';
-                }
-            }
-        }
-        
-        // Назначаем обработчики событий
-        expandTableBtn.addEventListener('click', function() {
-            togglePanelFullscreen(tablePanel, isTableFullscreen);
-        });
-        
-        expandMapBtn.addEventListener('click', function() {
-            togglePanelFullscreen(mapPanel, isMapFullscreen);
-        });
-        
-        // Корректировка размеров при изменении окна
-        window.addEventListener('resize', function() {
-            if (!isTableFullscreen && !isMapFullscreen) {
-                // Принудительно устанавливаем равные размеры панелей
-                const panelHeight = window.innerHeight;
-                const panelWidth = window.innerWidth / 2;
-                
-                document.querySelectorAll('.panel-container').forEach(panel => {
-                    panel.style.width = panelWidth + 'px';
-                    panel.style.height = panelHeight + 'px';
-                });
-            }
-        });
-        
-        // Инициализация размеров
-        window.dispatchEvent(new Event('resize'));
-    </script>
 </body>
 </html>
