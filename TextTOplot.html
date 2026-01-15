@@ -1,0 +1,3050 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Редактор текста для плоттера</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+        }
+        
+        .controls-panel {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #e9ecef;
+        }
+        
+        .canvas-container {
+            position: relative;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            overflow: hidden;
+            background: white;
+            min-height: 600px;
+        }
+        
+        canvas {
+            display: block;
+            background: white;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        .control-group h3 {
+            font-size: 16px;
+            margin-bottom: 10px;
+            color: #495057;
+            border-bottom: 1px solid #dee2e6;
+            padding-bottom: 5px;
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        .control-group h3:hover {
+            background: #e9ecef;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        
+        input, select, button, textarea {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        button {
+            background: #007cba;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        button:hover {
+            background: #005a87;
+        }
+        
+        .dimension-inputs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        
+        .text-element {
+            background: #e9ecef;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+        
+        .text-element.active {
+            background: #cce5ff;
+            border: 2px solid #007cba;
+        }
+        
+        .text-elements-list {
+            max-height: 200px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+        }
+		
+		.svg-elements-list {
+			max-height: 150px;
+			overflow-y: auto;
+			margin-bottom: 10px;
+			background: #f8f9fa;
+			padding: 5px;
+		}
+
+		.svg-elements-list .text-element {
+			margin-bottom: 5px;
+			padding: 8px;
+			cursor: pointer;
+			border-radius: 3px;
+			transition: background 0.2s;
+		}
+
+		.svg-elements-list .text-element:hover {
+			background: #e9ecef;
+		}
+
+		.svg-elements-list .text-element.active {
+			background: #ffd6cc;
+			border: 2px solid #ff6600;
+		}
+        
+        .tools {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .tools button {
+            margin-bottom: 0;
+        }
+        
+        .status {
+            padding: 10px;
+            margin-top: 15px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .loading {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 5px;
+            z-index: 1000;
+        }
+
+        .gcode-settings {
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        .element-properties {
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            display: none;
+        }
+.element-properties select,
+.element-properties input {
+    width: 100%;
+    padding: 6px;
+    margin-bottom: 8px;
+    border: 1px solid #ced4da;
+    border-radius: 3px;
+    font-size: 13px;
+}
+
+.element-properties button {
+    margin-top: 5px;
+    padding: 8px;
+    font-size: 13px;
+}
+        .coordinate-system {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(255,255,255,0.8);
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            border: 1px solid #ccc;
+        }
+
+        .font-upload {
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        .pen-crosshair {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .pen-crosshair::before, .pen-crosshair::after {
+            content: '';
+            position: absolute;
+            background: #ff0000;
+        }
+
+        .pen-crosshair::before {
+            width: 2px;
+            height: 20px;
+            left: 9px;
+            top: 0;
+        }
+
+        .pen-crosshair::after {
+            width: 20px;
+            height: 2px;
+            left: 0;
+            top: 9px;
+        }
+
+        .collapsible {
+            transition: all 0.3s ease;
+        }
+
+        .collapsible.collapsed .content {
+            display: none;
+        }
+
+        .background-controls {
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        /* НОВЫЕ СТИЛИ ДЛЯ ИЗМЕНЕНИЙ */
+        .properties-panel {
+            position: fixed;
+            top: 50%;
+            left: 20px;
+            transform: translateY(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            width: 150px;
+            z-index: 100;
+            display: none;
+        }
+
+        .text-input-overlay {
+            position: absolute;
+            background: white;
+            border: 1px solid #007cba;
+            border-radius: 4px;
+            padding: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 50;
+            display: none;
+        }
+
+        .text-input-overlay textarea {
+            width: 200px;
+            height: 80px;
+            margin: 0;
+            border: none;
+            outline: none;
+            font-size: 14px;
+            resize: both;
+        }
+
+        /* НОВЫЕ СТИЛИ ДЛЯ ФОНОВОЙ ПОДЛОЖКИ */
+        .background-image-controls {
+            display: none;
+            margin-top: 10px;
+        }
+
+        .stretch-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .stretch-checkbox input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+        }
+
+        /* СТИЛИ ДЛЯ ОКНА ВВОДА ТЕКСТА */
+        .text-input-overlay {
+            min-width: 250px;
+        }
+
+        .text-input-controls {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 5px;
+            padding-top: 5px;
+            border-top: 1px solid #eee;
+        }
+
+        .text-input-controls button {
+            width: auto;
+            padding: 5px 12px;
+            font-size: 12px;
+            margin: 0;
+        }
+
+        .ok-btn {
+            background: #28a745;
+        }
+
+        .ok-btn:hover {
+            background: #218838;
+        }
+
+        .cancel-btn {
+            background: #dc3545;
+        }
+
+        .cancel-btn:hover {
+            background: #c82333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Редактор текста для плоттера</h1>
+        
+        <div class="main-content">
+            <div class="controls-panel">
+                <div class="control-group">
+                    <h3>Настройки листа</h3>
+                    <div class="content">
+                        <div class="dimension-inputs">
+                            <div>
+                                <label for="sheetWidth">Ширина листа (мм):</label>
+                                <input type="number" id="sheetWidth" value="210" min="10" max="500">
+                            </div>
+                            <div>
+                                <label for="sheetHeight">Высота листа (мм):</label>
+                                <input type="number" id="sheetHeight" value="297" min="10" max="500">
+                            </div>
+                        </div>
+                        <button id="updateSheetSize">Обновить размер листа</button>
+                        
+                        <div class="background-controls">
+                            <label>Фоновая подложка:</label>
+                            <!-- Скрытое поле выбора файла -->
+                            <input type="file" id="backgroundImage" accept="image/*" style="display: none;">
+                            <div class="tools">
+                                <!-- Кнопка покажет диалог выбора файла -->
+                                <button id="showBackgroundBtn">Показать</button>
+                                <!-- Кнопка скроет и очистит подложку -->
+                                <button id="hideBackgroundBtn">Скрыть</button>
+                            </div>
+                            
+                            <!-- Контейнер для управления изображением (показывается после выбора) -->
+                            <div class="background-image-controls" id="backgroundImageControls">
+                                <div class="stretch-checkbox">
+                                    <input type="checkbox" id="stretchImage">
+                                    <label for="stretchImage" style="font-weight: normal; cursor: pointer; margin: 0;">
+                                        Использовать растяжение фото
+                                    </label>
+                                </div>
+                                <button id="removeBackgroundBtn" style="margin-top: 5px; background: #dc3545;">
+                                    Удалить изображение
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="control-group  collapsible">
+                    <h3>Загрузка шрифтов и векторов</h3>
+                    <div class="content">
+                        <div class="font-upload">
+                            <input style="display: none;" type="file" id="fontUpload" accept=".svg" multiple>
+                            <button id="loadFontsBtn">Загрузить SVG</button>
+                        </div>
+                        <label for="fontSelect">Шрифт:</label>
+                        <select id="fontSelect">
+                            <option value="">-- Выберите шрифт --</option>
+                        </select>
+                        <label for="fontSize">Размер шрифта (мм):</label>
+                        <input type="number" id="fontSize" value="10" min="1" max="100">
+                    </div>
+                </div>
+                
+                <div class="control-group  collapsible">
+                    <h3>Текстовые элементы</h3>
+                    <div class="content">
+                        <div class="text-elements-list" id="textElementsList">
+                            <!-- Список текстовых элементов будет заполнен динамически -->
+                        </div>
+                        <button id="deleteSelectedBtn">Удалить выделенный</button>
+                    </div>
+                </div>
+                <div class="control-group  collapsible">
+					<h3>SVG элементы</h3>
+					<div class="content">
+						<div class="svg-elements-list" id="svgElementsList">
+							<!-- Список SVG элементов будет заполнен динамически -->
+						</div>
+						<button id="deleteSelectedSVGBtn" style="background: #dc3545;">Удалить выделенный SVG</button>
+					</div>
+				</div>
+                <div class="control-group collapsible collapsed">
+                    <h3>Настройки G-code</h3>
+                    <div class="content">
+                        <div class="gcode-settings">
+                            <label for="penStartX">Начало пера X (мм):</label>
+                            <input type="number" id="penStartX" value="0" min="0" max="500" step="0.1">
+                            
+                            <label for="penStartY">Начало пера Y (мм):</label>
+                            <input type="number" id="penStartY" value="0" min="0" max="500" step="0.1">
+                            
+                            <label for="pauseTime">Время паузы (мс):</label>
+                            <input type="number" id="pauseTime" value="100" min="10" max="1000">
+                            
+                            <label for="travelSpeed">Скорость перемещения:</label>
+                            <input type="number" id="travelSpeed" value="3000" min="100" max="10000">
+                            
+                            <label for="drawSpeed">Скорость рисования:</label>
+                            <input type="number" id="drawSpeed" value="1500" min="100" max="5000">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="control-group  collapsible">
+                    <h3>Экспорт</h3>
+                    <div class="content">
+                        <button id="exportSvgBtn">Экспорт в SVG</button>
+                        <button id="exportGcodeBtn">Экспорт в G-code</button>
+                    </div>
+                </div>
+                
+                <div id="status" class="status"></div>
+            </div>
+            
+            <div class="canvas-container" id="canvasContainer">
+                <canvas id="mainCanvas"></canvas>
+                <div class="pen-crosshair" id="penCrosshair" style="display: none;"></div>
+                <div class="coordinate-system" id="coordinateSystem">
+                    X: 0.00, Y: 0.00
+                </div>
+                
+                <!-- НОВАЯ ПАНЕЛЬ СВОЙСТВ В ЛЕВОМ КРАЮ ОКНА -->
+<div class="properties-panel" id="propertiesPanel">
+    <h3>Свойства элемента</h3>
+    <div class="element-properties" id="elementProperties" style="display: block;">
+        <label for="elementX">Позиция X (мм):</label>
+        <input type="number" id="elementX" step="0.1">
+        
+        <label for="elementY">Позиция Y (мм):</label>
+        <input type="number" id="elementY" step="0.1">
+        
+        <!-- ДОБАВИТЬ ЭТО: -->
+        <label for="elementFont">Шрифт:</label>
+        <select id="elementFont">
+            <option value="">-- Выберите шрифт --</option>
+            <!-- Опции будут заполнены динамически -->
+        </select>
+        
+        <label for="elementFontSize">Размер шрифта (мм):</label>
+        <input type="number" id="elementFontSize" min="1" max="100" step="0.1">
+        
+        <label for="elementRotation">Поворот (°):</label>
+        <input type="number" id="elementRotation" min="-180" max="180" step="1">
+        
+        <button id="updateElementBtn">Применить изменения</button>
+    </div>
+</div>
+                
+                <!-- ОКНО ВВОДА ТЕКСТА С КНОПКАМИ -->
+                <div class="text-input-overlay" id="textInputOverlay">
+                    <textarea id="textInput" placeholder="Введите текст"></textarea>
+                    <div class="text-input-controls">
+                        <button id="textInputCancel" class="cancel-btn">✕ Отмена</button>
+                        <button id="textInputOk" class="ok-btn">✓ OK</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="loading" class="loading">Загрузка...</div>
+
+    <script>
+        // Элементы DOM
+        const sheetWidthInput = document.getElementById('sheetWidth');
+        const sheetHeightInput = document.getElementById('sheetHeight');
+        const updateSheetSizeBtn = document.getElementById('updateSheetSize');
+        const backgroundImageInput = document.getElementById('backgroundImage');
+        const showBackgroundBtn = document.getElementById('showBackgroundBtn');
+        const hideBackgroundBtn = document.getElementById('hideBackgroundBtn');
+        const backgroundImageControls = document.getElementById('backgroundImageControls');
+        const stretchImageCheckbox = document.getElementById('stretchImage');
+        const removeBackgroundBtn = document.getElementById('removeBackgroundBtn');
+        const fontUploadInput = document.getElementById('fontUpload');
+        const loadFontsBtn = document.getElementById('loadFontsBtn');
+        const textInput = document.getElementById('textInput');
+        const textInputOverlay = document.getElementById('textInputOverlay');
+        const textInputOk = document.getElementById('textInputOk');
+        const textInputCancel = document.getElementById('textInputCancel');
+        const fontSelect = document.getElementById('fontSelect');
+        const fontSizeInput = document.getElementById('fontSize');
+        const textElementsList = document.getElementById('textElementsList');
+        const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+        const elementProperties = document.getElementById('elementProperties');
+        const elementXInput = document.getElementById('elementX');
+        const elementYInput = document.getElementById('elementY');
+        const elementFontSizeInput = document.getElementById('elementFontSize');
+        const elementRotationInput = document.getElementById('elementRotation');
+        const updateElementBtn = document.getElementById('updateElementBtn');
+        const exportSvgBtn = document.getElementById('exportSvgBtn');
+        const exportGcodeBtn = document.getElementById('exportGcodeBtn');
+        const statusDiv = document.getElementById('status');
+        const mainCanvas = document.getElementById('mainCanvas');
+        const canvasContainer = document.getElementById('canvasContainer');
+        const coordinateSystemDiv = document.getElementById('coordinateSystem');
+        const penCrosshair = document.getElementById('penCrosshair');
+        const loadingDiv = document.getElementById('loading');
+        const propertiesPanel = document.getElementById('propertiesPanel');
+        const ctx = mainCanvas.getContext('2d');
+        const elementFontSelect = document.getElementById('elementFont');
+        // G-code настройки
+        const penStartXInput = document.getElementById('penStartX');
+        const penStartYInput = document.getElementById('penStartY');
+        const pauseTimeInput = document.getElementById('pauseTime');
+        const travelSpeedInput = document.getElementById('travelSpeed');
+        const drawSpeedInput = document.getElementById('drawSpeed');
+        
+        // Переменные
+        let sheetWidth = parseInt(sheetWidthInput.value);
+        let sheetHeight = parseInt(sheetHeightInput.value);
+        let scaleFactor = 1;
+        let textElements = [];
+        let selectedElementIndex = -1;
+        let isDragging = false;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+        let fonts = [];
+        let fontCache = new Map();
+        let backgroundImage = null;
+        let backgroundVisible = false;
+        let isAddingText = false;
+        let isMovingPen = false;
+        let penDragStartX = 0;
+        let penDragStartY = 0;
+        let stretchBackground = false;
+		let svgElements = [];
+		let selectedSVGIndex = -1;
+		let isSVGSelected = false;
+
+// Класс для SVG элементов (рисунков)
+class SVGElement {
+    constructor(id, svgContent, x, y, width = 50, height = 50) {
+        this.id = id;
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        this.rotation = 0;
+        this.scale = 1;
+        this.paths = [];
+        this.svgImage = null; // Для предпросмотра
+        this.vectorPaths = []; // Векторы для G-code
+        this.svgContent = svgContent;
+		
+        this.parseSVG(svgContent);
+    }
+
+    async parseSVG(svgContent) {
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(svgContent, 'image/svg+xml');
+            
+            // Проверяем на ошибки парсинга
+            const parseError = doc.querySelector('parsererror');
+            if (parseError) {
+                throw new Error('Ошибка парсинга SVG: ' + parseError.textContent);
+            }
+            
+            // Получаем размеры SVG
+            const svgElement = doc.querySelector('svg');
+            let svgWidth = 100, svgHeight = 100;
+            
+            if (svgElement) {
+                const viewBox = svgElement.getAttribute('viewBox');
+                if (viewBox) {
+                    const parts = viewBox.split(' ').map(Number);
+                    if (parts.length >= 4) {
+                        svgWidth = parts[2];
+                        svgHeight = parts[3];
+                    }
+                }
+            }
+            
+            // Простой парсер для SVG путей
+            this.parseSVGPaths(doc, svgWidth, svgHeight);
+            
+            // Создаем изображение для предпросмотра
+            const svgBlob = new Blob([svgContent], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(svgBlob);
+            
+            this.svgImage = new Image();
+            
+            return new Promise((resolve, reject) => {
+                this.svgImage.onload = () => {
+                    URL.revokeObjectURL(url);
+                    resolve();
+                };
+                this.svgImage.onerror = reject;
+                this.svgImage.src = url;
+            });
+            
+        } catch (error) {
+            console.error('Ошибка парсинга SVG:', error);
+            throw error;
+        }
+    }
+
+    // Упрощенный парсер SVG путей
+    parseSVGPaths(doc, svgWidth, svgHeight) {
+        const paths = [];
+        const pathElements = doc.querySelectorAll('path');
+        
+        // Находим bounding box всех путей
+        let allPoints = [];
+        
+        pathElements.forEach(path => {
+            const d = path.getAttribute('d');
+            if (d && d.trim() !== '') {
+                const points = this.parsePathData(d);
+                allPoints.push(...points);
+            }
+        });
+        
+        if (allPoints.length === 0) return;
+        
+        // Находим min/max
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        allPoints.forEach(point => {
+            minX = Math.min(minX, point.x);
+            minY = Math.min(minY, point.y);
+            maxX = Math.max(maxX, point.x);
+            maxY = Math.max(maxY, point.y);
+        });
+        
+        const contentWidth = maxX - minX;
+        const contentHeight = maxY - minY;
+        
+        // Масштаб для приведения к 50мм
+        const targetSize = 50;
+        const scale = targetSize / Math.max(contentWidth, contentHeight);
+        
+        // Фактические размеры с сохранением пропорций
+        this.width = contentWidth * scale;
+        this.height = contentHeight * scale;
+        
+        // Парсим пути с масштабированием
+        pathElements.forEach(path => {
+            const d = path.getAttribute('d');
+            if (d && d.trim() !== '') {
+                const points = this.parsePathData(d);
+                const vectorPath = [];
+                
+                for (let i = 0; i < points.length; i++) {
+                    const point = points[i];
+                    // Смещаем и масштабируем
+                    const x = (point.x - minX) * scale;
+                    const y = (point.y - minY) * scale;
+                    
+                    // Инвертируем Y для плоттера
+                    const plotterY = this.height - y;
+                    
+                    vectorPath.push({
+                        x: x,
+                        y: plotterY,
+                        move: point.move || (i === 0) // Первая точка - move
+                    });
+                }
+                
+                if (vectorPath.length > 1) {
+                    this.vectorPaths.push(vectorPath);
+                }
+            }
+        });
+        
+    }
+
+    // Простейший парсер пути SVG (только M, L, Z команды)
+    parsePathData(pathData) {
+        const points = [];
+        
+        // Упрощаем: ищем команды M/m и L/l
+        const commands = pathData.match(/[MmLlZz]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g) || [];
+        
+        let i = 0;
+        let currentX = 0, currentY = 0;
+        let startX = 0, startY = 0;
+        
+        while (i < commands.length) {
+            const token = commands[i];
+            
+            if (token.match(/[MmLlZz]/)) {
+                const command = token;
+                
+                switch(command.toLowerCase()) {
+                    case 'm':
+                        i++;
+                        const mx = parseFloat(commands[i++]);
+                        const my = parseFloat(commands[i++]);
+                        
+                        if (command === 'm') {
+                            currentX += mx;
+                            currentY += my;
+                        } else {
+                            currentX = mx;
+                            currentY = my;
+                        }
+                        
+                        startX = currentX;
+                        startY = currentY;
+                        points.push({x: currentX, y: currentY, move: true});
+                        break;
+                        
+                    case 'l':
+                        i++;
+                        const lx = parseFloat(commands[i++]);
+                        const ly = parseFloat(commands[i++]);
+                        
+                        if (command === 'l') {
+                            currentX += lx;
+                            currentY += ly;
+                        } else {
+                            currentX = lx;
+                            currentY = ly;
+                        }
+                        
+                        points.push({x: currentX, y: currentY, move: false});
+                        break;
+                        
+                    case 'z':
+                        i++;
+                        points.push({x: startX, y: startY, move: false});
+                        break;
+                        
+                    default:
+                        i++; // Пропускаем неизвестные команды
+                        break;
+                }
+            } else {
+                i++; // Пропускаем числа
+            }
+        }
+        
+        return points;
+    }
+
+    getDisplayPaths() {
+        return this.getGcodePaths();
+    }
+
+getGcodePaths() {
+    const gcodePaths = [];
+    const cos = Math.cos(this.rotation);
+    const sin = Math.sin(this.rotation);
+    
+    if (!this.vectorPaths || this.vectorPaths.length === 0) {
+        console.warn('Нет векторных путей в SVG!');
+        return gcodePaths;
+    }
+    
+    // Центр для вращения
+    const centerX = this.x + this.width * this.scale / 2;
+    const centerY = this.y + this.height * this.scale / 2;
+    
+    for (const path of this.vectorPaths) {
+        const transformedPath = [];
+        
+        for (const point of path) {
+
+            const worldX = this.x + point.x * this.scale;
+            const worldY = this.y + point.y * this.scale;
+            
+            // Поворачиваем
+            const rotatedX = (worldX - centerX) * cos - (worldY - centerY) * sin + centerX;
+            const rotatedY = (worldX - centerX) * sin + (worldY - centerY) * cos + centerY;
+            
+            transformedPath.push({ 
+                x: rotatedX, 
+                y: rotatedY 
+            });
+        }
+        
+        if (transformedPath.length > 1) {
+            gcodePaths.push(transformedPath);
+            
+        }
+    }
+        return gcodePaths;
+}
+
+    getBoundingBox() {
+        return {
+            x: this.x,
+            y: this.y,
+            width: this.width * this.scale,
+            height: this.height * this.scale
+        };
+    }
+}
+
+        // Класс для работы с SVG шрифтами ГОСТ
+        class GOSTSVGFont {
+            constructor(svgContent, fontName = 'Custom Font') {
+                this.glyphs = new Map();
+                this.horizAdvX = 300;
+                this.fontName = fontName;
+                this.parseSVG(svgContent);
+            }
+
+            parseSVG(svgContent) {
+                try {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(svgContent, 'image/svg+xml');
+                    
+                    const parseError = doc.querySelector('parsererror');
+                    if (parseError) {
+                        throw new Error('Ошибка парсинга SVG: ' + parseError.textContent);
+                    }
+                    
+                    const fontElement = doc.querySelector('font');
+                    if (fontElement) {
+                        this.horizAdvX = parseFloat(fontElement.getAttribute('horiz-adv-x')) || 300;
+                    }
+
+                    const glyphElements = doc.querySelectorAll('glyph');
+                    let loadedGlyphs = 0;
+                    
+                    glyphElements.forEach(glyph => {
+                        const unicode = glyph.getAttribute('unicode');
+                        const d = glyph.getAttribute('d');
+                        
+                        if (unicode && d && d.trim() !== '') {
+                            let char = unicode;
+                            if (unicode === '&amp;') char = '&';
+                            else if (unicode === '&lt;') char = '<';
+                            else if (unicode === '&gt;') char = '>';
+                            else if (unicode === '&quot;') char = '"';
+                            else if (unicode === '&#39;') char = "'";
+                            
+                            this.glyphs.set(char, {
+                                path: d,
+                                horizAdvX: parseFloat(glyph.getAttribute('horiz-adv-x')) || this.horizAdvX
+                            });
+                            loadedGlyphs++;
+                        }
+                    });
+
+                    
+                } catch (error) {
+                    console.error('Ошибка парсинга SVG шрифта:', error);
+                    throw error;
+                }
+            }
+
+            getGlyphPath(char) {
+                const glyph = this.glyphs.get(char);
+                return glyph ? glyph.path : null;
+            }
+
+            getGlyphWidth(char) {
+                const glyph = this.glyphs.get(char);
+                return glyph ? glyph.horizAdvX : this.horizAdvX;
+            }
+
+measureText(text, fontSize) {
+    let maxWidth = 0;
+    let lineHeight = fontSize * 1.2;
+    let lines = text.split('\n');
+    let totalHeight = lines.length * lineHeight;
+    
+    for (let line of lines) {
+        let lineWidth = 0;
+        for (let char of line) {
+            lineWidth += this.getGlyphWidth(char);
+        }
+        maxWidth = Math.max(maxWidth, lineWidth);
+    }
+    
+    const scale = fontSize / 1000;
+    return {
+        width: maxWidth * scale,
+        height: totalHeight
+    };
+};
+
+            parsePathToCoordinates(pathData, scale = 1) {
+                const coordinates = [];
+                if (!pathData || pathData.trim() === '') return coordinates;
+                
+                try {
+                    const commands = pathData.match(/[MmLlHhVvCcSsQqTtAaZz]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g) || [];
+                    
+                    let currentX = 0;
+                    let currentY = 0;
+                    let startX = 0;
+                    let startY = 0;
+                    let i = 0;
+                    
+                    let lastControlX = 0;
+                    let lastControlY = 0;
+                    
+                    while (i < commands.length) {
+                        const command = commands[i++];
+                        
+                        switch (command) {
+                            case 'M':
+                                currentX = parseFloat(commands[i++]) * scale;
+                                currentY = parseFloat(commands[i++]) * scale;
+                                startX = currentX;
+                                startY = currentY;
+                                coordinates.push({x: currentX, y: currentY, move: true});
+                                break;
+                                
+                            case 'm':
+                                currentX += parseFloat(commands[i++]) * scale;
+                                currentY += parseFloat(commands[i++]) * scale;
+                                startX = currentX;
+                                startY = currentY;
+                                coordinates.push({x: currentX, y: currentY, move: true});
+                                break;
+                                
+                            case 'L':
+                                currentX = parseFloat(commands[i++]) * scale;
+                                currentY = parseFloat(commands[i++]) * scale;
+                                coordinates.push({x: currentX, y: currentY, move: false});
+                                break;
+                                
+                            case 'l':
+                                currentX += parseFloat(commands[i++]) * scale;
+                                currentY += parseFloat(commands[i++]) * scale;
+                                coordinates.push({x: currentX, y: currentY, move: false});
+                                break;
+                                
+                            case 'H':
+                                currentX = parseFloat(commands[i++]) * scale;
+                                coordinates.push({x: currentX, y: currentY, move: false});
+                                break;
+                                
+                            case 'h':
+                                currentX += parseFloat(commands[i++]) * scale;
+                                coordinates.push({x: currentX, y: currentY, move: false});
+                                break;
+                                
+                            case 'V':
+                                currentY = parseFloat(commands[i++]) * scale;
+                                coordinates.push({x: currentX, y: currentY, move: false});
+                                break;
+                                
+                            case 'v':
+                                currentY += parseFloat(commands[i++]) * scale;
+                                coordinates.push({x: currentX, y: currentY, move: false});
+                                break;
+                                
+                            case 'C':
+                                {
+                                    const x1 = parseFloat(commands[i++]) * scale;
+                                    const y1 = parseFloat(commands[i++]) * scale;
+                                    const x2 = parseFloat(commands[i++]) * scale;
+                                    const y2 = parseFloat(commands[i++]) * scale;
+                                    const x = parseFloat(commands[i++]) * scale;
+                                    const y = parseFloat(commands[i++]) * scale;
+                                    
+                                    const bezierPoints = this.cubicBezierToPoints(
+                                        currentX, currentY,
+                                        x1, y1,
+                                        x2, y2,
+                                        x, y
+                                    );
+                                    
+                                    for (let j = 1; j < bezierPoints.length; j++) {
+                                        coordinates.push({x: bezierPoints[j].x, y: bezierPoints[j].y, move: false});
+                                    }
+                                    
+                                    currentX = x;
+                                    currentY = y;
+                                    lastControlX = x2;
+                                    lastControlY = y2;
+                                }
+                                break;
+                                
+                            case 'c':
+                                {
+                                    const dx1 = parseFloat(commands[i++]) * scale;
+                                    const dy1 = parseFloat(commands[i++]) * scale;
+                                    const dx2 = parseFloat(commands[i++]) * scale;
+                                    const dy2 = parseFloat(commands[i++]) * scale;
+                                    const dx = parseFloat(commands[i++]) * scale;
+                                    const dy = parseFloat(commands[i++]) * scale;
+                                    
+                                    const x1 = currentX + dx1;
+                                    const y1 = currentY + dy1;
+                                    const x2 = currentX + dx2;
+                                    const y2 = currentY + dy2;
+                                    const x = currentX + dx;
+                                    const y = currentY + dy;
+                                    
+                                    const bezierPoints = this.cubicBezierToPoints(
+                                        currentX, currentY,
+                                        x1, y1,
+                                        x2, y2,
+                                        x, y
+                                    );
+                                    
+                                    for (let j = 1; j < bezierPoints.length; j++) {
+                                        coordinates.push({x: bezierPoints[j].x, y: bezierPoints[j].y, move: false});
+                                    }
+                                    
+                                    currentX = x;
+                                    currentY = y;
+                                    lastControlX = x2;
+                                    lastControlY = y2;
+                                }
+                                break;
+                                
+                            case 'Z': case 'z':
+                                if (coordinates.length > 0) {
+                                    coordinates.push({x: startX, y: startY, move: false});
+                                }
+                                break;
+                                
+                            default:
+                                if (!isNaN(parseFloat(command))) {
+                                    i--;
+                                }
+                                break;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Ошибка парсинга пути:', error, pathData);
+                }
+                
+                return coordinates;
+            }
+
+            cubicBezierToPoints(x0, y0, x1, y1, x2, y2, x3, y3, segments = 20) {
+                const points = [];
+                
+                for (let i = 0; i <= segments; i++) {
+                    const t = i / segments;
+                    
+                    const x = Math.pow(1 - t, 3) * x0 + 
+                              3 * Math.pow(1 - t, 2) * t * x1 + 
+                              3 * (1 - t) * Math.pow(t, 2) * x2 + 
+                              Math.pow(t, 3) * x3;
+                              
+                    const y = Math.pow(1 - t, 3) * y0 + 
+                              3 * Math.pow(1 - t, 2) * t * y1 + 
+                              3 * (1 - t) * Math.pow(t, 2) * y2 + 
+                              Math.pow(t, 3) * y3;
+                    
+                    points.push({x, y});
+                }
+                
+                return points;
+            }
+
+            quadraticBezierToPoints(x0, y0, x1, y1, x2, y2, segments = 10) {
+                const points = [];
+                
+                for (let i = 0; i <= segments; i++) {
+                    const t = i / segments;
+                    
+                    const x = Math.pow(1 - t, 2) * x0 + 
+                              2 * (1 - t) * t * x1 + 
+                              Math.pow(t, 2) * x2;
+                              
+                    const y = Math.pow(1 - t, 2) * y0 + 
+                              2 * (1 - t) * t * y1 + 
+                              Math.pow(t, 2) * y2;
+                    
+                    points.push({x, y});
+                }
+                
+                return points;
+            }
+        }
+
+        // Класс для текстового элемента
+class TextElement {
+    constructor(id, text, font, fontSize, x, y) {
+        this.id = id;
+        this.text = text;
+        this.font = font;
+        this.fontSize = fontSize;
+        this.x = x;  // Верхний левый угол рамки
+        this.y = y;  // Верхний левый угол рамки
+        this.rotation = 0;
+        this.paths = [];
+        this.generatePaths();
+    }
+
+async generatePaths() {
+    this.paths = [];
+    const scale = this.fontSize / 1000;
+    const lineHeight = this.fontSize * 1.2;
+    const lines = this.text.split('\n');
+    
+    // ИДЕМ С НИЖНЕЙ СТРОКИ К ВЕРХНЕЙ
+    for (let lineIndex = lines.length - 1; lineIndex >= 0; lineIndex--) {
+        const line = lines[lineIndex];
+        let currentX = 0;
+        
+        for (let char of line) {
+            const glyphPath = this.font.getGlyphPath(char);
+            if (glyphPath) {
+                try {
+                    const coordinates = this.font.parsePathToCoordinates(glyphPath, scale);
+                    if (coordinates.length > 0) {
+                        // Первая строка (нижняя) имеет offsetY = 0
+                        // Каждая следующая строка (выше) добавляет lineHeight
+                        const offsetY = (lines.length - 1 - lineIndex) * lineHeight - this.fontSize;
+                        
+                        const charPaths = this.coordinatesToPaths(
+                            coordinates, 
+                            currentX, 
+                            offsetY,
+                            true
+                        );
+                        this.paths.push(...charPaths);
+                    }
+                } catch (error) {
+                    console.warn(`Ошибка парсинга символа '${char}':`, error);
+                }
+            }
+            
+            currentX += this.font.getGlyphWidth(char) * scale;
+        }
+    }
+    
+    this.paths = this.paths.filter(path => path.length > 1);
+}
+   
+coordinatesToPaths(coordinates, offsetX, offsetY, mirrorY = false) {
+    const paths = [];
+    let currentPath = [];
+    
+    for (const coord of coordinates) {
+        // ИСПРАВЛЕНИЕ: всегда инвертируем Y для правильной ориентации
+        let pointY = coord.y;  // ИНВЕРТИРУЕМ ЗДЕСЬ!
+        
+        const point = {
+            x: coord.x + offsetX,
+            y: pointY + offsetY
+        };
+        
+        if (coord.move) {
+            if (currentPath.length > 0) {
+                paths.push([...currentPath]);
+            }
+            currentPath = [point];
+        } else {
+            if (currentPath.length === 0) {
+                currentPath = [point];
+            } else {
+                currentPath.push(point);
+            }
+        }
+    }
+    
+    if (currentPath.length > 0) {
+        paths.push(currentPath);
+    }
+    
+    return paths;
+}
+getBoundingBox() {
+    const measurement = this.font.measureText(this.text, this.fontSize);
+
+    return {
+        x: this.x,
+        y: this.y, // Добавляем высоту шрифта
+        width: measurement.width,
+        height: measurement.height
+    };
+}
+
+getDisplayPaths() {
+    const displayPaths = [];
+    const cos = Math.cos(this.rotation);
+    const sin = Math.sin(this.rotation);
+    
+    // Центр для вращения
+    const bbox = this.getBoundingBox();
+    const centerX = bbox.x + bbox.width / 2;
+    const centerY = bbox.y + bbox.height / 2;
+    
+    for (const path of this.paths) {
+        const transformedPath = path.map(point => {
+            // Локальные координаты векторов
+            const localX = point.x;
+            const localY = point.y;
+            
+            // Преобразуем в мировые координаты (система плоттера)
+            const worldX = this.x + localX;
+            const worldY = this.y + localY + this.fontSize;
+            
+            // Поворачиваем вокруг центра
+            const rotatedX = (worldX - centerX) * cos - (worldY - centerY) * sin + centerX;
+            const rotatedY = (worldX - centerX) * sin + (worldY - centerY) * cos + centerY;
+            
+            return {
+                x: rotatedX,
+                y: rotatedY
+            };
+        });
+        
+        if (transformedPath.length > 1) {
+            displayPaths.push(transformedPath);
+        }
+    }
+    
+    return displayPaths;
+}
+
+getGcodePaths() {
+    const gcodePaths = [];
+    const cos = Math.cos(this.rotation);
+    const sin = Math.sin(this.rotation);
+    
+    const bbox = this.getBoundingBox();
+    const centerX = bbox.x + bbox.width / 2;
+    const centerY = bbox.y + bbox.height / 2;
+    
+    for (const path of this.paths) {
+        const transformedPath = path.map(point => {
+            // Векторы относительно this.x, this.y
+            const worldX = this.x + point.x;
+            const worldY = this.y + point.y + this.fontSize;
+            
+            // Поворачиваем
+            const rotatedX = (worldX - centerX) * cos - (worldY - centerY) * sin + centerX;
+            const rotatedY = (worldX - centerX) * sin + (worldY - centerY) * cos + centerY;
+            
+            // Конвертируем в систему плоттера
+            return {
+                x: rotatedX,
+                y: rotatedY
+            };
+        });
+        
+        if (transformedPath.length > 1) {
+            gcodePaths.push(transformedPath);
+        }
+    }
+    
+    return gcodePaths;
+}
+
+ async updateFontSize(newSize) {
+        this.fontSize = newSize;
+        await this.generatePaths();
+    }
+}
+
+        // Инициализация
+        async function init() {
+            updateCanvasSize();
+            setupEventListeners();
+            setupCollapsible();
+            updatePenCrosshair();
+            updateStatus('Загрузите SVG шрифты для начала работы', 'success');
+            
+            loadLastFont();
+        }
+        
+        function setupCollapsible() {
+            document.querySelectorAll('.control-group.collapsible h3').forEach(header => {
+                header.addEventListener('click', function() {
+                    const parent = this.parentElement;
+                    parent.classList.toggle('collapsed');
+                });
+            });
+        }
+        
+        function updateCanvasSize() {
+            const containerWidth = canvasContainer.clientWidth;
+            const containerHeight = canvasContainer.clientHeight;
+            
+            const widthRatio = containerWidth / sheetWidth;
+            const heightRatio = containerHeight / sheetHeight;
+            scaleFactor = Math.min(widthRatio, heightRatio) * 0.95;
+            
+            mainCanvas.width = sheetWidth * scaleFactor;
+            mainCanvas.height = sheetHeight * scaleFactor;
+            
+            drawScene();
+        }
+        
+async function loadFiles(files) {
+    if (files.length === 0) {
+        updateStatus('Выберите файлы', 'error');
+        return;
+    }
+
+    showLoading(true);
+    
+    let fontsLoaded = 0;
+    let svgsLoaded = 0;
+    let errors = 0;
+
+    try {
+        for (let file of files) {
+            if (file.type === 'image/svg+xml' || file.name.endsWith('.svg')) {
+                try {
+                    const svgContent = await readFileAsText(file);
+                    
+                    // Проверяем, это шрифт или обычный SVG
+                    if (svgContent.includes('<font') || svgContent.includes('<glyph')) {
+                        // Это шрифт
+                        const fontName = file.name.replace('.svg', '');
+                        const font = new GOSTSVGFont(svgContent, fontName);
+                        
+                        if (font.glyphs.size > 0) {
+                            fonts.push({
+                                name: fontName,
+                                path: file.name,
+                                instance: font
+                            });
+
+                            const option = document.createElement('option');
+                            option.value = file.name;
+                            option.textContent = fontName;
+                            fontSelect.appendChild(option);
+                            fontsLoaded++;
+                        } else {
+                            errors++;
+                        }
+                    } else {
+                        // Это обычный SVG рисунок
+                        const svgElement = new SVGElement(
+                            Date.now(),
+                            svgContent,
+                            sheetWidth / 2 - 25, // Центр листа
+                            sheetHeight / 2 - 25,
+                            50, // Начальная ширина
+                            50  // Начальная высота
+                        );
+                        
+                        await svgElement.parseSVG(svgContent);
+                        svgElements.push(svgElement);
+                        svgsLoaded++;
+                        updateSVGElementsList();
+                        updateStatus(`SVG рисунок "${file.name}" загружен`, 'success');
+                    }
+                    
+                } catch (error) {
+                    console.error(`Ошибка загрузки файла ${file.name}:`, error);
+                    errors++;
+                }
+            }
+        }
+
+        if (fonts.length > 0 && fontsLoaded > 0) {
+            fontSelect.value = fonts[0].path;
+            localStorage.setItem('lastFonts', JSON.stringify(
+                files.filter(f => f.name.endsWith('.svg')).map(f => f.name)
+            ));
+        }
+
+        let statusMessage = '';
+        if (fontsLoaded > 0) statusMessage += `Шрифтов: ${fontsLoaded}. `;
+        if (svgsLoaded > 0) statusMessage += `Рисунков: ${svgsLoaded}. `;
+        if (errors > 0) statusMessage += `Ошибок: ${errors}.`;
+        
+        if (fontsLoaded > 0 || svgsLoaded > 0) {
+            updateStatus(statusMessage || 'Файлы загружены', 'success');
+            drawScene();
+        } else {
+            updateStatus('Не удалось загрузить файлы', 'error');
+        }
+    } catch (error) {
+        console.error('Общая ошибка загрузки файлов:', error);
+        updateStatus('Ошибка загрузки файлов', 'error');
+    } finally {
+        showLoading(false);
+    }
+}
+
+        function loadLastFont() {
+            const lastFonts = localStorage.getItem('lastFonts');
+            if (lastFonts) {
+                try {
+                    const fontNames = JSON.parse(lastFonts);
+                    if (fontNames && fontNames.length > 0) {
+                        updateStatus('Найдены предыдущие шрифты. Загрузите файлы снова.', 'success');
+                    }
+                } catch (e) {
+                    console.log('Нет сохраненных шрифтов');
+                }
+            }
+        }
+
+        function readFileAsText(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = e => resolve(e.target.result);
+                reader.onerror = reject;
+                reader.readAsText(file);
+            });
+        }
+        
+        function setupEventListeners() {
+            updateSheetSizeBtn.addEventListener('click', updateSheetSize);
+            loadFontsBtn.addEventListener('click', () => fontUploadInput.click());
+            fontUploadInput.addEventListener('change', (e) => loadFiles(Array.from(e.target.files)));
+            deleteSelectedBtn.addEventListener('click', deleteSelectedElement);
+            updateElementBtn.addEventListener('click', updateSelectedElement);
+            exportSvgBtn.addEventListener('click', exportToSvg);
+            exportGcodeBtn.addEventListener('click', exportToGcode);
+            deleteSelectedSVGBtn.addEventListener('click', deleteSelectedElement);
+            // Новые обработчики для фоновой подложки
+            showBackgroundBtn.addEventListener('click', () => {
+				if (backgroundImage) {
+					// Если изображение уже загружено - показываем его
+					backgroundVisible = true;
+					// Показываем панель управления изображением
+					backgroundImageControls.style.display = 'block';
+					drawScene();
+					updateStatus('Подложка показана', 'success');
+				} else {
+					// Если изображения нет - показываем диалог выбора файла
+					backgroundImageInput.click();
+				}
+			});			
+            
+            backgroundImageInput.addEventListener('change', handleBackgroundImage);
+            
+hideBackgroundBtn.addEventListener('click', () => {
+    // Просто скрываем изображение, но не удаляем из памяти
+    backgroundVisible = false;
+    // Можно скрыть или оставить панель управления - решаем оставить
+    backgroundImageControls.style.display = 'none';
+    drawScene();
+    updateStatus('Подложка скрыта', 'success');
+});
+            
+removeBackgroundBtn.addEventListener('click', () => {
+    // Полностью удаляем изображение
+    backgroundImage = null;
+    backgroundVisible = false;
+    backgroundImageInput.value = ''; // Очищаем поле ввода
+    // Скрываем панель управления изображением
+    backgroundImageControls.style.display = 'none';
+    drawScene();
+    updateStatus('Изображение удалено', 'success');
+});
+            
+            stretchImageCheckbox.addEventListener('change', function() {
+                stretchBackground = this.checked;
+                drawScene();
+            });
+            
+            textInputOk.addEventListener('click', finishTextInput);
+            textInputCancel.addEventListener('click', cancelTextInput);
+            
+            penStartXInput.addEventListener('change', updatePenCrosshair);
+            penStartYInput.addEventListener('change', updatePenCrosshair);
+            
+            mainCanvas.addEventListener('click', handleCanvasClick);
+            mainCanvas.addEventListener('mousedown', handleMouseDown);
+			mainCanvas.addEventListener('mousemove', (e) => {
+				handleMouseMove(e);
+				updateCoordinatesDisplay(e);
+			});
+            mainCanvas.addEventListener('mouseup', handleMouseUp);
+            mainCanvas.addEventListener('mouseleave', handleMouseUp);
+            mainCanvas.addEventListener('dblclick', function(event) {
+				if (isAddingText) return;
+				
+				const rect = mainCanvas.getBoundingClientRect();
+				const x = (event.clientX - rect.left) / scaleFactor;
+				const y = sheetHeight - (event.clientY - rect.top) / scaleFactor;
+				
+				for (let i = textElements.length - 1; i >= 0; i--) {
+					const element = textElements[i];
+					
+					if (isPointInTextElement(x, y, element)) {
+						startTextEdit(element, i);
+						break;
+					}
+				}
+			});
+
+            textInput.addEventListener('keydown', handleTextInputKeydown);
+			document.addEventListener('keydown', handleKeyDown);
+        }
+		
+function handleKeyDown(event) {
+    // Если открыто окно ввода текста - не обрабатываем клавиши
+    if (isAddingText) {
+        // В режиме ввода текста обрабатываем только Escape для отмены
+        if (event.key === 'Escape' || event.key === 'Esc') {
+            cancelTextInput();
+            event.preventDefault();
+        }
+        return;
+    }
+    
+    // Предотвращаем действие браузера для функциональных клавиш
+    const isFunctionalKey = ['Delete', 'Del', 'Escape', 'Esc', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key);
+    
+    switch(event.key) {
+        case 'Delete':
+        case 'Del':
+            if (selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) {
+                deleteSelectedElement();
+                event.preventDefault();
+            }
+            break;
+            
+        case 'Escape':
+        case 'Esc':
+            if (selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) {
+                selectedElementIndex = -1;
+                isSVGSelected = false;
+                selectedSVGIndex = -1;
+                updateTextElementsList();
+                updateSVGElementsList();
+                updateElementProperties();
+                drawScene();
+                updateStatus('Выделение снято', 'success');
+                event.preventDefault();
+            }
+            break;
+            
+        case 'ArrowUp':
+            if ((selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) && event.ctrlKey) {
+                // Ctrl+↑ - переместить элемент вверх на 1 мм
+                moveSelectedElement(0, 1);
+                event.preventDefault();
+            } else if ((selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) && event.shiftKey) {
+                // Shift+↑ - увеличить размер/масштаб
+                resizeSelectedElement(0, 1);
+                event.preventDefault();
+            } else if ((selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) && event.altKey) {
+                // Alt+↑ - повернуть против часовой стрелки
+                rotateSelectedElement(5);
+                event.preventDefault();
+            }
+            break;
+            
+        case 'ArrowDown':
+            if ((selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) && event.ctrlKey) {
+                // Ctrl+↓ - переместить элемент вниз на 1 мм
+                moveSelectedElement(0, -1);
+                event.preventDefault();
+            } else if ((selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) && event.shiftKey) {
+                // Shift+↓ - уменьшить размер/масштаб
+                resizeSelectedElement(0, -1);
+                event.preventDefault();
+            } else if ((selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) && event.altKey) {
+                // Alt+↓ - повернуть по часовой стрелке
+                rotateSelectedElement(-5);
+                event.preventDefault();
+            }
+            break;
+            
+        case 'ArrowLeft':
+            if ((selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) && event.ctrlKey) {
+                // Ctrl+← - переместить элемент влево на 1 мм
+                moveSelectedElement(-1, 0);
+                event.preventDefault();
+            } else if ((selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) && event.shiftKey) {
+                // Shift+← - уменьшить ширину/размер
+                resizeSelectedElement(-1, 0);
+                event.preventDefault();
+            } else if ((selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) && event.altKey) {
+                // Alt+← - повернуть против часовой стрелки (мелкий шаг)
+                rotateSelectedElement(1);
+                event.preventDefault();
+            }
+            break;
+            
+        case 'ArrowRight':
+            if ((selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) && event.ctrlKey) {
+                // Ctrl+→ - переместить элемент вправо на 1 мм
+                moveSelectedElement(1, 0);
+                event.preventDefault();
+            } else if ((selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) && event.shiftKey) {
+                // Shift+→ - увеличить ширину/размер
+                resizeSelectedElement(1, 0);
+                event.preventDefault();
+            } else if ((selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) && event.altKey) {
+                // Alt+→ - повернуть по часовой стрелке (мелкий шаг)
+                rotateSelectedElement(-1);
+                event.preventDefault();
+            }
+            break;
+            
+        case 'r':
+        case 'R':
+            if ((selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) && event.ctrlKey) {
+                // Ctrl+R - сбросить поворот
+                resetRotation();
+                event.preventDefault();
+            }
+            break;
+            
+        case 's':
+        case 'S':
+            if ((selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) && event.ctrlKey) {
+                // Ctrl+S - сбросить масштаб к 1
+                resetScale();
+                event.preventDefault();
+            }
+            break;
+            
+        case ' ':
+            // Пробел - переключение видимости фона
+            if (!event.target.matches('input, textarea, select')) {
+                toggleBackground();
+                event.preventDefault();
+            }
+            break;
+            
+        case 'F1':
+            // F1 - показать справку
+            showHelp();
+            event.preventDefault();
+            break;
+            
+        case 'F2':
+            // F2 - отладка
+            if (selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) {
+                debugElement();
+                event.preventDefault();
+            }
+            break;
+            
+        case 'Tab':
+            // Tab - переключение между элементами
+            if (!event.target.matches('input, textarea, select')) {
+                if (event.shiftKey) {
+                    selectPreviousElement();
+                } else {
+                    selectNextElement();
+                }
+                event.preventDefault();
+            }
+            break;
+    }
+    
+    // Если нажата функциональная клавиша, предотвращаем стандартное поведение
+    if (isFunctionalKey && (event.ctrlKey || event.shiftKey || event.altKey)) {
+        event.preventDefault();
+    }
+}
+
+function resizeSelectedElement(deltaWidth, deltaHeight) {
+    if (isSVGSelected && selectedSVGIndex !== -1) {
+        const element = svgElements[selectedSVGIndex];
+        const newScale = element.scale + deltaWidth * 0.1;
+        if (newScale > 0.1 && newScale < 10) {
+            element.scale = newScale;
+            updateElementProperties();
+            drawScene();
+            updateStatus(`Масштаб SVG: ${(element.scale * 100).toFixed(0)}%`, 'success');
+        }
+    } else if (selectedElementIndex !== -1) {
+        const element = textElements[selectedElementIndex];
+        const newFontSize = element.fontSize + deltaHeight;
+        if (newFontSize >= 1 && newFontSize <= 100) {
+            element.updateFontSize(newFontSize);
+            updateElementProperties();
+            drawScene();
+            updateStatus(`Размер шрифта: ${newFontSize}мм`, 'success');
+        }
+    }
+}
+
+function rotateSelectedElement(degrees) {
+    const radians = degrees * Math.PI / 180;
+    
+    if (isSVGSelected && selectedSVGIndex !== -1) {
+        const element = svgElements[selectedSVGIndex];
+        element.rotation += radians;
+        updateElementProperties();
+        drawScene();
+        updateStatus(`Поворот SVG: ${(element.rotation * 180 / Math.PI).toFixed(1)}°`, 'success');
+    } else if (selectedElementIndex !== -1) {
+        const element = textElements[selectedElementIndex];
+        element.rotation += radians;
+        updateElementProperties();
+        drawScene();
+        updateStatus(`Поворот текста: ${(element.rotation * 180 / Math.PI).toFixed(1)}°`, 'success');
+    }
+}
+
+function resetRotation() {
+    if (isSVGSelected && selectedSVGIndex !== -1) {
+        const element = svgElements[selectedSVGIndex];
+        element.rotation = 0;
+        updateElementProperties();
+        drawScene();
+        updateStatus('Поворот SVG сброшен', 'success');
+    } else if (selectedElementIndex !== -1) {
+        const element = textElements[selectedElementIndex];
+        element.rotation = 0;
+        updateElementProperties();
+        drawScene();
+        updateStatus('Поворот текста сброшен', 'success');
+    }
+}
+
+function resetScale() {
+    if (isSVGSelected && selectedSVGIndex !== -1) {
+        const element = svgElements[selectedSVGIndex];
+        element.scale = 1;
+        updateElementProperties();
+        drawScene();
+        updateStatus('Масштаб SVG сброшен', 'success');
+    }
+}
+
+function toggleBackground() {
+    if (backgroundImage) {
+        backgroundVisible = !backgroundVisible;
+        drawScene();
+        updateStatus(`Подложка ${backgroundVisible ? 'показана' : 'скрыта'}`, 'success');
+    }
+}
+
+function selectNextElement() {
+    if (textElements.length > 0) {
+        if (selectedElementIndex === -1 && !isSVGSelected) {
+            selectedElementIndex = 0;
+            isSVGSelected = false;
+            selectedSVGIndex = -1;
+        } else if (isSVGSelected && selectedSVGIndex !== -1) {
+            if (selectedSVGIndex < svgElements.length - 1) {
+                selectedSVGIndex++;
+            } else if (textElements.length > 0) {
+                isSVGSelected = false;
+                selectedElementIndex = 0;
+                selectedSVGIndex = -1;
+            }
+        } else if (selectedElementIndex !== -1) {
+            if (selectedElementIndex < textElements.length - 1) {
+                selectedElementIndex++;
+            } else if (svgElements.length > 0) {
+                isSVGSelected = true;
+                selectedElementIndex = -1;
+                selectedSVGIndex = 0;
+            }
+        }
+        
+        updateTextElementsList();
+        updateSVGElementsList();
+        updateElementProperties();
+        drawScene();
+        updateStatus(`Выбран элемент ${isSVGSelected ? 'SVG' : 'текст'}`, 'success');
+    }
+}
+
+function selectPreviousElement() {
+    if (textElements.length > 0 || svgElements.length > 0) {
+        if (isSVGSelected && selectedSVGIndex !== -1) {
+            if (selectedSVGIndex > 0) {
+                selectedSVGIndex--;
+            } else if (textElements.length > 0) {
+                isSVGSelected = false;
+                selectedElementIndex = textElements.length - 1;
+                selectedSVGIndex = -1;
+            }
+        } else if (selectedElementIndex !== -1) {
+            if (selectedElementIndex > 0) {
+                selectedElementIndex--;
+            } else if (svgElements.length > 0) {
+                isSVGSelected = true;
+                selectedElementIndex = -1;
+                selectedSVGIndex = svgElements.length - 1;
+            }
+        } else if (svgElements.length > 0) {
+            isSVGSelected = true;
+            selectedSVGIndex = svgElements.length - 1;
+        } else if (textElements.length > 0) {
+            selectedElementIndex = textElements.length - 1;
+        }
+        
+        updateTextElementsList();
+        updateSVGElementsList();
+        updateElementProperties();
+        drawScene();
+        updateStatus(`Выбран элемент ${isSVGSelected ? 'SVG' : 'текст'}`, 'success');
+    }
+}
+
+function showHelp() {
+    const helpText = `
+Клавиши управления:
+
+Общие:
+• Delete / Del - удалить выделенный элемент
+• Esc - снять выделение
+• Tab - перейти к следующему элементу
+• Shift+Tab - перейти к предыдущему элементу
+• Пробел - показать/скрыть подложку
+
+Перемещение (Ctrl+стрелки):
+• Ctrl+↑ - вверх на 1 мм
+• Ctrl+↓ - вниз на 1 мм
+• Ctrl+← - влево на 1 мм
+• Ctrl+→ - вправо на 1 мм
+
+Размер/масштаб (Shift+стрелки):
+• Shift+↑ - увеличить
+• Shift+↓ - уменьшить
+• Shift+← - уменьшить ширину
+• Shift+→ - увеличить ширину
+
+Поворот (Alt+стрелки):
+• Alt+↑ / Alt+← - против часовой стрелки
+• Alt+↓ / Alt+→ - по часовой стрелке
+
+Быстрые действия:
+• Ctrl+R - сбросить поворот
+• Ctrl+S - сбросить масштаб SVG
+• F1 - эта справка
+• F2 - отладка элемента
+
+Ввод текста:
+• Escape - отменить ввод
+• Ctrl+Enter - завершить ввод
+`;
+    
+    alert(helpText);
+    updateStatus('Справка показана', 'success');
+}
+
+
+function moveSelectedElement(deltaX, deltaY) {
+    if (isSVGSelected && selectedSVGIndex !== -1) {
+        const element = svgElements[selectedSVGIndex];
+        element.x += deltaX;
+        element.y += deltaY;
+        updateElementProperties();
+        drawScene();
+        updateStatus(`SVG перемещен: X ${deltaX > 0 ? '+' : ''}${deltaX}мм, Y ${deltaY > 0 ? '+' : ''}${deltaY}мм`, 'success');
+    } else if (selectedElementIndex !== -1) {
+        const element = textElements[selectedElementIndex];
+        element.x += deltaX;
+        element.y += deltaY;
+        updateElementProperties();
+        drawScene();
+        updateStatus(`Элемент перемещен: X ${deltaX > 0 ? '+' : ''}${deltaX}мм, Y ${deltaY > 0 ? '+' : ''}${deltaY}мм`, 'success');
+    }
+}
+		
+function handleCanvasClick(event) {
+    if (isAddingText) return;
+    
+    const rect = mainCanvas.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / scaleFactor;
+    const y = sheetHeight - (event.clientY - rect.top) / scaleFactor;
+    
+    // Сначала проверяем SVG элементы
+    let svgClicked = false;
+    for (let i = svgElements.length - 1; i >= 0; i--) {
+        const element = svgElements[i];
+        
+        if (isPointInSVGElement(x, y, element)) {
+            selectedSVGIndex = i;
+            isSVGSelected = true;
+            selectedElementIndex = -1;
+            
+            // ДОБАВЛЕНО: Обновляем списки чтобы выделился в списке
+            updateTextElementsList();
+            updateSVGElementsList();
+            updateElementProperties();
+            drawScene();
+            svgClicked = true;
+            updateStatus(`SVG элемент выбран`, 'success');
+            break;
+        }
+    }
+    
+    if (!svgClicked) {
+        isSVGSelected = false;
+        selectedSVGIndex = -1; // ДОБАВЛЕНО: сбрасываем индекс SVG
+        
+        // Проверяем текстовые элементы
+        let elementClicked = false;
+        for (let i = textElements.length - 1; i >= 0; i--) {
+            const element = textElements[i];
+            
+            if (isPointInTextElement(x, y, element)) {
+                selectedElementIndex = i;
+                selectedSVGIndex = -1;
+                isSVGSelected = false; // ДОБАВЛЕНО: явно сбрасываем флаг
+                updateTextElementsList();
+                updateSVGElementsList(); // ДОБАВЛЕНО: обновляем список SVG тоже
+                updateElementProperties();
+                drawScene();
+                elementClicked = true;
+                break;
+            }
+        }
+        
+        // Если не кликнули на существующий элемент, начинаем добавление нового текста
+        if (!elementClicked) {
+            startTextInput(x, y);
+        }
+    }
+}
+
+        function startTextInput(x, y) {
+            if (fonts.length === 0) {
+                updateStatus('Сначала загрузите шрифты', 'error');
+                return;
+            }
+
+            isAddingText = true;
+            
+            // x,y - в системе плоттера (0,0 - нижний левый)
+            // Конвертируем в координаты канваса для отображения окна ввода
+            const screenX = x * scaleFactor;
+            const screenY = (sheetHeight - y) * scaleFactor; // Инвертируем обратно для канваса
+            
+            textInputOverlay.style.left = (screenX + 10) + 'px';
+            textInputOverlay.style.top = (screenY + 10) + 'px';
+            textInputOverlay.style.display = 'block';
+            textInput.value = '';
+            textInput.focus();
+            
+            // Сохраняем координаты в системе плоттера
+            textInput.dataset.x = x;
+            textInput.dataset.y = y; // Это уже координата от нижнего края!
+            
+            // Очищаем индекс (это новый текст, не редактирование)
+            delete textInput.dataset.index;
+        }
+
+        function handleTextInputKeydown(event) {
+            if (event.key === 'Enter' && event.ctrlKey) {
+                event.preventDefault();
+                finishTextInput();
+            } else if (event.key === 'Escape') {
+                cancelTextInput();
+            }
+        }
+
+        function finishTextInput() {
+            const text = textInput.value.trim();
+            
+            // Убираем все обработчики чтобы избежать дублирования
+            textInput.removeEventListener('blur', finishTextInput);
+            
+            if (!text) {
+                cancelTextInput();
+                return;
+            }
+            
+            if (textInput.dataset.index !== undefined) {
+                // Редактирование существующего элемента
+                const index = parseInt(textInput.dataset.index);
+                updateTextElementText(index, text);
+            } else {
+                // Создание нового элемента - только один раз!
+                addTextElementAtPosition(text, parseFloat(textInput.dataset.x), parseFloat(textInput.dataset.y));
+            }
+            
+            textInputOverlay.style.display = 'none';
+            isAddingText = false;
+        }
+        
+        async function updateTextElementText(index, newText) {
+            if (index < 0 || index >= textElements.length) return;
+            
+            const element = textElements[index];
+            const oldText = element.text;
+            
+            showLoading(true);
+            try {
+                element.text = newText;
+                await element.generatePaths();
+                
+                updateTextElementsList();
+                drawScene();
+                updateStatus(`Текст изменен: "${oldText}" -> "${newText}"`, 'success');
+            } catch (error) {
+                console.error('Ошибка обновления текста:', error);
+                updateStatus('Ошибка обновления текста', 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function cancelTextInput() {
+            textInputOverlay.style.display = 'none';
+            isAddingText = false;
+        }
+
+        async function addTextElementAtPosition(text, x, y) {
+            if (fonts.length === 0) {
+                updateStatus('Сначала загрузите шрифты', 'error');
+                return;
+            }
+
+            const fontPath = fontSelect.value;
+            const fontSize = parseFloat(fontSizeInput.value);
+            
+            const selectedFont = fonts.find(f => f.path === fontPath);
+            if (!selectedFont) {
+                updateStatus('Выберите шрифт', 'error');
+                return;
+            }
+            
+            showLoading(true);
+            try {
+                const newElement = new TextElement(
+                    Date.now(),
+                    text,
+                    selectedFont.instance,
+                    fontSize,
+                    x,
+                    y
+                );
+                
+                await newElement.generatePaths();
+                
+                textElements.push(newElement);
+                selectedElementIndex = textElements.length - 1;
+                updateTextElementsList();
+                updateElementProperties();
+                drawScene();
+                updateStatus(`Текст добавлен: "${text}"`, 'success');
+            } catch (error) {
+                console.error('Ошибка создания текстового элемента:', error);
+                updateStatus('Ошибка создания текста', 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function handleBackgroundImage(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                backgroundImage = new Image();
+                backgroundImage.onload = function() {
+                    backgroundVisible = true;
+                    // Показываем панель управления изображением
+                    backgroundImageControls.style.display = 'block';
+                    drawScene();
+                    updateStatus('Фоновое изображение загружено', 'success');
+                };
+                backgroundImage.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function updatePenCrosshair() {
+            const penX = parseFloat(penStartXInput.value) || 0;
+            const penY = parseFloat(penStartYInput.value) || 0;
+            
+            const screenX = penX * scaleFactor;
+            const screenY = (sheetHeight - penY) * scaleFactor;
+            
+            penCrosshair.style.left = (screenX - 10) + 'px';
+            penCrosshair.style.top = (screenY - 10) + 'px';
+            penCrosshair.style.display = 'block';
+            
+            drawScene();
+        }
+
+        function updateCoordinatesDisplay(event) {
+            const rect = mainCanvas.getBoundingClientRect();
+            const x = (event.clientX - rect.left) / scaleFactor;
+            const y = sheetHeight - (event.clientY - rect.top) / scaleFactor;
+            
+            coordinateSystemDiv.textContent = `X: ${x.toFixed(1)}, Y: ${y.toFixed(1)} (клик - добавить текст, зажать - переместить перо)`;
+        }
+        
+        function updateSheetSize() {
+            sheetWidth = parseInt(sheetWidthInput.value);
+            sheetHeight = parseInt(sheetHeightInput.value);
+            updateCanvasSize();
+            updateStatus(`Размер листа обновлен: ${sheetWidth}×${sheetHeight} мм`, 'success');
+			updatePenCrosshair();
+        }
+        
+        function updateTextElementsList() {
+            textElementsList.innerHTML = '';
+            
+            textElements.forEach((element, index) => {
+                const div = document.createElement('div');
+                div.className = `text-element ${index === selectedElementIndex ? 'active' : ''}`;
+                div.textContent = `${element.text} (${element.fontSize}мм)`;
+                div.dataset.index = index;
+                
+                div.addEventListener('click', () => {
+                    selectedElementIndex = index;
+                    updateTextElementsList();
+                    updateElementProperties();
+                    drawScene();
+                });
+                
+                div.addEventListener('dblclick', () => {
+                    startTextEdit(element, index);
+                });
+                
+                textElementsList.appendChild(div);
+            });
+        }
+
+        function startTextEdit(element, index) {
+            if (fonts.length === 0) {
+                updateStatus('Сначала загрузите шрифты', 'error');
+                return;
+            }
+
+            isAddingText = true;
+            selectedElementIndex = index;
+            
+            // Получаем bounding box элемента со смещением
+            const bbox = element.getBoundingBox();
+            
+            // Позиционируем окно ввода с учетом высоты шрифта
+            const screenX = element.x * scaleFactor;
+            const screenY = (sheetHeight - element.y - element.fontSize) * scaleFactor; // СМЕЩАЕМ ВНИЗ
+            
+            textInputOverlay.style.left = (screenX + 5) + 'px';
+            textInputOverlay.style.top = (screenY - 5) + 'px'; // Корректируем позицию
+            textInputOverlay.style.display = 'block';
+            textInput.value = element.text;
+            textInput.focus();
+            
+            textInput.dataset.index = index;
+        }
+
+function updateElementProperties() {
+    if (selectedElementIndex === -1 && !isSVGSelected) {
+        propertiesPanel.style.display = 'none';
+        return;
+    }
+
+    propertiesPanel.style.display = 'block';
+    
+    // Заполнить список шрифтов если он пустой
+    if (elementFontSelect.options.length <= 1) {
+        elementFontSelect.innerHTML = '<option value="">-- Выберите шрифт --</option>';
+        fonts.forEach(font => {
+            const option = document.createElement('option');
+            option.value = font.path;
+            option.textContent = font.name;
+            elementFontSelect.appendChild(option);
+        });
+    }
+    
+    if (isSVGSelected && selectedSVGIndex !== -1) {
+        // Настройки для SVG элемента
+        const element = svgElements[selectedSVGIndex];
+        elementXInput.value = element.x.toFixed(1);
+        elementYInput.value = element.y.toFixed(1);
+        elementFontSizeInput.value = (element.width * element.scale).toFixed(1);
+        elementRotationInput.value = (element.rotation * 180 / Math.PI).toFixed(1);
+        
+        // Скрыть выбор шрифта для SVG элементов
+        document.querySelector('label[for="elementFont"]').style.display = 'none';
+        elementFontSelect.style.display = 'none';
+        
+        // Переименуем label для размера
+        document.querySelector('label[for="elementFontSize"]').textContent = 'Ширина (мм):';
+        
+    } else if (selectedElementIndex !== -1) {
+        // Настройки для текстового элемента
+        const element = textElements[selectedElementIndex];
+        elementXInput.value = element.x.toFixed(1);
+        elementYInput.value = element.y.toFixed(1);
+        elementFontSizeInput.value = element.fontSize;
+        elementRotationInput.value = (element.rotation * 180 / Math.PI).toFixed(1);
+        
+        // Показать выбор шрифта для текстовых элементов
+        document.querySelector('label[for="elementFont"]').style.display = 'block';
+        elementFontSelect.style.display = 'block';
+        
+        // Установить текущий шрифт элемента
+        const currentFontPath = getFontPathByInstance(element.font);
+        elementFontSelect.value = currentFontPath || '';
+        
+        // Вернем оригинальный label
+        document.querySelector('label[for="elementFontSize"]').textContent = 'Размер шрифта (мм):';
+    }
+}
+
+function getFontPathByInstance(fontInstance) {
+    const font = fonts.find(f => f.instance === fontInstance);
+    return font ? font.path : '';
+}
+
+function updateSVGElementsList() {
+    const svgList = document.getElementById('svgElementsList');
+    svgList.innerHTML = '';
+    
+    svgElements.forEach((element, index) => {
+        const div = document.createElement('div');
+        // ИСПРАВЛЕНИЕ: Используем класс 'text-element' как у текстовых элементов
+        // и добавляем класс 'active' только когда элемент выбран И это SVG элемент
+        div.className = `text-element ${index === selectedSVGIndex && isSVGSelected ? 'active' : ''}`;
+        div.textContent = `SVG элемент ${index + 1} (${(element.width * element.scale).toFixed(0)}×${(element.height * element.scale).toFixed(0)}мм)`;
+        div.dataset.index = index;
+        
+        div.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectedSVGIndex = index;
+            isSVGSelected = true;
+            selectedElementIndex = -1;
+            updateTextElementsList();
+            updateSVGElementsList();
+            updateElementProperties();
+            drawScene();
+        });
+        
+        div.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            // Можно добавить функционал редактирования SVG
+            updateStatus(`SVG элемент ${index + 1} двойной клик`, 'success');
+        });
+        
+        svgList.appendChild(div);
+    });
+}
+
+
+async function updateSelectedElement() {
+    if (selectedElementIndex === -1 && !isSVGSelected) return;
+
+    showLoading(true);
+    try {
+        if (isSVGSelected && selectedSVGIndex !== -1) {
+            const element = svgElements[selectedSVGIndex];
+            const newX = parseFloat(elementXInput.value);
+            const newY = parseFloat(elementYInput.value);
+            const newWidth = parseFloat(elementFontSizeInput.value);
+            const newRotation = parseFloat(elementRotationInput.value) * Math.PI / 180;
+
+            element.x = newX;
+            element.y = newY;
+            element.scale = newWidth / element.width;
+            element.rotation = newRotation;
+
+            drawScene();
+            updateStatus('Свойства SVG обновлены', 'success');
+            
+        } else if (selectedElementIndex !== -1) {
+            const element = textElements[selectedElementIndex];
+            const newX = parseFloat(elementXInput.value);
+            const newY = parseFloat(elementYInput.value);
+            const newFontSize = parseFloat(elementFontSizeInput.value);
+            const newRotation = parseFloat(elementRotationInput.value) * Math.PI / 180;
+            const newFontPath = elementFontSelect.value;
+
+            // Проверяем, изменился ли шрифт
+            if (newFontPath) {
+                const selectedFont = fonts.find(f => f.path === newFontPath);
+                if (selectedFont && selectedFont.instance !== element.font) {
+                    element.font = selectedFont.instance;
+                    await element.generatePaths();
+                }
+            }
+
+            if (newFontSize !== element.fontSize) {
+                await element.updateFontSize(newFontSize);
+            }
+
+            element.x = newX;
+            element.y = newY;
+            element.rotation = newRotation;
+
+            drawScene();
+            updateStatus('Свойства элемента обновлены', 'success');
+        }
+    } catch (error) {
+        console.error('Ошибка обновления элемента:', error);
+        updateStatus('Ошибка обновления элемента', 'error');
+    } finally {
+        showLoading(false);
+    }
+}
+        
+function deleteSelectedElement() {
+    if (isSVGSelected && selectedSVGIndex !== -1) {
+        const deletedElement = svgElements[selectedSVGIndex];
+        svgElements.splice(selectedSVGIndex, 1);
+        isSVGSelected = false;
+        selectedSVGIndex = -1;
+        
+        // Обновляем список SVG элементов
+        updateSVGElementsList();
+        updateElementProperties();
+        drawScene();
+        updateStatus(`SVG элемент удален`, 'success');
+    } else if (selectedElementIndex !== -1) {
+        const deletedText = textElements[selectedElementIndex].text;
+        textElements.splice(selectedElementIndex, 1);
+        selectedElementIndex = -1;
+        
+        // Обновляем список текстовых элементов
+        updateTextElementsList();
+        updateElementProperties();
+        drawScene();
+        updateStatus(`Текст удален: "${deletedText}"`, 'success');
+    } else {
+        updateStatus('Выберите элемент для удаления', 'error');
+    }
+}
+
+function handleMouseDown(event) {
+    if (isAddingText) return;
+    
+    const rect = mainCanvas.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / scaleFactor;
+    const y = sheetHeight - (event.clientY - rect.top) / scaleFactor;
+    
+    // Проверка на перо
+    const penX = parseFloat(penStartXInput.value) || 0;
+    const penY = parseFloat(penStartYInput.value) || 0;
+    const distance = Math.sqrt(Math.pow(x - penX, 2) + Math.pow(y - penY, 2));
+    
+    if (distance < 5) {
+        isMovingPen = true;
+        penDragStartX = x;
+        penDragStartY = y;
+        return;
+    }
+    
+    // Проверка на SVG элементы
+    for (let i = svgElements.length - 1; i >= 0; i--) {
+        const element = svgElements[i];
+        
+        if (isPointInSVGElement(x, y, element)) {
+            selectedSVGIndex = i;
+            isSVGSelected = true;
+            selectedElementIndex = -1;
+            updateTextElementsList();
+            updateSVGElementsList(); // ДОБАВЛЕНО
+            updateElementProperties();
+            
+            isDragging = true;
+            dragOffsetX = x - element.x;
+            dragOffsetY = y - element.y;
+            
+            drawScene();
+            return;
+        }
+    }
+    
+    // Проверка на текстовые элементы
+    for (let i = textElements.length - 1; i >= 0; i--) {
+        const element = textElements[i];
+        
+        if (isPointInTextElement(x, y, element)) {
+            selectedElementIndex = i;
+            isSVGSelected = false;
+            selectedSVGIndex = -1;
+            updateTextElementsList();
+            updateSVGElementsList(); // ДОБАВЛЕНО
+            updateElementProperties();
+            
+            isDragging = true;
+            dragOffsetX = x - element.x;
+            dragOffsetY = y - element.y;
+            
+            drawScene();
+            return;
+        }
+    }
+    
+    selectedElementIndex = -1;
+    isSVGSelected = false;
+    selectedSVGIndex = -1;
+    updateTextElementsList();
+    updateSVGElementsList(); // ДОБАВЛЕНО
+    updateElementProperties();
+    drawScene();
+}
+
+function handleMouseMove(event) {
+    if (isDragging) {
+        const rect = mainCanvas.getBoundingClientRect();
+        const x = (event.clientX - rect.left) / scaleFactor;
+        const y = sheetHeight - (event.clientY - rect.top) / scaleFactor;
+        
+        if (isSVGSelected && selectedSVGIndex !== -1) {
+            svgElements[selectedSVGIndex].x = x - dragOffsetX;
+            svgElements[selectedSVGIndex].y = y - dragOffsetY;
+            updateElementProperties();
+            drawScene();
+        } else if (selectedElementIndex !== -1) {
+            textElements[selectedElementIndex].x = x - dragOffsetX;
+            textElements[selectedElementIndex].y = y - dragOffsetY;
+            updateElementProperties();
+            drawScene();
+        }
+    } else if (isMovingPen) {
+        const rect = mainCanvas.getBoundingClientRect();
+        const x = (event.clientX - rect.left) / scaleFactor;
+        const y = sheetHeight - (event.clientY - rect.top) / scaleFactor;
+        
+        penStartXInput.value = x.toFixed(1);
+        penStartYInput.value = y.toFixed(1);
+        updatePenCrosshair();
+    }
+}
+        
+        function handleMouseUp() {
+            isDragging = false;
+            isMovingPen = false;
+        }
+        
+		function isPointInTextElement(x, y, element) {
+			const bbox = element.getBoundingBox();
+			
+			// Центр элемента для поворота
+			const centerX = element.x + bbox.width / 2;
+			const centerY = element.y + bbox.height / 2;
+			
+			const cos = Math.cos(element.rotation); // Оставляем положительный угол
+			const sin = Math.sin(element.rotation); // Оставляем положительный угол
+			
+			// Преобразуем точку клика относительно центра элемента
+			// Учитываем что Y в системе плоттера растет вверх
+			const localX = (x - centerX) * cos - (y - centerY) * sin;
+			const localY = (x - centerX) * sin + (y - centerY) * cos;
+			
+			// Проверяем попадание в bounding box относительно центра
+			return localX >= -bbox.width / 2 && localX <= bbox.width / 2 && 
+				   localY >= -bbox.height / 2 && localY <= bbox.height / 2;
+		}
+		
+		function isPointInSVGElement(x, y, element) {
+			const bbox = element.getBoundingBox();
+			
+			// Центр элемента для поворота
+			const centerX = element.x + bbox.width / 2;
+			const centerY = element.y + bbox.height / 2;
+			
+			const cos = Math.cos(element.rotation);
+			const sin = Math.sin(element.rotation);
+			
+			// Преобразуем точку клика относительно центра элемента
+			const localX = (x - centerX) * cos - (y - centerY) * sin;
+			const localY = (x - centerX) * sin + (y - centerY) * cos;
+			
+			// Проверяем попадание в bounding box
+			return localX >= -bbox.width / 2 && localX <= bbox.width / 2 && 
+				   localY >= -bbox.height / 2 && localY <= bbox.height / 2;
+		}
+      
+        function drawScene() {
+            ctx.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, mainCanvas.width, mainCanvas.height);
+            
+            if (backgroundVisible && backgroundImage) {
+                ctx.globalAlpha = 0.3;
+                
+                if (stretchBackground) {
+                    // Растягиваем изображение на весь лист
+                    ctx.drawImage(backgroundImage, 0, 0, mainCanvas.width, mainCanvas.height);
+                } else {
+                    // Сохраняем пропорции
+                    const imgAspect = backgroundImage.width / backgroundImage.height;
+                    const canvasAspect = sheetWidth / sheetHeight;
+                    
+                    let drawWidth, drawHeight, offsetX, offsetY;
+                    
+                    if (imgAspect > canvasAspect) {
+                        drawWidth = sheetWidth * scaleFactor;
+                        drawHeight = drawWidth / imgAspect;
+                        offsetX = 0;
+                        offsetY = sheetHeight * scaleFactor - drawHeight;
+                    } else {
+                        drawHeight = sheetHeight * scaleFactor;
+                        drawWidth = drawHeight * imgAspect;
+                        offsetX = (sheetWidth * scaleFactor - drawWidth) / 2;
+                        offsetY = 0;
+                    }
+                    
+                    ctx.drawImage(backgroundImage, offsetX, offsetY, drawWidth, drawHeight);
+                }
+                ctx.globalAlpha = 1.0;
+            }
+            
+            // Остальная отрисовка (сетка, текст и т.д.)
+            ctx.strokeStyle = '#cccccc';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(0, 0, mainCanvas.width, mainCanvas.height);
+            
+            ctx.strokeStyle = '#f0f0f0';
+            ctx.lineWidth = 0.3;
+            ctx.fillStyle = '#666666';
+            ctx.font = '10px Arial';
+            
+            for (let x = 10; x < sheetWidth; x += 10) {
+                const screenX = x * scaleFactor;
+                ctx.beginPath();
+                ctx.moveTo(screenX, 0);
+                ctx.lineTo(screenX, mainCanvas.height);
+                ctx.stroke();
+                
+                if (x % 50 === 0) {
+                    ctx.fillText(x.toString(), screenX + 2, mainCanvas.height - 2);
+                }
+            }
+            
+            for (let y = 10; y < sheetHeight; y += 10) {
+                const screenY = mainCanvas.height - y * scaleFactor;
+                ctx.beginPath();
+                ctx.moveTo(0, screenY);
+                ctx.lineTo(mainCanvas.width, screenY);
+                ctx.stroke();
+                
+                if (y % 50 === 0) {
+                    ctx.fillText(y.toString(), 2, screenY - 2);
+                }
+            }
+            
+            textElements.forEach((element, index) => {
+                drawTextElement(element, index === selectedElementIndex);
+            });
+			svgElements.forEach((element, index) => {
+				drawSVGElement(element, index === selectedSVGIndex && isSVGSelected);
+			});
+        }
+                
+function drawTextElement(element, isSelected) {
+    ctx.save();
+    
+    // Используем displayPaths которые уже повернуты
+    const paths = element.getDisplayPaths();
+    
+    // Рисование текста
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    
+    for (const path of paths) {
+        if (path.length < 2) continue;
+        
+        ctx.beginPath();
+        // Конвертируем в координаты канваса (инвертируем Y)
+        const startX = path[0].x * scaleFactor;
+        const startY = (sheetHeight - path[0].y) * scaleFactor;
+        
+        ctx.moveTo(startX, startY);
+        
+        for (let i = 1; i < path.length; i++) {
+            const pointX = path[i].x * scaleFactor;
+            const pointY = (sheetHeight - path[i].y) * scaleFactor;
+            ctx.lineTo(pointX, pointY);
+        }
+        
+        ctx.stroke();
+    }
+    
+    // Рамка выделения
+    if (isSelected) {
+        const bbox = element.getBoundingBox();
+        const centerX = bbox.x + bbox.width / 2;
+        const centerY = bbox.y + bbox.height / 2;
+        
+        // Конвертируем центр в координаты канваса
+        const screenCenterX = centerX * scaleFactor;
+        const screenCenterY = (sheetHeight - centerY) * scaleFactor;
+        
+        ctx.save();
+        ctx.translate(screenCenterX, screenCenterY);
+        // ИНВЕРТИРУЕМ УГОЛ ДЛЯ КАНВАСА (отрицательное вращение)
+        ctx.rotate(-element.rotation);
+        
+        const scaledWidth = bbox.width * scaleFactor;
+        const scaledHeight = bbox.height * scaleFactor;
+        
+        ctx.strokeStyle = '#007cba';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+        ctx.strokeRect(-scaledWidth / 2, -scaledHeight / 2, scaledWidth, scaledHeight);
+        ctx.setLineDash([]);
+        
+        // Добавим угловые маркеры для наглядности
+        ctx.fillStyle = '#007cba';
+        const markerSize = 6;
+        ctx.fillRect(-scaledWidth/2 - markerSize/2, -scaledHeight/2 - markerSize/2, markerSize, markerSize);
+        ctx.fillRect(scaledWidth/2 - markerSize/2, -scaledHeight/2 - markerSize/2, markerSize, markerSize);
+        ctx.fillRect(-scaledWidth/2 - markerSize/2, scaledHeight/2 - markerSize/2, markerSize, markerSize);
+        ctx.fillRect(scaledWidth/2 - markerSize/2, scaledHeight/2 - markerSize/2, markerSize, markerSize);
+        
+        ctx.restore();
+    }
+    
+    ctx.restore();
+}
+   
+function drawSVGElement(element, isSelected) {
+    if (!element.svgImage) return;
+    
+    ctx.save();
+    
+    const paths = element.getDisplayPaths();
+    
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    
+    for (const path of paths) {
+        if (path.length < 2) continue;
+        
+        ctx.beginPath();
+        const startX = path[0].x * scaleFactor;
+        const startY = (sheetHeight - path[0].y) * scaleFactor;
+        
+        ctx.moveTo(startX, startY);
+        
+        for (let i = 1; i < path.length; i++) {
+            const pointX = path[i].x * scaleFactor;
+            const pointY = (sheetHeight - path[i].y) * scaleFactor;
+            ctx.lineTo(pointX, pointY);
+        }
+        
+        ctx.stroke();
+    }
+    
+    // Рамка выделения
+    if (isSelected) {
+        const bbox = element.getBoundingBox();
+        const centerX = bbox.x + bbox.width / 2;
+        const centerY = bbox.y + bbox.height / 2;
+        
+        const screenCenterX = centerX * scaleFactor;
+        const screenCenterY = (sheetHeight - centerY) * scaleFactor;
+        
+        ctx.save();
+        ctx.translate(screenCenterX, screenCenterY);
+        ctx.rotate(-element.rotation);
+        
+        const scaledWidth = bbox.width * scaleFactor;
+        const scaledHeight = bbox.height * scaleFactor;
+        
+        ctx.strokeStyle = '#ff6600';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+        ctx.strokeRect(-scaledWidth / 2, -scaledHeight / 2, scaledWidth, scaledHeight);
+        ctx.setLineDash([]);
+        
+        ctx.fillStyle = '#ff6600';
+        const markerSize = 8;
+        ctx.fillRect(-scaledWidth/2 - markerSize/2, -scaledHeight/2 - markerSize/2, markerSize, markerSize);
+        ctx.fillRect(scaledWidth/2 - markerSize/2, -scaledHeight/2 - markerSize/2, markerSize, markerSize);
+        ctx.fillRect(-scaledWidth/2 - markerSize/2, scaledHeight/2 - markerSize/2, markerSize, markerSize);
+        ctx.fillRect(scaledWidth/2 - markerSize/2, scaledHeight/2 - markerSize/2, markerSize, markerSize);
+        
+        ctx.restore();
+    }
+    
+    ctx.restore();
+}
+
+
+async function exportToSvg() {
+    if (textElements.length === 0 && svgElements.length === 0) {
+        updateStatus('Нет элементов для экспорта', 'error');
+        return;
+    }
+    
+    showLoading(true);
+    try {
+        let svgContent = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${sheetWidth}mm" height="${sheetHeight}mm" viewBox="0 0 ${sheetWidth} ${sheetHeight}" 
+     xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink">
+  <defs>
+    <!-- Styles for the design -->
+    <style type="text/css">
+      .text-path { fill: none; stroke: black; stroke-width: 0.1; }
+      .svg-element { fill: none; stroke: black; stroke-width: 0.1; }
+    </style>
+  </defs>
+  
+  <!-- Background (if any) -->
+  <rect width="100%" height="100%" fill="white"/>
+  
+  <!-- ДОБАВЛЕНО: Отражаем всю сцену по вертикали -->
+  <g transform="scale(1, -1) translate(0, -${sheetHeight})">
+`;
+        
+        // Экспорт текстовых элементов (первый вариант из вашего кода)
+        for (let element of textElements) {
+            const paths = element.getDisplayPaths(); // Используем displayPaths а не gcodePaths
+            if (paths.length === 0) continue;
+            
+            svgContent += `  <g class="text-element">\n`;
+            
+            for (const path of paths) {
+                if (path.length < 2) continue;
+                
+                let pathData = `M ${path[0].x.toFixed(3)} ${path[0].y.toFixed(3)}`;
+                for (let i = 1; i < path.length; i++) {
+                    pathData += ` L ${path[i].x.toFixed(3)} ${path[i].y.toFixed(3)}`;
+                }
+                
+                svgContent += `    <path d="${pathData}" class="text-path"/>\n`;
+            }
+            
+            svgContent += `  </g>\n`;
+        }
+        
+        // Экспорт SVG элементов (исправленный первый вариант)
+        for (let element of svgElements) {
+            // Получаем пути для отображения (они уже в правильных координатах)
+            const paths = element.getDisplayPaths();
+            if (paths.length === 0) continue;
+            
+            // Создаем группу для этого SVG элемента
+            svgContent += `  <g class="svg-element">\n`;
+            
+            // Рисуем все пути этого элемента
+            for (const path of paths) {
+                if (path.length < 2) continue;
+                
+                // Создаем путь SVG из координат
+                let pathData = `M ${path[0].x.toFixed(3)} ${path[0].y.toFixed(3)}`;
+                for (let i = 1; i < path.length; i++) {
+                    pathData += ` L ${path[i].x.toFixed(3)} ${path[i].y.toFixed(3)}`;
+                }
+                
+                svgContent += `    <path d="${pathData}" class="svg-path"/>\n`;
+            }
+            
+            svgContent += `  </g>\n`;
+        }
+        
+        // Закрываем группу отражения
+        svgContent += `  </g>\n`;
+        
+        svgContent += '</svg>';
+        
+        // Создаем и скачиваем файл
+        const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'plotter_design_' + new Date().toISOString().slice(0,10) + '.svg';
+        document.body.appendChild(a);
+        a.click();
+        
+        // Очистка
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 100);
+        
+        updateStatus('SVG файл экспортирован', 'success');
+    } catch (error) {
+        console.error('Ошибка экспорта SVG:', error);
+        updateStatus('Ошибка экспорта SVG: ' + error.message, 'error');
+    } finally {
+        showLoading(false);
+    }
+}        
+async function exportToGcode() {
+    if (textElements.length === 0 && svgElements.length === 0) {
+        updateStatus('Нет элементов для экспорта', 'error');
+        return;
+    }
+
+    showLoading(true);
+    try {
+        const penStartX = parseFloat(penStartXInput.value) || 0;
+        const penStartY = parseFloat(penStartYInput.value) || 0;
+        const pauseTime = parseInt(pauseTimeInput.value) || 100;
+        const travelSpeed = parseInt(travelSpeedInput.value) || 3000;
+        const drawSpeed = parseInt(drawSpeedInput.value) || 1500;
+       
+        let gcode = generateGCode(textElements, svgElements, penStartX, penStartY, pauseTime, travelSpeed, drawSpeed);
+
+        const blob = new Blob([gcode], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'plotter_design.gcode';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        updateStatus('G-code файл экспортирован', 'success');
+    } catch (error) {
+        console.error('Ошибка экспорта G-code:', error);
+        updateStatus('Ошибка экспорта G-code: ' + error.message, 'error');
+    } finally {
+        showLoading(false);
+    }
+}
+
+function generateGCode(textElements, svgElements, penStartX, penStartY, pauseTime, travelSpeed, drawSpeed) {
+    let gcode = [];
+    
+    gcode.push('G21');
+    gcode.push('G90');
+    gcode.push('G92 X0 Y0 Z0');
+    gcode.push('M280 P0 S30.00');  // Перо вверх
+    gcode.push('G4 P' + pauseTime);
+    gcode.push('');
+
+    // Собираем все пути
+    let allPaths = [];
+    
+    // Текстовые элементы
+    textElements.forEach(element => {
+        const elementPaths = element.getGcodePaths();
+        allPaths = allPaths.concat(elementPaths);
+    });
+    
+    // SVG элементы
+    svgElements.forEach((element, index) => {
+        if (element.getGcodePaths) {
+            const elementPaths = element.getGcodePaths();
+            allPaths = allPaths.concat(elementPaths);
+        }
+    });
+    
+    if (allPaths.length === 0) {
+        gcode.push('M280 P0 S30.00');
+        gcode.push('G4 P' + pauseTime);
+        gcode.push(`G1 X${penStartX.toFixed(2)} Y${penStartY.toFixed(2)} F` + travelSpeed);
+        gcode.push('M2');
+        return gcode.join('\n');
+    }
+    
+    // ПАРАМЕТРЫ ОПТИМИЗАЦИИ - МОЖНО НАСТРАИВАТЬ
+    const MAX_DISTANCE_NO_LIFT = 0.5; // Максимальное расстояние (мм) для продолжения рисования без подъема пера
+    const MIN_POINTS_IN_PATH = 0;     // Минимальное количество точек в пути
+    
+    // Объединяем близко расположенные пути
+    let optimizedPaths = [];
+    let currentPath = null;
+    
+    // Сначала сортируем все начальные точки по расстоянию от стартовой позиции
+    allPaths.sort((a, b) => {
+        const distA = Math.sqrt(Math.pow(a[0].x - penStartX, 2) + Math.pow(a[0].y - penStartY, 2));
+        const distB = Math.sqrt(Math.pow(b[0].x - penStartX, 2) + Math.pow(b[0].y - penStartY, 2));
+        return distA - distB;
+    });
+    
+    for (let i = 0; i < allPaths.length; i++) {
+        const path = allPaths[i];
+        
+        if (path.length < MIN_POINTS_IN_PATH) continue;
+        
+        if (!currentPath) {
+            // Начинаем новый путь
+            currentPath = [...path];
+        } else {
+            // Проверяем расстояние между последней точкой текущего пути 
+            // и первой точкой нового пути
+            const lastPoint = currentPath[currentPath.length - 1];
+            const firstPoint = path[0];
+            const distance = Math.sqrt(
+                Math.pow(lastPoint.x - firstPoint.x, 2) + 
+                Math.pow(lastPoint.y - firstPoint.y, 2)
+            );
+            
+            if (distance <= MAX_DISTANCE_NO_LIFT) {
+                // Расстояние небольшое - продолжаем рисовать без подъема пера
+                // Пропускаем первую точку нового пути (она совпадает с последней)
+                for (let j = 1; j < path.length; j++) {
+                    currentPath.push(path[j]);
+                }
+            } else {
+                // Расстояние большое - завершаем текущий путь и начинаем новый
+                optimizedPaths.push(currentPath);
+                currentPath = [...path];
+            }
+        }
+    }
+    
+    // Добавляем последний путь
+    if (currentPath && currentPath.length >= MIN_POINTS_IN_PATH) {
+        optimizedPaths.push(currentPath);
+    }
+    
+    console.log(`Оптимизация: было ${allPaths.length} путей, стало ${optimizedPaths.length} путей`);
+    
+    // Генерация G-code с оптимизированными путями
+    let currentX = penStartX;
+    let currentY = penStartY;
+    
+    // Сортировка оптимизированных путей по расстоянию от текущей позиции
+    optimizedPaths.sort((a, b) => {
+        const distA = Math.sqrt(Math.pow(a[0].x - currentX, 2) + Math.pow(a[0].y - currentY, 2));
+        const distB = Math.sqrt(Math.pow(b[0].x - currentX, 2) + Math.pow(b[0].y - currentY, 2));
+        return distA - distB;
+    });
+    
+    while (optimizedPaths.length > 0) {
+        let closestIndex = 0;
+        let closestDistance = Math.sqrt(
+            Math.pow(optimizedPaths[0][0].x - currentX, 2) + 
+            Math.pow(optimizedPaths[0][0].y - currentY, 2)
+        );
+        
+        for (let i = 1; i < optimizedPaths.length; i++) {
+            const pathStart = optimizedPaths[i][0];
+            const distance = Math.sqrt(
+                Math.pow(pathStart.x - currentX, 2) + 
+                Math.pow(pathStart.y - currentY, 2)
+            );
+            
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestIndex = i;
+            }
+        }
+        
+        const path = optimizedPaths[closestIndex];
+        
+        // Перемещение к началу пути (перо вверху)
+        gcode.push('G4 P' + pauseTime);
+        gcode.push('M280 P0 S30.00');  // Поднять перо
+        gcode.push('G4 P' + pauseTime);
+        gcode.push('G1 X' + path[0].x.toFixed(2) + ' Y' + path[0].y.toFixed(2) + ' F' + travelSpeed);
+        
+        // Проверяем, нужно ли опускать перо (если мы не продолжаем предыдущий путь)
+        const distanceFromCurrent = Math.sqrt(
+            Math.pow(path[0].x - currentX, 2) + 
+            Math.pow(path[0].y - currentY, 2)
+        );
+        
+        if (distanceFromCurrent > 0.1) { // Порог 0.1 мм
+            // Опускаем перо
+            gcode.push('G4 P' + pauseTime);
+            gcode.push('M280 P0 S0.00');   // Опустить перо
+            gcode.push('G4 P' + pauseTime);
+        }
+        
+        // Рисование пути
+        for (let i = 0; i < path.length; i++) {
+            const point = path[i];
+            // Для первой точки используем скорость перемещения, для остальных - скорость рисования
+            const speed = (i === 0 && distanceFromCurrent > 0.1) ? travelSpeed : drawSpeed;
+            gcode.push('G1 X' + point.x.toFixed(2) + ' Y' + point.y.toFixed(2) + ' F' + speed);
+        }
+        
+        // Обновляем позицию
+        currentX = path[path.length - 1].x;
+        currentY = path[path.length - 1].y;
+        
+        // Удаляем обработанный путь
+        optimizedPaths.splice(closestIndex, 1);
+    }
+    
+    // Завершение
+    gcode.push('G4 P' + pauseTime);
+    gcode.push('M280 P0 S30.00');  // Поднять перо
+    gcode.push('G4 P' + pauseTime);
+    gcode.push(`G1 X${penStartX.toFixed(2)} Y${penStartY.toFixed(2)} F` + travelSpeed);
+    gcode.push('M2');
+    
+    return gcode.join('\n');
+}
+
+        function showLoading(show) {
+            loadingDiv.style.display = show ? 'block' : 'none';
+        }
+        
+        function updateStatus(message, type) {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+        }
+        
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>

@@ -1,0 +1,3725 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Простой векторный редактор</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background: #2d2d2d;
+            color: white;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        .sidebar {
+            width: 250px;
+            background: #1a1a1a;
+            padding: 20px;
+            border-right: 1px solid #444;
+			overflow-y: auto;
+        }
+        
+        .main-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .canvas-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            background: #1a1a1a;
+        }
+        
+        #svg-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+        
+        .panel {
+            background: #333;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+        }
+		.panel label {
+			font-size: 10px;
+		}
+        
+        h3 {
+            margin-bottom: 15px;
+            color: #4dabf7;
+        }
+        
+        button {
+            background: #4dabf7;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        
+        button:hover {
+            background: #339af0;
+        }
+        
+        .tool-btn {
+            background: #444;
+            margin: 5px;
+            width: 40px;
+            height: 40px;
+			padding: 6px;
+        }
+        
+        .tool-btn.active {
+            background: #4dabf7;
+        }
+        
+        .tools {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0px;
+            margin-bottom: 0px;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            margin: 0;
+        }
+        
+        input[type="color"] {
+			width: 40px;
+			height: 40px;
+			margin: 5px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        
+        .zoom-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .zoom-btn {
+            width: 40px;
+            height: 40px;
+            background: #444;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 20px;
+        }
+        
+        .zoom-level {
+            color: white;
+            line-height: 40px;
+            padding: 0 10px;
+        }
+        
+        .coordinates {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+#eraser-indicator {
+    pointer-events: none;
+    stroke: #ff6b6b;
+    stroke-width: 2;
+    fill: rgba(255, 107, 107, 0.2);
+    stroke-dasharray: 5,5;
+}
+#push-indicator {
+    pointer-events: none;
+    stroke: #ff6b6b;
+    stroke-width: 1;
+    fill: rgba(255, 107, 107, 0.1);
+    stroke-dasharray: 3,3;
+}
+.push-mode {
+    cursor: none !important;
+}
+		@keyframes pulse-ring {
+			0% { stroke-opacity: 0.7; }
+			50% { stroke-opacity: 1; }
+			100% { stroke-opacity: 0.7; }
+		}
+		/* Точка НЕ выделена */
+.bezier-point {
+    fill: #4dabf7;
+    stroke: #1971c2;
+    stroke-width: 2;
+    r: 1%;
+	opacity: 0.5;
+    cursor: move;
+}
+
+.bezier-point.selected {
+    fill: #ff6b6b;
+    stroke: #e03131;
+    stroke-width: 3;
+	opacity: 0.5;
+}
+
+/* Векторы Безье */
+.bezier-vector {
+    fill: none;
+    stroke-linecap: round;
+}
+
+/* Направляющие Безье */
+.bezier-guide-line {
+    stroke: #868e96;
+    stroke-width: 1;
+    stroke-dasharray: 3,3;
+    opacity: 0.5;
+}
+
+.bezier-control-point {
+    fill: #ffd43b;
+    stroke: #f08c00;
+    stroke-width: 1;
+    r: 0.7%;
+    cursor: pointer;
+	opacity: 0.5;
+	
+}
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <div class="panel">
+                <h3>Изображение</h3>
+                <button id="loadImageBtn">Загрузить фото</button>
+                <div id="imageControls" style="display: none;">
+                    <button id="removeImageBtn" style="background: #dc3545;">Удалить</button>
+                    <label style="display: block; margin: 10px 0;">Прозрачность: <span id="opacityValue">50%</span></label>
+                    <input type="range" id="opacitySlider" min="1" max="100" value="50">
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h3>Инструменты</h3>
+                <div class="tools">
+                    <button class="tool-btn active" data-tool="select">✓</button>
+					<button class="tool-btn" data-tool="push">👆</button>
+					<button class="tool-btn" data-tool="eraser">🧽</button>
+                    <button class="tool-btn" data-tool="line">─</button>
+                    <button class="tool-btn" data-tool="rect">▭</button>
+                    <button class="tool-btn" data-tool="circle">○</button>
+					<button class="tool-btn" data-tool="pen">✏️</button>
+					<button class="tool-btn" data-tool="bezier-points">B</button>
+					<input type="color" id="strokeColor" value="#4dabf7">
+					<label style="display: block; margin-top: 0px; margin: 5px;">Толщина: <span id="widthValue">3</span></label>
+					<input type="range" id="widthSlider" min="1" max="20" value="3">
+                </div>
+                <div id="eraserSettings" style="display: none; margin-top: 10px;">
+    <label>Размер ластика: <span id="eraserSizeValue">20</span>px</label>
+    <input type="range" id="eraserSizeSlider" min="5" max="100" value="20">
+
+</div>
+                <div id="penSettings" style="display: none;">
+                    <label>Сглаживание: <span id="smoothValue">5</span></label>
+                    <input type="range" id="smoothSlider" min="1" max="20" value="5">
+					<h3>Привязка</h3>
+    <label style="display: block; margin: 10px 0;">
+        <input type="checkbox" id="continueVectorToggle" checked> Продолжать вектор
+    </label>
+    <label style="display: block; margin: 10px 0;">
+        <input type="checkbox" id="blackSnapToggle" checked> Привязка к черной линии
+    </label>
+    <label style="display: block; margin: 10px 0;">
+        Расстояние: <span id="snapDistanceValue">10</span>px
+    </label>
+    <input type="range" id="snapDistanceSlider" min="1" max="50" value="10">
+                </div>
+				<div id="pushSettings" style="display: none; margin-top: 10px;">
+    <label>Радиус воздействия: <span id="pushRadiusValue">20</span>px</label>
+    <input type="range" id="pushRadiusSlider" min="5" max="100" value="20">
+    
+    <label style="display: block; margin-top: 10px;">Сила: <span id="pushStrengthValue">0.5</span></label>
+    <input type="range" id="pushStrengthSlider" min="1" max="100" value="50">
+    
+    <label style="display: block; margin-top: 10px;">
+        <input type="checkbox" id="pushSmoothToggle" checked> Сглаженный эффект
+    </label>
+</div>
+
+            </div>
+            
+            <div class="panel">
+                <h3>Действия</h3>
+                <button id="saveBtn">Сохранить SVG</button>
+                <button id="clearBtn" style="background: #6c757d;">Очистить векторы</button>
+            </div>
+        </div>
+        
+        <div class="main-area">
+            <div class="canvas-container" id="canvasContainer">
+                <svg id="svg-canvas"></svg>
+                
+                <div id="noImage" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
+                    <div style="font-size: 48px; margin-bottom: 20px;">🖼️</div>
+                    <h3>Загрузите изображение</h3>
+                    <p>Начните с загрузки фотографии как подложки</p>
+                </div>
+                
+                <div class="zoom-controls">
+                    <button class="zoom-btn" id="zoomOut">-</button>
+                    <div class="zoom-level" id="zoomLevel">100%</div>
+                    <button class="zoom-btn" id="zoomIn">+</button>
+                </div>
+                
+                <div class="coordinates" id="coordinates">X: 0, Y: 0</div>
+            </div>
+        </div>
+    </div>
+    
+    <input type="file" id="imageInput" accept="image/*" style="display: none;">
+    
+    <script>
+        class VectorEditor {
+    constructor() {
+        // Состояние редактора
+        this.state = {
+            currentTool: 'select',
+            isDrawing: false,
+            currentElement: null,
+            startPoint: {x: 0, y: 0},
+            image: null,
+            imageUrl: null,
+            zoom: 1,
+            viewBox: {x: 0, y: 0, width: 1000, height: 1000},
+            strokeColor: '#4dabf7',
+            strokeWidth: 3,
+            smoothing: 5,
+            penPoints: [],
+            pushRadius: 20,
+			pushStrength: 0.5,
+			pushSmooth: true,
+			imageForDisplay: null, 
+			pushPoints: [], // Точки, которые сдвигаем
+			originalPoints: [], // Исходные позиции точек
+			pushStart: {x: 0, y: 0}, // Начальная позиция мыши при сдвиге
+			eraserSize: 20,
+            isMoving: false,
+            moveStart: {x: 0, y: 0},
+            viewBoxStart: {x: 0, y: 0, width: 0, height: 0},
+			eraserPoints: [],
+			bezierSelectedPoint: null, // Выделенная точка Безье
+            bezierPoints: [],
+            bezierVectors: [],
+            
+            // Флаги для перетаскивания
+            isDraggingPoint: false,
+            draggingPointIndex: null,
+            draggingPointStartX: 0,
+            draggingPointStartY: 0,
+            draggingPointOriginalX: 0,
+            draggingPointOriginalY: 0,
+            
+            isDraggingControl: false,
+            draggingControlVectorIndex: null,
+            draggingControlType: null,
+            draggingControlStartX: 0,
+            draggingControlStartY: 0,
+            draggingControlOriginalX: 0,
+            draggingControlOriginalY: 0,
+			lastBezierDirection: null, // Последнее направление касательной
+			lastBezierLength: null    // Последняя длина касательной
+        };
+    this.snapSettings = {
+        enabled: true,
+        snapDistance: 10,
+        blackThreshold: 50,
+        searchRadius: 15,
+        continueVector: true 
+    };
+this.pushData = null;
+		this.pushUpdateQueue = [];
+		this.isPushUpdatePending = false;
+		this.pathCache = new Map();
+		this.lastPushUpdate = 0;
+	    this.lastEraseTime = null; 
+		this.lastErasePoint = null; 
+		this.imageCanvasCache = null;
+		this.imageDataCache = null;
+		this.init();
+		this.setupCursorRestore();
+    }
+	
+
+// ВИЗУАЛЬНЫЙ ИНДИКАТОР ЛАСТИКА
+showEraserIndicator(x, y, radius) {
+    let indicator = document.getElementById('eraser-indicator');
+    
+    if (!indicator) {
+        indicator = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        indicator.id = 'eraser-indicator';
+        indicator.setAttribute('stroke', '#ff6b6b');
+        indicator.setAttribute('stroke-width', '2');
+        indicator.setAttribute('fill', 'rgba(255, 107, 107, 0.2)');
+        indicator.setAttribute('stroke-dasharray', '5,5');
+        indicator.style.pointerEvents = 'none';
+
+        const pushIndicator = document.getElementById('push-indicator');
+        if (pushIndicator) {
+            this.svg.insertBefore(indicator, pushIndicator.nextSibling);
+        } else {
+            this.svg.appendChild(indicator);
+        }
+    }
+    
+    indicator.setAttribute('cx', x);
+    indicator.setAttribute('cy', y);
+    indicator.setAttribute('r', radius);
+    indicator.style.display = 'block';
+    
+    // УБИРАЕМ анимацию пульсации, которая может вызывать остатки
+    indicator.style.animation = 'none';
+    
+    // Устанавливаем z-index для гарантии, что индикатор будет поверх
+    indicator.style.zIndex = '9999';
+}
+
+// СКРЫВАЕМ ИНДИКАТОР ЛАСТИКА
+hideEraserIndicator() {
+    const indicator = document.getElementById('eraser-indicator');
+    if (indicator) {
+        // Полностью скрываем индикатор
+        indicator.style.display = 'none';
+        
+        // Очищаем координаты чтобы точно не было остатков
+        indicator.setAttribute('cx', '-100');
+        indicator.setAttribute('cy', '-100');
+    }
+}
+         
+init() {
+    // Инициализация SVG
+    this.svg = document.getElementById('svg-canvas');
+    this.svg.setAttribute('width', '100%');
+    this.svg.setAttribute('height', '100%');
+    this.svg.setAttribute('viewBox', '0 0 1000 1000');
+    this.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    
+    // Обработчики событий
+    this.setupEventListeners();
+    
+    // ОБНОВЛЯЕМ ВСЕ ТЕКСТОВЫЕ ЭЛЕМЕНТЫ ОТ СЛАЙДЕРОВ ПРИ ЗАГРУЗКЕ
+    this.updateAllSliderTexts();
+    
+    // Загружаем настройки из UI
+    this.loadSettingsFromUI();
+	this.setupGlobalDragHandlers();
+    
+    // Обновление интерфейса
+    this.updateZoomDisplay();
+        // Создаем группу для контрольных элементов
+        this.state.bezierControlGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        this.state.bezierControlGroup.id = 'bezier-control-group';
+        this.svg.appendChild(this.state.bezierControlGroup);
+	
+}
+setupGlobalDragHandlers() {
+    // Глобальный обработчик движения мыши
+    document.addEventListener('mousemove', (e) => {
+        // Если перетаскиваем основную точку Безье
+        if (this.state.isDraggingPoint) {
+            const coords = this.getSVGCoordinates(e);
+            this.updatePointDrag(coords.x, coords.y);
+        }
+        
+        // Если перетаскиваем контрольную точку Безье
+        if (this.state.isDraggingBezierControl) {
+            const coords = this.getSVGCoordinates(e);
+            this.updateBezierControlDrag(coords.x, coords.y);
+        }
+    });
+    
+    // Глобальный обработчик отпускания мыши
+    document.addEventListener('mouseup', (e) => {
+        // Завершаем перетаскивание основной точки Безье
+        if (this.state.isDraggingPoint) {
+            this.endPointDrag();
+        }
+        
+        // Завершаем перетаскивание контрольной точки Безье
+        if (this.state.isDraggingBezierControl) {
+            this.endBezierControlDrag();
+        }
+    });
+}
+
+           setupEventListeners() {
+                // Загрузка изображения
+                document.getElementById('loadImageBtn').onclick = () => {
+                    document.getElementById('imageInput').click();
+                };
+                
+                document.getElementById('imageInput').onchange = (e) => {
+                    if (e.target.files[0]) this.loadImage(e.target.files[0]);
+                };
+                
+                document.getElementById('removeImageBtn').onclick = () => {
+                    this.removeImage();
+                };
+                
+                // Инструменты
+                document.querySelectorAll('.tool-btn').forEach(btn => {
+                    btn.onclick = (e) => {
+                        const tool = e.target.dataset.tool;
+                        this.setTool(tool);
+                    };
+                });
+                
+                // Свойства
+                document.getElementById('strokeColor').oninput = (e) => {
+                    this.state.strokeColor = e.target.value;
+                };
+                
+                
+                document.getElementById('widthSlider').oninput = (e) => {
+                    this.state.strokeWidth = parseInt(e.target.value);
+                    document.getElementById('widthValue').textContent = e.target.value;
+                };
+document.getElementById('eraserSizeSlider').oninput = (e) => {
+    this.state.eraserSize = parseInt(e.target.value);
+    document.getElementById('eraserSizeValue').textContent = e.target.value;
+};
+
+                // Сглаживание пера
+                document.getElementById('smoothSlider').oninput = (e) => {
+                    this.state.smoothing = parseInt(e.target.value);
+                    document.getElementById('smoothValue').textContent = e.target.value;
+                };
+                
+                // Прозрачность изображения
+                document.getElementById('opacitySlider').oninput = (e) => {
+                    const imageElement = document.getElementById('background-image');
+                    if (imageElement) {
+                        imageElement.style.opacity = e.target.value / 100;
+                        document.getElementById('opacityValue').textContent = e.target.value + '%';
+                    }
+                };
+                
+                // Зум
+                document.getElementById('zoomIn').onclick = () => this.zoomIn();
+                document.getElementById('zoomOut').onclick = () => this.zoomOut();
+                
+                // Действия
+                document.getElementById('saveBtn').onclick = () => this.saveSVG();
+                document.getElementById('clearBtn').onclick = () => this.clearVectors();
+                
+                // События мыши на холсте
+                this.svg.onmousedown = (e) => this.onMouseDown(e);
+                this.svg.onmousemove = (e) => {
+                    this.onMouseMove(e);
+                    this.updateCoordinates(e);
+                };
+                this.svg.onmouseup = () => this.onMouseUp();
+                this.svg.onmouseleave = () => this.onMouseLeave();
+                
+                // Зум колесиком
+                document.getElementById('canvasContainer').onwheel = (e) => {
+                    if (e.ctrlKey) {
+                        e.preventDefault();
+                        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+                        const coords = this.getSVGCoordinates(e);
+                        this.zoomToPoint(coords.x, coords.y, delta);
+                    }
+                };
+				const snapPanel = document.createElement('div');
+
+				// Вставляем после панели свойств
+				const sidebar = document.querySelector('.sidebar');
+				const propertiesPanel = document.querySelectorAll('.panel')[2];
+				sidebar.insertBefore(snapPanel, propertiesPanel.nextSibling);
+				
+				// Обработчики для новых элементов
+document.getElementById('continueVectorToggle').onchange = (e) => {
+    this.snapSettings.continueVector = e.target.checked;
+};
+				
+				document.getElementById('blackSnapToggle').onchange = (e) => {
+					this.snapSettings.enabled = e.target.checked;
+				};
+				
+				document.getElementById('snapDistanceSlider').oninput = (e) => {
+					this.snapSettings.snapDistance = parseInt(e.target.value);
+					document.getElementById('snapDistanceValue').textContent = e.target.value;
+				};
+				 // Настройки пуш-инструмента
+				document.getElementById('pushRadiusSlider').oninput = (e) => {
+					this.state.pushRadius = parseInt(e.target.value);
+					document.getElementById('pushRadiusValue').textContent = e.target.value;
+				};
+				
+				document.getElementById('pushStrengthSlider').oninput = (e) => {
+					// Значение от 0.01 до 1.0
+					this.state.pushStrength = parseInt(e.target.value) / 100;
+					document.getElementById('pushStrengthValue').textContent = this.state.pushStrength.toFixed(1);
+				};
+				
+				document.getElementById('pushSmoothToggle').onchange = (e) => {
+					this.state.pushSmooth = e.target.checked;
+				};
+							
+            }
+
+setupCursorRestore() {
+    // При движении мыши по всему документу
+    document.addEventListener('mousemove', (e) => {
+        // Если мы вне SVG и в режиме push
+        if (this.state.currentTool === 'push' && !e.target.closest('#svg-canvas')) {
+            // Возвращаем нормальный курсор
+            document.body.style.cursor = 'default';
+            this.hidePushIndicator();
+        }
+    });
+    
+    // При входе в SVG в режиме push
+    this.svg.addEventListener('mouseenter', () => {
+        if (this.state.currentTool === 'push') {
+            this.updateCursor();
+        }
+    });
+    
+    // При выходе из SVG
+    this.svg.addEventListener('mouseleave', () => {
+        if (this.state.currentTool === 'push') {
+            // Возвращаем нормальный курсор
+            document.body.style.cursor = 'default';
+            this.hidePushIndicator();
+        }
+    });
+    
+    // При клике вне SVG в режиме push
+    document.addEventListener('mousedown', (e) => {
+        if (this.state.currentTool === 'push' && !e.target.closest('#svg-canvas')) {
+            // Возвращаем нормальный курсор
+            document.body.style.cursor = 'default';
+            this.hidePushIndicator();
+        }
+    });
+}
+
+loadSettingsFromUI() {
+    // Цвет линии
+    const strokeColorInput = document.getElementById('strokeColor');
+    if (strokeColorInput && strokeColorInput.value) {
+        this.state.strokeColor = strokeColorInput.value;
+    }
+    
+    // Толщина линии
+    const widthSlider = document.getElementById('widthSlider');
+    if (widthSlider && widthSlider.value) {
+        this.state.strokeWidth = parseInt(widthSlider.value);
+    }
+    
+    // Сглаживание пера
+    const smoothSlider = document.getElementById('smoothSlider');
+    if (smoothSlider && smoothSlider.value) {
+        this.state.smoothing = parseInt(smoothSlider.value);
+    }
+    
+    // Настройка продолжения вектора
+    const continueVectorToggle = document.getElementById('continueVectorToggle');
+    if (continueVectorToggle) {
+        this.snapSettings.continueVector = continueVectorToggle.checked;
+    }
+	
+    // Настройки привязки
+    const snapToggle = document.getElementById('snapToggle');
+    if (snapToggle) {
+        this.snapSettings.enabled = snapToggle.checked;
+    }
+    
+    const blackSnapToggle = document.getElementById('blackSnapToggle');
+    if (blackSnapToggle) {
+        this.snapSettings.enabled = blackSnapToggle.checked;
+    }
+    
+    const snapDistanceSlider = document.getElementById('snapDistanceSlider');
+    if (snapDistanceSlider && snapDistanceSlider.value) {
+        this.snapSettings.snapDistance = parseInt(snapDistanceSlider.value);
+    }
+    
+    // Настройки инструмента пуш
+    const pushRadiusSlider = document.getElementById('pushRadiusSlider');
+    if (pushRadiusSlider && pushRadiusSlider.value) {
+        this.state.pushRadius = parseInt(pushRadiusSlider.value);
+    }
+    
+    const pushStrengthSlider = document.getElementById('pushStrengthSlider');
+    if (pushStrengthSlider && pushStrengthSlider.value) {
+        this.state.pushStrength = parseInt(pushStrengthSlider.value) / 100;
+    }
+    
+    const pushSmoothToggle = document.getElementById('pushSmoothToggle');
+    if (pushSmoothToggle) {
+        this.state.pushSmooth = pushSmoothToggle.checked;
+    }
+    // Настройки ластика
+    const eraserSizeSlider = document.getElementById('eraserSizeSlider');
+    if (eraserSizeSlider && eraserSizeSlider.value) {
+        this.state.eraserSize = parseInt(eraserSizeSlider.value);
+    }
+    
+    console.log('Настройки загружены из UI');
+}
+
+updateAllSliderTexts() {
+    console.log('Обновление текстовых элементов слайдеров...');
+    
+    // Толщина линии
+    const widthSlider = document.getElementById('widthSlider');
+    const widthValue = document.getElementById('widthValue');
+    if (widthSlider && widthValue) {
+        widthValue.textContent = widthSlider.value;
+        console.log('Толщина:', widthSlider.value);
+    }
+    
+    // Сглаживание
+    const smoothSlider = document.getElementById('smoothSlider');
+    const smoothValue = document.getElementById('smoothValue');
+    if (smoothSlider && smoothValue) {
+        smoothValue.textContent = smoothSlider.value;
+        console.log('Сглаживание:', smoothSlider.value);
+    }
+    
+    // Прозрачность (всегда обновляем, даже если нет изображения)
+    const opacitySlider = document.getElementById('opacitySlider');
+    const opacityValue = document.getElementById('opacityValue');
+    if (opacitySlider && opacityValue) {
+        opacityValue.textContent = opacitySlider.value + '%';
+        console.log('Прозрачность:', opacitySlider.value + '%');
+    }
+    
+    // Расстояние привязки
+    const snapDistanceSlider = document.getElementById('snapDistanceSlider');
+    const snapDistanceValue = document.getElementById('snapDistanceValue');
+    if (snapDistanceSlider && snapDistanceValue) {
+        snapDistanceValue.textContent = snapDistanceSlider.value;
+        console.log('Расстояние привязки:', snapDistanceSlider.value);
+    }
+    
+    // Радиус пуш-инструмента
+    const pushRadiusSlider = document.getElementById('pushRadiusSlider');
+    const pushRadiusValue = document.getElementById('pushRadiusValue');
+    if (pushRadiusSlider && pushRadiusValue) {
+        pushRadiusValue.textContent = pushRadiusSlider.value;
+        console.log('Радиус пуш:', pushRadiusSlider.value);
+    }
+    
+    // Сила пуш-инструмента
+    const pushStrengthSlider = document.getElementById('pushStrengthSlider');
+    const pushStrengthValue = document.getElementById('pushStrengthValue');
+    if (pushStrengthSlider && pushStrengthValue) {
+        const strength = parseInt(pushStrengthSlider.value) / 100;
+        pushStrengthValue.textContent = strength.toFixed(1);
+    }
+}
+
+            // ЗУМ
+            zoomIn() {
+                this.setZoom(this.state.zoom * 1.2);
+            }
+            
+            zoomOut() {
+                this.setZoom(this.state.zoom / 1.2);
+            }
+            
+            setZoom(zoomLevel) {
+                this.state.zoom = Math.max(0.1, Math.min(10, zoomLevel));
+                
+                const centerX = this.state.viewBox.x + this.state.viewBox.width / 2;
+                const centerY = this.state.viewBox.y + this.state.viewBox.height / 2;
+                
+                const newWidth = 1000 / this.state.zoom;
+                const newHeight = 1000 / this.state.zoom;
+                
+                this.state.viewBox = {
+                    x: centerX - newWidth / 2,
+                    y: centerY - newHeight / 2,
+                    width: newWidth,
+                    height: newHeight
+                };
+                
+                this.svg.setAttribute('viewBox', 
+                    `${this.state.viewBox.x} ${this.state.viewBox.y} ${this.state.viewBox.width} ${this.state.viewBox.height}`
+                );
+                
+                this.updateZoomDisplay();
+            }
+            
+            zoomToPoint(x, y, factor) {
+                const newWidth = this.state.viewBox.width * factor;
+                const newHeight = this.state.viewBox.height * factor;
+                
+                const mouseXPercent = (x - this.state.viewBox.x) / this.state.viewBox.width;
+                const mouseYPercent = (y - this.state.viewBox.y) / this.state.viewBox.height;
+                
+                this.state.viewBox = {
+                    x: x - (mouseXPercent * newWidth),
+                    y: y - (mouseYPercent * newHeight),
+                    width: newWidth,
+                    height: newHeight
+                };
+                
+                this.svg.setAttribute('viewBox', 
+                    `${this.state.viewBox.x} ${this.state.viewBox.y} ${this.state.viewBox.width} ${this.state.viewBox.height}`
+                );
+                
+                this.state.zoom = 1000 / newWidth;
+                this.updateZoomDisplay();
+            }
+            
+            updateZoomDisplay() {
+                document.getElementById('zoomLevel').textContent = 
+                    Math.round(this.state.zoom * 100) + '%';
+            }
+
+startPanning(e) {
+    this.state.isMoving = true;
+    this.state.moveStart = {
+        x: e.clientX,
+        y: e.clientY,
+        viewBoxX: this.state.viewBox.x,
+        viewBoxY: this.state.viewBox.y
+    };
+    this.svg.style.cursor = 'grabbing';
+}
+    
+doPanning(e) {
+    if (!this.state.isMoving) return;
+    
+    // Простой расчет смещения
+    const dx = e.clientX - this.state.moveStart.x;
+    const dy = e.clientY - this.state.moveStart.y;
+    
+    // Масштабируем смещение относительно размера viewBox
+    const scaleX = this.state.viewBox.width / this.svg.clientWidth;
+    const scaleY = this.state.viewBox.height / this.svg.clientHeight;
+    
+    this.state.viewBox.x = this.state.moveStart.viewBoxX - dx * scaleX;
+    this.state.viewBox.y = this.state.moveStart.viewBoxY - dy * scaleY;
+    
+    this.svg.setAttribute('viewBox', 
+        `${this.state.viewBox.x} ${this.state.viewBox.y} ${this.state.viewBox.width} ${this.state.viewBox.height}`
+    );
+}
+    
+stopPanning() {
+    this.state.isMoving = false;
+    // Возвращаем курсор в зависимости от инструмента
+    if (this.state.currentTool === 'select') {
+        this.svg.style.cursor = 'move';
+    } else {
+        this.svg.style.cursor = 'crosshair';
+    }
+}
+    
+            // ИЗОБРАЖЕНИЕ
+
+addWhiteBackgroundToPNG(img) {
+    return new Promise((resolve) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        
+        // 1. Заливаем белым фоном
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // 2. Рисуем оригинальное изображение поверх (сохраняя прозрачность)
+        ctx.drawImage(img, 0, 0);
+        
+        // 3. Создаем новое изображение с белым фоном
+        const imgWithBackground = new Image();
+        imgWithBackground.onload = () => {
+            resolve(imgWithBackground);
+        };
+        imgWithBackground.src = canvas.toDataURL();
+    });
+}
+
+loadImage(file) {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const img = new Image();
+        img.onload = async () => {
+            this.state.image = img;
+            this.state.imageUrl = e.target.result;
+            
+            let imageForDisplay = img;
+            let imageForSnapping = img; // Для привязки - то же самое что видит пользователь
+            
+            // ПРОВЕРЯЕМ: если PNG
+            if (file.type === 'image/png' || file.name.toLowerCase().endsWith('.png')) {
+                try {
+                    
+                    imageForDisplay = await this.addWhiteBackgroundToPNG(img);
+
+                    imageForSnapping = imageForDisplay;
+                    
+                    // Обновляем URL для отображения
+                    this.state.imageUrl = imageForDisplay.src;
+                    
+                } catch (error) {
+                    console.warn('Не удалось обработать PNG:', error);
+                    imageForDisplay = img;
+                    imageForSnapping = img;
+                }
+            }
+            
+            this.state.imageForDisplay = imageForDisplay; 
+
+            // Отображаем версию с белым фоном
+            this.displayImage(imageForDisplay);
+            document.getElementById('noImage').style.display = 'none';
+            document.getElementById('imageControls').style.display = 'block';
+            
+            // Применяем прозрачность из слайдера
+            const opacitySlider = document.getElementById('opacitySlider');
+            const imageElement = document.getElementById('background-image');
+            if (opacitySlider && imageElement) {
+                imageElement.style.opacity = opacitySlider.value / 100;
+            }
+            
+            this.updateImageCache(imageForSnapping);
+            
+            this.fitImageToCanvas();
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+updateImageCache(imageToCache) {
+    // Очищаем старый кэш
+    this.imageCanvasCache = null;
+    this.imageDataCache = null;
+    
+    // Создаем новый кэш из переданного изображения
+    this.imageCanvasCache = document.createElement('canvas');
+    this.imageCanvasCache.width = imageToCache.width;
+    this.imageCanvasCache.height = imageToCache.height;
+    const ctx = this.imageCanvasCache.getContext('2d');
+    ctx.drawImage(imageToCache, 0, 0);
+    this.imageDataCache = ctx.getImageData(0, 0, imageToCache.width, imageToCache.height);
+    
+    console.log('Кэш изображения обновлен (размер:', imageToCache.width, 'x', imageToCache.height, ')');
+}
+           
+displayImage(img) {
+    // Удаляем старое изображение если есть
+    const oldImage = document.getElementById('background-image');
+    if (oldImage) oldImage.remove();
+    
+    // Создаем новое изображение
+    const imageElement = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+    imageElement.id = 'background-image';
+    
+    // Используем imageForDisplay если есть, иначе оригинал
+    const imageToShow = this.state.imageForDisplay || img;
+    imageElement.setAttribute('href', imageToShow.src || this.state.imageUrl);
+    
+    imageElement.style.opacity = '0.5';
+    imageElement.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    
+    // Отключаем события мыши для изображения
+    imageElement.style.pointerEvents = 'none';
+    
+    // Добавляем первым элементом (фон)
+    this.svg.insertBefore(imageElement, this.svg.firstChild);
+    
+    // Центрируем
+    this.centerImage();
+}
+
+centerImage() {
+    if (!this.state.image) return;
+    
+    const img = this.state.image;
+    const imageElement = document.getElementById('background-image');
+    if (!imageElement) return;
+    
+    // Рассчитываем размеры для viewBox 1000x1000
+    const viewBoxSize = 1000;
+    const scale = Math.min(viewBoxSize / img.width, viewBoxSize / img.height) * 0.9;
+    
+    // Устанавливаем размеры и позицию
+    imageElement.setAttribute('width', img.width * scale);
+    imageElement.setAttribute('height', img.height * scale);
+    
+    const x = (viewBoxSize - img.width * scale) / 2;
+    const y = (viewBoxSize - img.height * scale) / 2;
+    
+    imageElement.setAttribute('x', x);
+    imageElement.setAttribute('y', y);
+}
+
+fitImageToCanvas() {
+    if (!this.state.image) return;
+    
+    const img = this.state.image;
+    const scale = Math.min(1000 / img.width, 1000 / img.height) * 0.9;
+
+    const imageElement = document.getElementById('background-image');
+    if (imageElement) {
+        // Убираем transform
+        imageElement.removeAttribute('transform');
+        
+        // Устанавливаем размеры изображения с учетом масштаба
+        imageElement.setAttribute('width', img.width * scale);
+        imageElement.setAttribute('height', img.height * scale);
+        
+        // Центрируем вручную
+        const x = (1000 - img.width * scale) / 2;
+        const y = (1000 - img.height * scale) / 2;
+        imageElement.setAttribute('x', x);
+        imageElement.setAttribute('y', y);
+    }
+    
+    // Сбрасываем зум чтобы видеть всё изображение
+    this.setZoom(1);
+}
+            
+removeImage() {
+    const imageElement = document.getElementById('background-image');
+    if (imageElement) imageElement.remove();
+    
+    this.state.image = null;
+    this.state.imageUrl = null;
+    this.state.imageForDisplay = null;
+    
+    this.imageCanvasCache = null;
+    this.imageDataCache = null;
+    
+    document.getElementById('noImage').style.display = 'block';
+    document.getElementById('imageControls').style.display = 'none';
+    
+    this.setZoom(1);
+}
+            
+            // ИНСТРУМЕНТЫ
+setTool(tool) {
+    // Сбрасываем все состояния перетаскивания
+    if (this.state.isDraggingPoint) {
+        this.endPointDrag();
+    }
+    if (this.state.isDraggingBezierControl) {
+        this.endBezierControlDrag();
+    }
+    
+    // Всегда сбрасываем currentElement при переключении инструмента
+    this.state.currentElement = null;
+    
+    // Если ВЫХОДИМ из режима Безье
+    if (this.state.currentTool === 'bezier-points' && tool !== 'bezier-points') {
+        this.deselectAllPoints();
+        this.state.lastBezierDirection = null;
+        this.state.lastBezierLength = null;
+        
+        // Скрываем вспомогательные элементы
+        this.hideBezierHelpers();
+        this.toggleBezierPoints(false);
+    }
+    
+    // Если ВХОДИМ в режим Безье
+    if (tool === 'bezier-points') {
+        this.state.lastBezierDirection = null;
+        this.state.lastBezierLength = null;
+        
+        // Показываем вспомогательные элементы
+        this.showBezierHelpers();
+        this.toggleBezierPoints(true);
+        
+        // Если есть выделенная точка - показываем её
+        if (this.state.bezierSelectedPoint !== null) {
+            const point = this.state.bezierPoints[this.state.bezierSelectedPoint];
+            if (point && point.element) {
+                point.element.style.display = 'block';
+                point.element.classList.add('selected');
+            }
+        }
+    }
+    
+    this.state.currentTool = tool;
+    
+    // Обновляем активные кнопки
+    document.querySelectorAll('.tool-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    document.querySelector(`[data-tool="${tool}"]`).classList.add('active');
+
+    // Показываем/скрываем настройки инструментов
+    document.getElementById('penSettings').style.display = 
+        tool === 'pen' ? 'block' : 'none';
+    
+    document.getElementById('pushSettings').style.display = 
+        tool === 'push' ? 'block' : 'none';
+    
+    document.getElementById('eraserSettings').style.display = 
+        tool === 'eraser' ? 'block' : 'none';
+    
+    // Опросить UI
+    this.loadSettingsFromUI();
+    
+    // Обновляем курсор
+    this.updateCursor();
+    
+    // Скрываем индикаторы
+    if (tool !== 'push') {
+        this.hidePushIndicator();
+    }
+    if (tool !== 'eraser') {
+        this.hideEraserIndicator();
+    }
+}
+
+updateCursor() {
+    if (!this.svg) return;
+    
+    if (this.state.currentTool === 'push') {
+        this.svg.style.cursor = 'none';
+    } else if (this.state.currentTool === 'eraser') {
+        this.svg.style.cursor = 'crosshair'; // Или можно свой курсор для ластика
+    } else if (this.state.currentTool === 'select') {
+        this.svg.style.cursor = this.state.isMoving ? 'grabbing' : 'move';
+    } else if (this.state.currentTool === 'bezier-points') {
+            this.svg.style.cursor = 'crosshair';
+    } else {
+        this.svg.style.cursor = 'crosshair';
+    }
+}
+
+showPushIndicator(x, y, radius) {
+    let indicator = document.getElementById('push-indicator');
+    
+    if (!indicator) {
+        indicator = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        indicator.id = 'push-indicator';
+        indicator.setAttribute('stroke', '#ff6b6b');
+        indicator.setAttribute('stroke-width', '1');
+        indicator.setAttribute('fill', 'rgba(255, 107, 107, 0.1)');
+        indicator.setAttribute('stroke-dasharray', '3,3');
+        indicator.style.pointerEvents = 'none';
+        this.svg.appendChild(indicator);
+    }
+    
+    indicator.setAttribute('cx', x);
+    indicator.setAttribute('cy', y);
+    indicator.setAttribute('r', radius);
+    indicator.style.display = 'block';
+}
+
+hidePushIndicator() {
+    const indicator = document.getElementById('push-indicator');
+    if (indicator) {
+        indicator.style.display = 'none';
+    }
+}      
+
+// Функция конвертации конкретного элемента в путь
+convertToPath(element) {
+    let pathData = '';
+    const stroke = element.getAttribute('stroke') || 'black';
+    const strokeWidth = element.getAttribute('stroke-width') || '1';
+    const fill = element.getAttribute('fill') || 'none';
+    
+    switch(element.tagName.toLowerCase()) {
+        case 'line':
+            const x1 = parseFloat(element.getAttribute('x1')) || 0;
+            const y1 = parseFloat(element.getAttribute('y1')) || 0;
+            const x2 = parseFloat(element.getAttribute('x2')) || 0;
+            const y2 = parseFloat(element.getAttribute('y2')) || 0;
+            
+            pathData = `M ${x1} ${y1} L ${x2} ${y2}`;
+            break;
+            
+        case 'rect':
+            const rectX = parseFloat(element.getAttribute('x')) || 0;
+            const rectY = parseFloat(element.getAttribute('y')) || 0;
+            const width = parseFloat(element.getAttribute('width')) || 0;
+            const height = parseFloat(element.getAttribute('height')) || 0;
+            const rectRx = parseFloat(element.getAttribute('rx')) || 0;
+            const rectRy = parseFloat(element.getAttribute('ry')) || 0;
+            
+            if (rectRx > 0 || rectRy > 0) {
+                // Скругленный прямоугольник
+                pathData = this.roundedRectToPath(rectX, rectY, width, height, rectRx, rectRy);
+            } else {
+                // Обычный прямоугольник - добавляем больше точек
+                pathData = `M ${rectX} ${rectY} `;
+                
+                // Верхняя сторона - 4 сегмента
+                for (let i = 1; i <= 4; i++) {
+                    pathData += `L ${rectX + (width * i / 4)} ${rectY} `;
+                }
+                
+                // Правая сторона - 4 сегмента
+                for (let i = 1; i <= 4; i++) {
+                    pathData += `L ${rectX + width} ${rectY + (height * i / 4)} `;
+                }
+                
+                // Нижняя сторона - 4 сегмента
+                for (let i = 1; i <= 4; i++) {
+                    pathData += `L ${rectX + width - (width * i / 4)} ${rectY + height} `;
+                }
+                
+                // Левая сторона - 4 сегмента
+                for (let i = 1; i <= 4; i++) {
+                    pathData += `L ${rectX} ${rectY + height - (height * i / 4)} `;
+                }
+                
+                pathData += 'Z';
+            }
+            break;
+            
+        case 'circle':
+            const cx = parseFloat(element.getAttribute('cx')) || 0;
+            const cy = parseFloat(element.getAttribute('cy')) || 0;
+            const radius = parseFloat(element.getAttribute('r')) || 0;
+            
+            // Круг -> путь с БОЛЬШИМ количеством точек для сглаживания
+            const points = 32; // Увеличиваем с 16 до 32 точек
+            pathData = `M ${cx + radius} ${cy}`;
+            
+            for (let i = 1; i <= points; i++) {
+                const angle = (i / points) * Math.PI * 2;
+                const px = cx + Math.cos(angle) * radius;
+                const py = cy + Math.sin(angle) * radius;
+                pathData += ` L ${px} ${py}`;
+            }
+            pathData += ' Z';
+            break;
+            
+        case 'ellipse':
+            const ellipseX = parseFloat(element.getAttribute('cx')) || 0;
+            const ellipseY = parseFloat(element.getAttribute('cy')) || 0;
+            const ellipseRx = parseFloat(element.getAttribute('rx')) || 0;
+            const ellipseRy = parseFloat(element.getAttribute('ry')) || 0;
+            
+            // Эллипс -> путь с 32 точками
+            const ellipsePoints = 32;
+            pathData = `M ${ellipseX + ellipseRx} ${ellipseY}`;
+            
+            for (let i = 1; i <= ellipsePoints; i++) {
+                const angle = (i / ellipsePoints) * Math.PI * 2;
+                const px = ellipseX + Math.cos(angle) * ellipseRx;
+                const py = ellipseY + Math.sin(angle) * ellipseRy;
+                pathData += ` L ${px} ${py}`;
+            }
+            pathData += ' Z';
+            break;
+    }
+    
+    if (!pathData) return null;
+    
+    // Создаем новый путь
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', pathData);
+    path.setAttribute('stroke', stroke);
+    path.setAttribute('stroke-width', strokeWidth);
+    path.setAttribute('fill', fill);
+    path.setAttribute('stroke-linecap', element.getAttribute('stroke-linecap') || 'round');
+    path.setAttribute('stroke-linejoin', element.getAttribute('stroke-linejoin') || 'round');
+    
+    return path;
+}
+
+roundedRectToPath(x, y, width, height, cornerRx, cornerRy) {
+    // Ограничиваем радиусы
+    cornerRx = Math.min(cornerRx, width / 2);
+    cornerRy = Math.min(cornerRy, height / 2);
+    
+    let pathData = '';
+    
+    // Начинаем с правого нижнего угла (с учетом скругления)
+    pathData = `M ${x + width - cornerRx} ${y}`;
+    
+    // Верхняя сторона
+    pathData += `H ${x + cornerRx}`;
+    
+    // Левый верхний угол
+    if (cornerRx > 0 && cornerRy > 0) {
+        pathData += `A ${cornerRx} ${cornerRy} 0 0 1 ${x} ${y + cornerRy}`;
+    } else {
+        pathData += `L ${x} ${y}`;
+    }
+    
+    // Левая сторона
+    pathData += `V ${y + height - cornerRy}`;
+    
+    // Левый нижний угол
+    if (cornerRx > 0 && cornerRy > 0) {
+        pathData += `A ${cornerRx} ${cornerRy} 0 0 1 ${x + cornerRx} ${y + height}`;
+    } else {
+        pathData += `L ${x} ${y + height}`;
+    }
+    
+    // Нижняя сторона
+    pathData += `H ${x + width - cornerRx}`;
+    
+    // Правый нижний угол
+    if (cornerRx > 0 && cornerRy > 0) {
+        pathData += `A ${cornerRx} ${cornerRy} 0 0 1 ${x + width} ${y + height - cornerRy}`;
+    } else {
+        pathData += `L ${x + width} ${y + height}`;
+    }
+    
+    // Правая сторона
+    pathData += `V ${y + cornerRy}`;
+    
+    // Правый верхний угол
+    if (cornerRx > 0 && cornerRy > 0) {
+        pathData += `A ${cornerRx} ${cornerRy} 0 0 1 ${x + width - cornerRx} ${y}`;
+    } else {
+        pathData += `L ${x + width} ${y}`;
+    }
+    
+    pathData += ' Z';
+    return pathData;
+}
+
+
+// Парсинг пути в точки
+parsePathToPoints(d) {
+    if (!d || d.trim() === '') {
+        return { points: [], isClosed: false };
+    }
+    
+    // Проверяем кэш (Map может использовать строки как ключи)
+    if (this.pathCache.has(d)) {
+        return this.pathCache.get(d);
+    }
+    
+    const isClosed = d.includes(' Z') || d.includes('z');
+    
+    try {
+        const points = [];
+        const numbers = d.match(/[+-]?\d*\.?\d+(?:[eE][+-]?\d+)?/g) || [];
+        
+        for (let i = 0; i < numbers.length; i += 2) {
+            if (i + 1 < numbers.length) {
+                points.push({
+                    x: parseFloat(numbers[i]),
+                    y: parseFloat(numbers[i + 1])
+                });
+            }
+        }
+        
+        const result = { points, isClosed };
+        
+        // Кэшируем только для часто используемых путей
+        if (d.length < 1000) {
+            this.pathCache.set(d, result);
+        }
+        
+        return result;
+    } catch (error) {
+        console.error('Ошибка парсинга пути:', error, d);
+        return { points: [], isClosed: false };
+    }
+}
+
+// Преобразование точек в путь
+pointsToPath(points, wasOriginallyClosed = false) {
+    if (points.length === 0) return '';
+    
+    let pathData = `M ${points[0].x} ${points[0].y}`;
+    
+    for (let i = 1; i < points.length; i++) {
+        pathData += ` L ${points[i].x} ${points[i].y}`;
+    }
+    
+    // Закрываем путь ТОЛЬКО если он изначально был закрыт
+    if (wasOriginallyClosed && points.length > 2) {
+        pathData += ' Z';
+    }
+    
+    return pathData;
+}
+
+insertPointIntoPath(path, afterIndex, x, y) {
+    const d = path.getAttribute('d');
+    if (!d) return -1;
+    
+    const { points, isClosed } = this.parsePathToPoints(d);
+    
+    // Проверяем что точка не существует уже
+    const tolerance = 0.1;
+    const exists = points.some(p => 
+        Math.abs(p.x - x) < tolerance && Math.abs(p.y - y) < tolerance
+    );
+    
+    if (exists) return -1;
+    
+    if (afterIndex >= 0 && afterIndex < points.length) {
+        // Вставляем точку
+        points.splice(afterIndex + 1, 0, {x: x, y: y});
+        
+        // Перестраиваем путь
+        const newPath = this.pointsToPath(points, isClosed);
+        path.setAttribute('d', newPath);
+        
+        return afterIndex + 1;
+    }
+    
+    return -1;
+}
+
+
+
+// Функция расстояния до отрезка
+distanceToSegment(px, py, x1, y1, x2, y2) {
+    const A = px - x1;
+    const B = py - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    let param = -1;
+    
+    if (lenSq !== 0) param = dot / lenSq;
+
+    let xx, yy;
+
+    if (param < 0) {
+        xx = x1;
+        yy = y1;
+    } else if (param > 1) {
+        xx = x2;
+        yy = y2;
+    } else {
+        xx = x1 + param * C;
+        yy = y1 + param * D;
+    }
+
+    const dx = px - xx;
+    const dy = py - yy;
+    
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+// Вспомогательные методы
+findVectorByControlPoint(controlType, belongsToPointIndex) {
+    // Находим ВСЕ векторы, где контрольная точка принадлежит указанной точке
+    const results = [];
+    
+    for (let i = 0; i < this.state.bezierVectors.length; i++) {
+        const vector = this.state.bezierVectors[i];
+        
+        // Проверяем ВСЕ связи:
+        
+        // 1. Если контрольная точка 1 принадлежит указанной точке
+        if (controlType === 'control1' && vector.control1.belongsTo === belongsToPointIndex) {
+            results.push({ vector, index: i, type: 'control1' });
+        }
+        
+        // 2. Если контрольная точка 2 принадлежит указанной точке
+        if (controlType === 'control2' && vector.control2.belongsTo === belongsToPointIndex) {
+            results.push({ vector, index: i, type: 'control2' });
+        }
+        
+        // 3. Также проверяем обратные связи
+        // (точка может быть концом вектора и иметь control2, который технически connectedTo другую точку)
+        if (controlType === 'control2' && vector.to === belongsToPointIndex) {
+            results.push({ vector, index: i, type: 'control2' });
+        }
+        
+        if (controlType === 'control1' && vector.from === belongsToPointIndex) {
+            results.push({ vector, index: i, type: 'control1' });
+        }
+    }
+    
+    // Возвращаем первый найденный результат
+    return results.length > 0 ? results[0] : null;
+}
+
+
+            // МЫШЬ
+onMouseDown(e) {
+        const coords = this.getSVGCoordinates(e);
+        const target = e.target;
+        
+    // 1. Режим Безье точек
+    if (this.state.currentTool === 'bezier-points') {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Если клик по уже существующей точке - она уже обработается в своем обработчике
+        if (target.classList.contains('bezier-point')) {
+            // Обработчик на самой точке уже сделает всё необходимое
+            return;
+        }
+        
+        // Если клик по пустому месту
+        if (target === this.svg || target.id === 'background-image') {
+            // Если ЕСТЬ выделенная точка - создаем вектор от неё
+            if (this.state.bezierSelectedPoint !== null) {
+                this.createNewBezierVector(coords.x, coords.y);
+            } 
+            // Если НЕТ выделенной точки - создаем новую точку
+            else {
+                this.createSingleBezierPoint(coords.x, coords.y);
+            }
+            return;
+        }
+        
+        return;
+    }
+    
+    if (this.state.currentTool === 'select') {
+        e.preventDefault();
+        this.startPanning(e);
+        return;
+    }
+    
+if (this.state.currentTool === 'push') {
+    e.preventDefault();
+    
+    const radius = this.state.pushRadius / this.state.zoom;
+    const allElements = Array.from(this.svg.children)
+        .filter(el => {
+            const tag = el.tagName.toLowerCase();
+            
+            // Пропускаем по ID
+            if (el.id && (el.id.includes('background') || el.id.includes('indicator'))) {
+                return false;
+            }
+            
+            // Проверяем класс через getAttribute (более надежно для SVG)
+            const classAttr = el.getAttribute('class') || '';
+            
+            // Пропускаем вспомогательные элементы Безье
+            if (classAttr.includes('bezier-guide-line') || 
+                classAttr.includes('bezier-control-point') || 
+                classAttr.includes('bezier-point')) {
+                return false;
+            }
+            
+            // Основные векторы Безье - оставляем
+            if (tag === 'path' && classAttr.includes('bezier-vector')) {
+                return true;
+            }
+            
+            // Обычные элементы
+            return (tag === 'path' || tag === 'line' || tag === 'rect' || tag === 'circle');
+        });
+    
+    const affectedPoints = [];
+    
+    allElements.forEach(element => {
+        // Преобразовать в path если нужно
+        if (element.tagName !== 'PATH') {
+            const path = this.convertToPath(element);
+            if (path) {
+                element.parentNode.replaceChild(path, element);
+                element = path;
+            }
+        }
+        
+        const path = element;
+        const d = path.getAttribute('d');
+        if (!d) return;
+        
+        const { points: currentPoints, isClosed } = this.parsePathToPoints(d);
+        
+        // 1. Найти все точки, которые УЖЕ внутри круга
+        const existingPointsInCircle = [];
+        for (let i = 0; i < currentPoints.length; i++) {
+            const point = currentPoints[i];
+            const distance = Math.sqrt(
+                Math.pow(coords.x - point.x, 2) + 
+                Math.pow(coords.y - point.y, 2)
+            );
+            
+            if (distance <= radius) {
+                existingPointsInCircle.push({
+                    pointIndex: i,
+                    point: point,
+                    distance: distance
+                });
+            }
+        }
+        
+        // 2. Если точек внутри круга МАЛО (<5)
+        if (existingPointsInCircle.length < 5) {
+            // Найти БЛИЖАЙШИЙ отрезок к центру круга
+            let closestSegment = null;
+            let minDistance = Infinity;
+            let segmentIndex = -1;
+            
+            for (let i = 0; i < currentPoints.length; i++) {
+                const p1 = currentPoints[i];
+                const p2 = currentPoints[(i + 1) % currentPoints.length];
+                
+                if (!isClosed && i === currentPoints.length - 1) break;
+                
+                const segmentDistance = this.distanceToSegment(coords.x, coords.y, p1.x, p1.y, p2.x, p2.y);
+                if (segmentDistance < minDistance && segmentDistance <= radius) {
+                    minDistance = segmentDistance;
+                    closestSegment = { p1, p2 };
+                    segmentIndex = i;
+                }
+            }
+            
+            if (closestSegment && segmentIndex !== -1) {
+                // 3. Найти где отрезок входит и выходит из круга
+                const intersections = this.circleSegmentIntersections(
+                    coords.x, coords.y, radius, 
+                    closestSegment.p1.x, closestSegment.p1.y, 
+                    closestSegment.p2.x, closestSegment.p2.y
+                );
+                
+                let tStart = 0;
+                let tEnd = 1;
+                
+                if (intersections.length >= 2) {
+                    tStart = Math.max(0, intersections[0].t - 0.1);
+                    tEnd = Math.min(1, intersections[1].t + 0.1);
+                } else if (intersections.length === 1) {
+                    // Если одна точка пересечения
+                    const d1 = Math.sqrt(Math.pow(coords.x - closestSegment.p1.x, 2) + Math.pow(coords.y - closestSegment.p1.y, 2));
+                    const d2 = Math.sqrt(Math.pow(coords.x - closestSegment.p2.x, 2) + Math.pow(coords.y - closestSegment.p2.y, 2));
+                    
+                    if (d1 <= radius) {
+                        tStart = 0;
+                        tEnd = Math.min(1, intersections[0].t + 0.1);
+                    } else if (d2 <= radius) {
+                        tStart = Math.max(0, intersections[0].t - 0.1);
+                        tEnd = 1;
+                    }
+                }
+                
+                // 4. ПОДГОТОВИТЬ все точки для вставки
+                const pointsToInsert = [];
+                
+                // Точки ДО круга (закрепленные)
+                pointsToInsert.push({
+                    t: tStart - 0.2,
+                    type: 'anchor-before'
+                });
+                pointsToInsert.push({
+                    t: tStart - 0.1,
+                    type: 'anchor-before'
+                });
+                
+                // Точки ВНУТРИ круга (5 точек равномерно)
+                const numPointsInside = 5;
+                for (let i = 1; i <= numPointsInside; i++) {
+                    const t = tStart + (tEnd - tStart) * (i / (numPointsInside + 1));
+                    pointsToInsert.push({
+                        t: t,
+                        type: 'inside'
+                    });
+                }
+                
+                // Точки ПОСЛЕ круга (закрепленные)
+                pointsToInsert.push({
+                    t: tEnd + 0.1,
+                    type: 'anchor-after'
+                });
+                pointsToInsert.push({
+                    t: tEnd + 0.2,
+                    type: 'anchor-after'
+                });
+                
+                // 5. ВСТАВИТЬ все точки ОДНИМ проходом (от конца к началу)
+                // Сортируем точки по t (от большего к меньшему)
+                pointsToInsert.sort((a, b) => b.t - a.t);
+                
+                // Начинаем вставлять с КОНЦА, чтобы индексы не сбивались
+                pointsToInsert.forEach(pointToInsert => {
+                    if (pointToInsert.t >= 0 && pointToInsert.t <= 1) {
+                        const x = closestSegment.p1.x + (closestSegment.p2.x - closestSegment.p1.x) * pointToInsert.t;
+                        const y = closestSegment.p1.y + (closestSegment.p2.y - closestSegment.p1.y) * pointToInsert.t;
+                        
+                        // Вставляем ПОСЛЕ segmentIndex
+                        this.insertPointIntoPath(path, segmentIndex, x, y);
+                    }
+                });
+            }
+        }
+        
+        // 6. После всех вставок, найти ВСЕ точки внутри круга
+        const finalD = path.getAttribute('d');
+        const { points: finalPoints } = this.parsePathToPoints(finalD);
+        
+        for (let i = 0; i < finalPoints.length; i++) {
+            const point = finalPoints[i];
+            const distance = Math.sqrt(
+                Math.pow(coords.x - point.x, 2) + 
+                Math.pow(coords.y - point.y, 2)
+            );
+            
+            if (distance <= radius) {
+                affectedPoints.push({
+                    path: path,
+                    pointIndex: i,
+                    x: point.x,
+                    y: point.y,
+                    originalX: point.x,
+                    originalY: point.y,
+                    distance: distance
+                });
+            }
+        }
+    });
+    
+    if (affectedPoints.length > 0) {
+        this.state.isDrawing = true;
+        this.pushData = {
+            points: affectedPoints,
+            mouseStartX: coords.x,
+            mouseStartY: coords.y,
+            radius: radius
+        };
+        
+        this.showPushIndicator(coords.x, coords.y, radius);
+    }
+    
+    return;
+}
+
+    // НОВОЕ: Инструмент ластик
+if (this.state.currentTool === 'eraser') {
+    e.preventDefault();
+    this.state.isDrawing = true;
+    this.state.lastErasePoint = {x: coords.x, y: coords.y}; // Запоминаем точку
+    
+    // Сразу удаляем векторы под курсором
+    this.eraseVectorsAt(coords.x, coords.y);
+    return;
+}
+	
+    this.state.isDrawing = true;
+    
+    // ДЛЯ КАРАНДАША: 
+if (this.state.currentTool === 'pen') {
+    // Если ВЫКЛЮЧЕНО продолжение вектора - начинаем новый путь
+    if (!this.snapSettings.continueVector) {
+        this.state.currentElement = null;
+    }
+    
+    // Если есть currentElement и продолжение ВКЛЮЧЕНО
+        if (this.snapSettings.continueVector && this.state.currentElement) {
+            // Получаем последнюю точку текущего пути
+            const d = this.state.currentElement.getAttribute('d');
+            if (d) {
+                const points = d.match(/[\d.-]+/g);
+                if (points && points.length >= 2) {
+                    // Берем последние координаты
+                    const lastX = parseFloat(points[points.length - 2]);
+                    const lastY = parseFloat(points[points.length - 1]);
+                    
+                    // Устанавливаем стартовую точку как последнюю точку пути
+                    this.state.startPoint = {x: lastX, y: lastY};
+                    
+                    // Начинаем рисовать с этой точки
+                    this.state.penPoints = [{x: lastX, y: lastY}];
+                    return;
+                }
+            }
+        }
+    
+    // НОВЫЙ КОД: Найти последний путь карандаша и его реальную последнюю точку
+    if (this.snapSettings.continueVector) {
+        // Ищем все пути карандаша (обычно это пути без fill)
+        const allPaths = Array.from(this.svg.querySelectorAll('path'))
+            .filter(path => {
+                const fill = path.getAttribute('fill');
+                const stroke = path.getAttribute('stroke');
+                // Это путь карандаша если: нет fill или fill='none', и есть stroke
+                return (!fill || fill === 'none') && stroke && 
+                       !path.id?.includes('indicator') && 
+                       !path.id?.includes('background');
+            });
+        
+        if (allPaths.length > 0) {
+            // Берем последний добавленный путь (предположительно последний нарисованный)
+            const lastPath = allPaths[allPaths.length - 1];
+            
+            // Получаем его точки
+            const d = lastPath.getAttribute('d');
+            if (d) {
+                // Парсим путь чтобы найти последнюю точку
+                const { points } = this.parsePathToPoints(d);
+                
+                if (points.length > 0) {
+                    // Берем ПОСЛЕДНЮЮ точку пути
+                    const lastPoint = points[points.length - 1];
+                    
+                    // Начинаем с этой точки
+                    this.state.currentElement = lastPath;
+                    this.state.startPoint = {x: lastPoint.x, y: lastPoint.y};
+                    this.state.penPoints = [{x: lastPoint.x, y: lastPoint.y}];
+                    return;
+                }
+            }
+        }
+    }
+    
+    // Если ничего не нашли - начинаем новый путь
+    this.state.startPoint = {x: coords.x, y: coords.y};
+    this.startPen(coords.x, coords.y);
+    return;
+}
+    // НАЧИНАЕМ НОВЫЙ ПУТЬ (если не продолжили существующий)
+    this.state.startPoint = {x: coords.x, y: coords.y};
+    
+    switch(this.state.currentTool) {
+        case 'pen':
+            this.startPen(coords.x, coords.y);
+            break;
+        case 'line':
+            this.startLine(coords.x, coords.y);
+            break;
+        case 'rect':
+            this.startRect(coords.x, coords.y);
+            break;
+        case 'circle':
+            this.startCircle(coords.x, coords.y);
+            break;
+    }
+}
+ 
+onMouseMove(e) {
+    this.updateCoordinates(e);
+    const coords = this.getSVGCoordinates(e);
+    
+    if (this.state.isMoving) {
+        e.preventDefault();
+        this.doPanning(e);
+        return;
+    }
+    if (this.state.currentTool === 'bezier-points') {
+        if (this.state.isDraggingPoint) {
+            this.updatePointDrag(coords.x, coords.y);
+            return;
+        }
+        
+        if (this.state.isDraggingBezierControl) {
+            this.updateBezierControlDrag(coords.x, coords.y);
+            return;
+        }
+    }
+    // Для инструмента пуш: обновляем индикатор при наведении
+	if (this.state.currentTool === 'push') {
+		const radius = this.state.pushRadius / this.state.zoom;
+		
+		if (!this.state.isDrawing) {
+			this.showPushIndicator(coords.x, coords.y, radius);
+		} else if (this.state.isDrawing && this.pushData) {
+			const dx = coords.x - this.pushData.mouseStartX;
+			const dy = coords.y - this.pushData.mouseStartY;
+			
+			// Двигаем ВСЕ точки, которые были внутри круга при нажатии
+			this.pushData.points.forEach(pointData => {
+				const force = Math.max(0, 1 - (pointData.distance / this.pushData.radius));
+				
+				if (force > 0.05) {
+					const newX = pointData.originalX + dx * force * this.state.pushStrength;
+					const newY = pointData.originalY + dy * force * this.state.pushStrength;
+					
+					this.updatePathPointFast(pointData.path, pointData.pointIndex, newX, newY);
+					
+					pointData.x = newX;
+					pointData.y = newY;
+				}
+			});
+			
+			this.showPushIndicator(coords.x, coords.y, this.pushData.radius);
+		}
+	}
+
+	
+    //Для инструмента ластик
+	if (this.state.currentTool === 'eraser') {
+		const radius = this.state.eraserSize / this.state.zoom;
+		
+		// Показываем индикатор (это легкая операция, можно оставить)
+		this.showEraserIndicator(coords.x, coords.y, radius);
+		
+		// Если нажата кнопка мыши И прошло достаточно времени с последнего стирания
+		if (this.state.isDrawing) {
+			// Проверяем расстояние от последней точки стирания
+			if (this.state.lastErasePoint) {
+				const distance = Math.sqrt(
+					Math.pow(coords.x - this.state.lastErasePoint.x, 2) + 
+					Math.pow(coords.y - this.state.lastErasePoint.y, 2)
+				);
+				
+				// Стираем только если отъехали на значительное расстояние
+				// Это уменьшит количество вызовов
+				if (distance > radius / 2) {
+					this.eraseVectorsAt(coords.x, coords.y);
+					this.state.lastErasePoint = {x: coords.x, y: coords.y};
+				}
+			} else {
+				this.eraseVectorsAt(coords.x, coords.y);
+				this.state.lastErasePoint = {x: coords.x, y: coords.y};
+			}
+		}
+	}
+
+    // Обновляем рисование (если рисуем)
+    if (this.state.isDrawing) {
+        switch(this.state.currentTool) {
+        case 'pen':
+            this.drawPen(coords.x, coords.y);
+            break;
+        case 'line':
+            this.updateLine(coords.x, coords.y);
+            break;
+        case 'rect':
+            this.updateRect(coords.x, coords.y);
+            break;
+        case 'circle':
+            this.updateCircle(coords.x, coords.y);
+            break;
+        }
+    }
+}
+
+updatePathPointFast(path, pointIndex, newX, newY) {
+    // Если это виртуальная точка (дробный индекс) - НЕ обновляем путь
+    // Виртуальные точки существуют только для движения, но не сохраняются
+    if (pointIndex % 1 !== 0) {
+        return; // Виртуальная точка - не обновляем путь
+    }
+    
+    const d = path.getAttribute('d');
+    if (!d) return;
+    
+    const parts = d.split(/(?=[ML])/);
+    let currentIdx = 0;
+    
+    for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        const coords = part.substring(1).trim().split(/\s+/);
+        
+        for (let j = 0; j < coords.length; j += 2) {
+            if (currentIdx === Math.floor(pointIndex)) {
+                coords[j] = newX;
+                coords[j + 1] = newY;
+                parts[i] = part.charAt(0) + ' ' + coords.join(' ');
+                path.setAttribute('d', parts.join(''));
+                return;
+            }
+            currentIdx++;
+        }
+    }
+}
+
+// Функция разрезания пути в местах пересечения с кругом ластика
+cutPathAtIntersections(path, x, y, radius) {
+    const d = path.getAttribute('d');
+    if (!d) return null;
+    
+    const { points, isClosed } = this.parsePathToPoints(d);
+    if (points.length < 2) return null;
+    
+    const intersections = [];
+    
+    // Находим все пересечения отрезков пути с кругом ластика
+    for (let i = 0; i < points.length; i++) {
+        const p1 = points[i];
+        const p2 = points[(i + 1) % points.length];
+        
+        // Пропускаем если это последний отрезок в незамкнутом пути
+        if (!isClosed && i === points.length - 1) break;
+        
+        const intersection = this.lineCircleIntersection(p1, p2, {x, y}, radius);
+        if (intersection.length > 0) {
+            // Добавляем информацию о том, с какой стороны отрезка находится круг
+            intersection.forEach(inter => {
+                // Проверяем, находится ли какая-то из концевых точек внутри радиуса
+                const p1InRadius = this.pointDistance(p1, {x, y}) <= radius;
+                const p2InRadius = this.pointDistance(p2, {x, y}) <= radius;
+                
+                intersections.push({
+                    point: inter,
+                    segmentIndex: i,
+                    p1: p1,
+                    p2: p2,
+                    p1InRadius: p1InRadius,
+                    p2InRadius: p2InRadius
+                });
+            });
+        } else {
+            // Проверяем, находятся ли концевые точки внутри радиуса
+            const p1InRadius = this.pointDistance(p1, {x, y}) <= radius;
+            const p2InRadius = this.pointDistance(p2, {x, y}) <= radius;
+            
+            if (p1InRadius || p2InRadius) {
+                intersections.push({
+                    point: p1InRadius ? p1 : p2,
+                    segmentIndex: i,
+                    p1: p1,
+                    p2: p2,
+                    p1InRadius: p1InRadius,
+                    p2InRadius: p2InRadius,
+                    isEndpoint: true
+                });
+            }
+        }
+    }
+    
+    // Если нет пересечений - проверяем, полностью ли путь внутри радиуса
+    if (intersections.length === 0) {
+        const allPointsInRadius = points.every(point => 
+            this.pointDistance(point, {x, y}) <= radius
+        );
+        
+        if (allPointsInRadius) {
+            return 'delete';
+        }
+        return null;
+    }
+    
+    // Сортируем точки пересечения вдоль пути
+    const allIntersectionPoints = [];
+    intersections.forEach(item => {
+        // Рассчитываем позицию на отрезке (0-1)
+        let t = 0;
+        if (!item.isEndpoint) {
+            t = this.pointOnSegmentParameter(item.p1, item.p2, item.point);
+        } else {
+            t = item.p1InRadius ? 0 : 1;
+        }
+        
+        allIntersectionPoints.push({
+            point: item.point,
+            segmentIndex: item.segmentIndex,
+            t: t,
+            isEndpoint: item.isEndpoint || false,
+            p1InRadius: item.p1InRadius,
+            p2InRadius: item.p2InRadius
+        });
+    });
+    
+    // Сортируем по индексу сегмента и позиции на нем
+    allIntersectionPoints.sort((a, b) => {
+        if (a.segmentIndex !== b.segmentIndex) {
+            return a.segmentIndex - b.segmentIndex;
+        }
+        return a.t - b.t;
+    });
+    
+    // Разрезаем путь на части
+    const pathParts = this.splitPathAtIntersections(points, allIntersectionPoints, isClosed);
+    
+    // Фильтруем части: удаляем те, что полностью внутри радиуса, оставляем остальные
+    const filteredParts = pathParts.filter(part => {
+        if (part.points.length === 0) return false;
+        
+        // Проверяем несколько точек вдоль части пути
+        const checkPoints = [
+            part.points[0],
+            part.points[Math.floor(part.points.length / 2)],
+            part.points[part.points.length - 1]
+        ];
+        
+        // Если все проверяемые точки внутри радиуса - удаляем часть
+        const allInside = checkPoints.every(point => 
+            this.pointDistance(point, {x, y}) <= radius
+        );
+        
+        return !allInside;
+    });
+    
+    // Если все части удалены - удаляем весь путь
+    if (filteredParts.length === 0) {
+        return 'delete';
+    }
+    
+    // Создаем новые пути из оставшихся частей
+    const newPaths = [];
+    filteredParts.forEach(part => {
+        if (part.points.length >= 2) {
+            newPaths.push(this.pointsToPath(part.points, false));
+        }
+    });
+    
+    return newPaths;
+}
+
+// Поиск пересечения линии с кругом
+lineCircleIntersection(p1, p2, center, radius) {
+    const intersections = [];
+    
+    // Вектор направления отрезка
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    
+    // Квадратичное уравнение для нахождения пересечений
+    const A = dx * dx + dy * dy;
+    const B = 2 * (dx * (p1.x - center.x) + dy * (p1.y - center.y));
+    const C = (p1.x - center.x) * (p1.x - center.x) + 
+              (p1.y - center.y) * (p1.y - center.y) - 
+              radius * radius;
+    
+    const discriminant = B * B - 4 * A * C;
+    
+    if (discriminant < 0) {
+        // Нет пересечений
+        return intersections;
+    }
+    
+    const t1 = (-B - Math.sqrt(discriminant)) / (2 * A);
+    const t2 = (-B + Math.sqrt(discriminant)) / (2 * A);
+    
+    // Проверяем, что пересечения находятся на отрезке (0 <= t <= 1)
+    if (t1 >= 0 && t1 <= 1) {
+        intersections.push({
+            x: p1.x + t1 * dx,
+            y: p1.y + t1 * dy
+        });
+    }
+    
+    if (t2 >= 0 && t2 <= 1 && Math.abs(t1 - t2) > 0.001) {
+        intersections.push({
+            x: p1.x + t2 * dx,
+            y: p1.y + t2 * dy
+        });
+    }
+    
+    return intersections;
+}
+
+// Параметр точки на отрезке (0-1)
+pointOnSegmentParameter(p1, p2, point) {
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    
+    if (Math.abs(dx) > Math.abs(dy)) {
+        return (point.x - p1.x) / dx;
+    } else {
+        return (point.y - p1.y) / dy;
+    }
+}
+
+// Разделение пути на части по точкам пересечения
+splitPathAtIntersections(originalPoints, intersections, isClosed) {
+    const parts = [];
+    let currentPart = { points: [] };
+    
+    // Добавляем все точки до первого пересечения
+    for (let i = 0; i < originalPoints.length; i++) {
+        currentPart.points.push(originalPoints[i]);
+        
+        // Проверяем, нужно ли разрезать после этой точки
+        const nextPointIndex = (i + 1) % originalPoints.length;
+        const segmentIntersections = intersections.filter(
+            inter => inter.segmentIndex === i
+        ).sort((a, b) => a.t - b.t);
+        
+        if (segmentIntersections.length > 0) {
+            // Добавляем точку пересечения
+            segmentIntersections.forEach(inter => {
+                currentPart.points.push(inter.point);
+                // Завершаем текущую часть
+                if (currentPart.points.length >= 2) {
+                    parts.push({...currentPart});
+                }
+                // Начинаем новую часть с точки пересечения
+                currentPart = { points: [inter.point] };
+            });
+        }
+        
+        // Если это последняя точка в незамкнутом пути
+        if (!isClosed && i === originalPoints.length - 1) {
+            if (currentPart.points.length >= 2) {
+                parts.push({...currentPart});
+            }
+        }
+    }
+    
+    // Для замкнутого пути - соединяем последнюю часть с первой
+    if (isClosed && parts.length > 0 && currentPart.points.length > 0) {
+        // Добавляем оставшиеся точки к первой части
+        parts[0].points = [...currentPart.points, ...parts[0].points.slice(1)];
+    } else if (currentPart.points.length >= 2) {
+        parts.push({...currentPart});
+    }
+    
+    return parts;
+}
+
+eraseVectorsAt(x, y) {
+    const now = Date.now();
+    if (this.lastEraseTime && (now - this.lastEraseTime) < 16) { // ~60fps
+        return; // Пропускаем слишком частые вызовы
+    }
+    this.lastEraseTime = now;
+    const radius = this.state.eraserSize / this.state.zoom;
+    
+    // Скрываем индикатор перед обработкой
+    this.hideEraserIndicator();
+    
+    // 1. Обработка ПУТЕЙ (paths)
+    const allPaths = Array.from(this.svg.querySelectorAll('path'))
+        .filter(path => !path.id || !path.id.includes('background') && 
+                       !path.id.includes('eraser-indicator') && 
+                       !path.id.includes('push-indicator'));
+    
+    allPaths.forEach(path => {
+        const result = this.cutPathAtIntersections(path, x, y, radius);
+        
+        if (result === 'delete') {
+            // Удаляем весь путь
+            if (path.parentNode) {
+                path.parentNode.removeChild(path);
+            }
+        } else if (result && result.length > 0) {
+            // Удаляем оригинальный путь
+            const parent = path.parentNode;
+            if (parent) {
+                const stroke = path.getAttribute('stroke');
+                const strokeWidth = path.getAttribute('stroke-width');
+                const fill = path.getAttribute('fill');
+                const linecap = path.getAttribute('stroke-linecap');
+                const linejoin = path.getAttribute('stroke-linejoin');
+                
+                parent.removeChild(path);
+                
+                // Создаем новые пути из частей
+                result.forEach((pathData) => {
+                    const points = this.parsePathToPoints(pathData).points;
+                    if (points.length >= 2) {
+                        const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                        newPath.setAttribute('d', pathData);
+                        newPath.setAttribute('stroke', stroke || 'black');
+                        newPath.setAttribute('stroke-width', strokeWidth || '1');
+                        newPath.setAttribute('fill', fill || 'none');
+                        newPath.setAttribute('stroke-linecap', linecap || 'round');
+                        newPath.setAttribute('stroke-linejoin', linejoin || 'round');
+                        parent.appendChild(newPath);
+                    }
+                });
+            }
+        }
+    });
+    
+    // 2. Обработка ЛИНИЙ (lines) - конвертируем их в пути для лучшего контроля
+    const lines = Array.from(this.svg.querySelectorAll('line'))
+        .filter(el => !el.id || !el.id.includes('background'));
+    
+    lines.forEach(line => {
+        const path = this.convertToPath(line);
+        if (path) {
+            const parent = line.parentNode;
+            if (parent) {
+                parent.removeChild(line);
+                parent.appendChild(path);
+                
+                // Теперь обрабатываем как путь
+                const result = this.cutPathAtIntersections(path, x, y, radius);
+                if (result === 'delete') {
+                    parent.removeChild(path);
+                } else if (result && result.length > 0) {
+                    parent.removeChild(path);
+                    result.forEach(pathData => {
+                        const points = this.parsePathToPoints(pathData).points;
+                        if (points.length >= 2) {
+                            const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                            newPath.setAttribute('d', pathData);
+                            newPath.setAttribute('stroke', line.getAttribute('stroke') || 'black');
+                            newPath.setAttribute('stroke-width', line.getAttribute('stroke-width') || '1');
+                            newPath.setAttribute('fill', 'none');
+                            parent.appendChild(newPath);
+                        }
+                    });
+                }
+            }
+        }
+    });
+    
+    // 3. Обработка ПРЯМОУГОЛЬНИКОВ (rects)
+    const rects = Array.from(this.svg.querySelectorAll('rect'))
+        .filter(el => !el.id || !el.id.includes('background'));
+    
+    rects.forEach(rect => {
+        const rectX = parseFloat(rect.getAttribute('x'));
+        const rectY = parseFloat(rect.getAttribute('y'));
+        const rectWidth = parseFloat(rect.getAttribute('width'));
+        const rectHeight = parseFloat(rect.getAttribute('height'));
+        
+        // Проверяем расстояние от центра ластика до прямоугольника
+        const distance = this.pointToRectDistance(x, y, 
+            {x: rectX, y: rectY, width: rectWidth, height: rectHeight});
+        
+        // Если ластик касается прямоугольника - конвертируем и обрабатываем
+        if (distance <= radius) {
+            const path = this.convertToPath(rect);
+            if (path) {
+                const parent = rect.parentNode;
+                if (parent) {
+                    parent.removeChild(rect);
+                    parent.appendChild(path);
+                    
+                    const result = this.cutPathAtIntersections(path, x, y, radius);
+                    if (result === 'delete') {
+                        parent.removeChild(path);
+                    } else if (result && result.length > 0) {
+                        parent.removeChild(path);
+                        result.forEach(pathData => {
+                            const points = this.parsePathToPoints(pathData).points;
+                            if (points.length >= 2) {
+                                const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                                newPath.setAttribute('d', pathData);
+                                newPath.setAttribute('stroke', rect.getAttribute('stroke') || 'black');
+                                newPath.setAttribute('stroke-width', rect.getAttribute('stroke-width') || '1');
+                                newPath.setAttribute('fill', 'none');
+                                parent.appendChild(newPath);
+                            }
+                        });
+                    }
+                }
+            }
+        }
+    });
+    
+    // 4. Обработка КРУГОВ (circles)
+    const circles = Array.from(this.svg.querySelectorAll('circle'))
+        .filter(el => !el.id || !el.id.includes('background'));
+    
+    circles.forEach(circle => {
+        const cx = parseFloat(circle.getAttribute('cx'));
+        const cy = parseFloat(circle.getAttribute('cy'));
+        const r = parseFloat(circle.getAttribute('r'));
+        
+        // Расстояние от центра ластика до центра круга
+        const distance = Math.sqrt((x - cx)**2 + (y - cy)**2);
+        
+        // Если ластик пересекает или касается круга
+        if (distance <= radius + r && distance >= Math.abs(radius - r)) {
+            const path = this.convertToPath(circle);
+            if (path) {
+                const parent = circle.parentNode;
+                if (parent) {
+                    parent.removeChild(circle);
+                    parent.appendChild(path);
+                    
+                    const result = this.cutPathAtIntersections(path, x, y, radius);
+                    if (result === 'delete') {
+                        parent.removeChild(path);
+                    } else if (result && result.length > 0) {
+                        parent.removeChild(path);
+                        result.forEach(pathData => {
+                            const points = this.parsePathToPoints(pathData).points;
+                            if (points.length >= 2) {
+                                const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                                newPath.setAttribute('d', pathData);
+                                newPath.setAttribute('stroke', circle.getAttribute('stroke') || 'black');
+                                newPath.setAttribute('stroke-width', circle.getAttribute('stroke-width') || '1');
+                                newPath.setAttribute('fill', 'none');
+                                parent.appendChild(newPath);
+                            }
+                        });
+                    }
+                }
+            }
+        } else if (distance < Math.abs(radius - r)) {
+            // Ластик полностью внутри круга или круг внутри ластика
+            if (radius >= r) {
+                // Ластик больше круга - удаляем круг полностью
+                if (circle.parentNode) {
+                    circle.parentNode.removeChild(circle);
+                }
+            } else {
+                // Круг больше ластика - нужно вырезать отверстие
+                const path = this.convertToPath(circle);
+                if (path) {
+                    const parent = circle.parentNode;
+                    if (parent) {
+                        parent.removeChild(circle);
+                        parent.appendChild(path);
+                        
+                        // Для больших кругов лучше использовать другой подход
+                        const result = this.cutPathAtIntersections(path, x, y, radius);
+                        if (result === 'delete') {
+                            parent.removeChild(path);
+                        } else if (result && result.length > 0) {
+                            parent.removeChild(path);
+                            result.forEach(pathData => {
+                                const points = this.parsePathToPoints(pathData).points;
+                                if (points.length >= 2) {
+                                    const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                                    newPath.setAttribute('d', pathData);
+                                    newPath.setAttribute('stroke', circle.getAttribute('stroke') || 'black');
+                                    newPath.setAttribute('stroke-width', circle.getAttribute('stroke-width') || '1');
+                                    newPath.setAttribute('fill', 'none');
+                                    parent.appendChild(newPath);
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    });
+    
+    // 5. Обработка ЭЛЛИПСОВ (ellipses)
+    const ellipses = Array.from(this.svg.querySelectorAll('ellipse'))
+        .filter(el => !el.id || !el.id.includes('background'));
+    
+    ellipses.forEach(ellipse => {
+        const path = this.convertToPath(ellipse);
+        if (path) {
+            const parent = ellipse.parentNode;
+            if (parent) {
+                parent.removeChild(ellipse);
+                parent.appendChild(path);
+                
+                const result = this.cutPathAtIntersections(path, x, y, radius);
+                if (result === 'delete') {
+                    parent.removeChild(path);
+                } else if (result && result.length > 0) {
+                    parent.removeChild(path);
+                    result.forEach(pathData => {
+                        const points = this.parsePathToPoints(pathData).points;
+                        if (points.length >= 2) {
+                            const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                            newPath.setAttribute('d', pathData);
+                            newPath.setAttribute('stroke', ellipse.getAttribute('stroke') || 'black');
+                            newPath.setAttribute('stroke-width', ellipse.getAttribute('stroke-width') || '1');
+                            newPath.setAttribute('fill', 'none');
+                            parent.appendChild(newPath);
+                        }
+                    });
+                }
+            }
+        }
+    });
+    
+    // Показываем индикатор обратно
+    this.showEraserIndicator(x, y, radius);
+}
+
+pointToRectDistance(px, py, rect) {
+    // Находим ближайшую точку прямоугольника к заданной точке
+    const closestX = Math.max(rect.x, Math.min(px, rect.x + rect.width));
+    const closestY = Math.max(rect.y, Math.min(py, rect.y + rect.height));
+    
+    // Расстояние до ближайшей точки
+    const dx = px - closestX;
+    const dy = py - closestY;
+    
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+// Расстояние между двумя точками
+pointDistance(p1, p2) {
+    return Math.sqrt((p2.x - p1.x)**2 + (p2.y - p1.y)**2);
+}
+
+onMouseUp() {
+    if (this.state.isMoving) {
+        this.stopPanning();
+    }
+
+    if (this.state.isDrawing && this.state.currentTool === 'eraser') {
+        this.state.isDrawing = false;
+        this.state.lastErasePoint = null;
+        this.lastEraseTime = null;
+    } 
+    
+    if (this.state.isDrawing) {
+        // Если рисуем карандашом
+        if (this.state.currentTool === 'pen') {
+            // Применяем привязку к черной линии если нужно
+            if (this.state.image && this.snapSettings.enabled) {
+                this.snapPathToBlackLine(this.state.currentElement);
+            }
+            
+            // Если ВЫКЛЮЧЕНО продолжение вектора - сбрасываем currentElement
+            if (!this.snapSettings.continueVector) {
+                this.state.currentElement = null;
+            }
+            
+            // Только сбрасываем флаги рисования
+            this.state.isDrawing = false;
+            this.state.penPoints = [];
+            
+        } else {
+            // Для других инструментов - сбрасываем как обычно
+            this.state.currentElement = null;
+            this.state.isDrawing = false;
+        }
+        
+        this.hidePushIndicator();
+    }
+    
+    if (this.state.currentTool === 'push') {
+        this.state.isDrawing = false;
+        this.pushData = null; // Сбрасываем выбранные точки
+    }
+    
+    this.hideEraserIndicator();
+}
+
+onMouseLeave() {
+    if (this.state.isMoving) {
+        this.stopPanning();
+    }
+    
+    if (this.state.isDrawing) {
+        this.state.isDrawing = false;
+        this.state.pushData = null;
+        this.hidePushIndicator();
+        this.hideEraserIndicator();
+    }
+    document.body.style.cursor = 'default';
+}
+
+// Новая функция: пересечение круга с отрезком
+circleSegmentIntersections(cx, cy, radius, x1, y1, x2, y2) {
+    const intersections = [];
+    
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    
+    const A = dx * dx + dy * dy;
+    const B = 2 * (dx * (x1 - cx) + dy * (y1 - cy));
+    const C = (x1 - cx) * (x1 - cx) + (y1 - cy) * (y1 - cy) - radius * radius;
+    
+    const discriminant = B * B - 4 * A * C;
+    
+    if (discriminant < 0) {
+        return intersections;
+    }
+    
+    const sqrtDiscriminant = Math.sqrt(discriminant);
+    const t1 = (-B - sqrtDiscriminant) / (2 * A);
+    const t2 = (-B + sqrtDiscriminant) / (2 * A);
+    
+    // Проверяем что точка на отрезке (0 <= t <= 1)
+    if (t1 >= 0 && t1 <= 1) {
+        intersections.push({
+            x: x1 + t1 * dx,
+            y: y1 + t1 * dy,
+            t: t1
+        });
+    }
+    
+    if (t2 >= 0 && t2 <= 1 && Math.abs(t1 - t2) > 0.001) {
+        intersections.push({
+            x: x1 + t2 * dx,
+            y: y1 + t2 * dy,
+            t: t2
+        });
+    }
+    
+    // Если отрезок полностью внутри круга - добавляем начало и конец
+    if (intersections.length === 0) {
+        const d1 = Math.sqrt(Math.pow(x1 - cx, 2) + Math.pow(y1 - cy, 2));
+        const d2 = Math.sqrt(Math.pow(x2 - cx, 2) + Math.pow(y2 - cy, 2));
+        
+        if (d1 <= radius && d2 <= radius) {
+            intersections.push({x: x1, y: y1, t: 0});
+            intersections.push({x: x2, y: y2, t: 1});
+        }
+    }
+    
+    return intersections;
+}
+
+            // РИСОВАНИЕ
+startPen(x, y) {
+    this.state.penPoints = [{x, y}];
+    
+    this.state.currentElement = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    this.state.currentElement.setAttribute('d', `M ${x} ${y}`);
+    this.state.currentElement.setAttribute('stroke', this.state.strokeColor);
+    this.state.currentElement.setAttribute('stroke-width', this.state.strokeWidth);
+    this.state.currentElement.setAttribute('fill', 'none');
+    this.state.currentElement.setAttribute('stroke-linecap', 'round');
+    this.state.currentElement.setAttribute('stroke-linejoin', 'round');
+    
+    this.svg.appendChild(this.state.currentElement);
+}
+            
+drawPen(x, y) {
+    // 1. СНАЧАЛА проверяем возможность присоединения к существующему вектору
+    const snapVectorResult = this.findNearestVectorEndpoint(x, y);
+    
+    // 2. ЕСЛИ нет близкого вектора, проверяем притягивание к черной линии на изображении
+    let snappedPoint = null;
+    
+    if (snapVectorResult.point) {
+        snappedPoint = snapVectorResult.point;
+    } else if (this.state.image && this.snapSettings.enabled) {
+        snappedPoint = this.snapToBlackLine(x, y);
+    }
+    
+    // Используем привязанную точку или оригинальную
+    const finalPoint = snappedPoint || {x, y};
+    
+    // Собираем точки для сглаживания (используем финальные координаты)
+    this.state.penPoints.push(finalPoint);
+    
+    // Применяем сглаживание
+    const smoothing = this.state.smoothing;
+    const pointsToAverage = Math.min(smoothing, this.state.penPoints.length);
+    const startIdx = this.state.penPoints.length - pointsToAverage;
+    
+    let avgX = 0;
+    let avgY = 0;
+    
+    for (let i = startIdx; i < this.state.penPoints.length; i++) {
+        avgX += this.state.penPoints[i].x;
+        avgY += this.state.penPoints[i].y;
+    }
+    
+    avgX /= pointsToAverage;
+    avgY /= pointsToAverage;
+    
+    // Добавляем сглаженную точку к пути
+    const currentPath = this.state.currentElement.getAttribute('d');
+    this.state.currentElement.setAttribute('d', currentPath + ` L ${avgX} ${avgY}`);
+    
+    // УБРАНО: визуальная обратная связь для притягивания
+}
+ 
+    findNearestVectorEndpoint(x, y) {
+        const snapDistance = this.snapSettings.vectorSnapDistance / this.state.zoom;
+        
+        // Получаем все пути и линии (кроме текущего)
+        const allVectors = Array.from(this.svg.querySelectorAll('path, line'))
+            .filter(el => el !== this.state.currentElement);
+        
+        let nearestPoint = null;
+        let minDistance = snapDistance;
+        let nearestElement = null;
+        
+        allVectors.forEach(vector => {
+            let endpoints = [];
+            
+            if (vector.tagName === 'LINE') {
+                // Для линии: начало и конец
+                endpoints = [
+                    {x: parseFloat(vector.getAttribute('x1')), 
+                     y: parseFloat(vector.getAttribute('y1'))},
+                    {x: parseFloat(vector.getAttribute('x2')), 
+                     y: parseFloat(vector.getAttribute('y2'))}
+                ];
+            } 
+            else if (vector.tagName === 'PATH') {
+                // Для пути: первая и последняя точка
+                const d = vector.getAttribute('d');
+                const commands = d.split(/(?=[ML])/); // Разделяем по командам
+                
+                if (commands.length > 0) {
+                    // Первая точка
+                    const firstCmd = commands[0];
+                    const firstMatch = firstCmd.match(/[\d.-]+/g);
+                    if (firstMatch && firstMatch.length >= 2) {
+                        endpoints.push({
+                            x: parseFloat(firstMatch[0]),
+                            y: parseFloat(firstMatch[1])
+                        });
+                    }
+                    
+                    // Последняя точка
+                    const lastCmd = commands[commands.length - 1];
+                    const lastMatch = lastCmd.match(/[\d.-]+/g);
+                    if (lastMatch && lastMatch.length >= 2) {
+                        endpoints.push({
+                            x: parseFloat(lastMatch[lastMatch.length - 2]),
+                            y: parseFloat(lastMatch[lastMatch.length - 1])
+                        });
+                    }
+                }
+            }
+            
+            // Проверяем все концевые точки
+            endpoints.forEach(point => {
+                if (point.x === undefined || point.y === undefined) return;
+                
+                const dist = Math.sqrt(Math.pow(x - point.x, 2) + Math.pow(y - point.y, 2));
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    nearestPoint = point;
+                    nearestElement = vector;
+                }
+            });
+        });
+        
+        return {point: nearestPoint, element: nearestElement, distance: minDistance};
+    }
+   
+snapPathToBlackLine(pathElement) {
+    if (!pathElement || pathElement.tagName !== 'PATH' || !this.state.image) return;
+    
+    // Получаем путь и информацию о закрытости
+    const d = pathElement.getAttribute('d');
+    if (!d) return;
+    
+    const { points, isClosed } = this.parsePathToPoints(d);
+    
+    // Привязываем каждую точку к черной линии
+    const snappedPoints = points.map(point => {
+        const snapped = this.snapToBlackLine(point.x, point.y);
+        return snapped || point;
+    });
+    
+    // Перестраиваем путь с привязанными точками
+    let newPath = `M ${snappedPoints[0].x} ${snappedPoints[0].y}`;
+    for (let i = 1; i < snappedPoints.length; i++) {
+        newPath += ` L ${snappedPoints[i].x} ${snappedPoints[i].y}`;
+    }
+    
+    // Добавляем Z если путь был закрыт
+    if (isClosed && snappedPoints.length > 2) {
+        newPath += ' Z';
+    }
+    
+    pathElement.setAttribute('d', newPath);
+}
+// безье
+    // ============================================
+    // ОБРАБОТЧИКИ КЛИКОВ
+    // ============================================
+
+    // ============================================
+    // СОЗДАНИЕ ТОЧЕК И ВЕКТОРОВ
+    // ============================================
+    
+    createSingleBezierPoint(x, y) {
+        const point = {
+            x: x,
+            y: y,
+            element: null,
+            index: this.state.bezierPoints.length
+        };
+        
+        // Создаем элемент точки
+        point.element = this.createBezierPointElement(point);
+        this.svg.appendChild(point.element);
+        
+        // Добавляем в массив
+        this.state.bezierPoints.push(point);
+        
+        // Выделяем эту точку
+        this.selectBezierPoint(point.index);
+    }
+  
+createNewBezierVector(x, y) {
+    const fromPoint = this.state.bezierPoints[this.state.bezierSelectedPoint];
+    if (!fromPoint) return;
+    
+    // Ищем предыдущий вектор, где fromPoint является концом
+    const previousVector = this.state.bezierVectors.find(v => 
+        v.to === fromPoint.index
+    );
+    
+    // Создаем новую точку
+    const toPoint = {
+        x: x,
+        y: y,
+        element: null,
+        index: this.state.bezierPoints.length
+    };
+    
+    // Создаем элемент точки
+    toPoint.element = this.createBezierPointElement(toPoint);
+    this.svg.appendChild(toPoint.element);
+    
+    // Добавляем в массив
+    this.state.bezierPoints.push(toPoint);
+    
+    // Создаем вектор Безье
+    const newVector = this.createBezierVector(fromPoint, toPoint, previousVector);
+    
+    // Если есть предыдущий вектор - выравниваем касательные
+    if (previousVector) {
+        this.alignTangentsForSmoothConnection(newVector, previousVector);
+    }
+    
+    // Снимаем выделение со старой точки
+    if (fromPoint.element) {
+        fromPoint.element.classList.remove('selected');
+    }
+    
+    // Выделяем новую точку
+    this.selectBezierPoint(toPoint.index);
+    
+    return newVector;
+}
+  
+    // СОЗДАНИЕ ВЕКТОРА БЕЗЬЕ МЕЖДУ ДВУМЯ ТОЧКАМИ
+createBezierVector(fromPoint, toPoint, previousVector = null) {
+    // Рассчитываем контрольные точки
+    const controlPoints = this.calculateBezierControlPoints(fromPoint, toPoint, previousVector);
+    
+    // Создаем объект вектора
+    const vector = {
+        from: fromPoint.index,
+        to: toPoint.index,
+        control1: {
+            x: controlPoints.cp1.x,
+            y: controlPoints.cp1.y,
+            belongsTo: fromPoint.index
+        },
+        control2: {
+            x: controlPoints.cp2.x,
+            y: controlPoints.cp2.y,
+            belongsTo: toPoint.index
+        },
+        path: null,
+        guideElements: {}
+    };
+    
+    // Создаем SVG путь
+    vector.path = this.createBezierPath(
+        fromPoint.x, fromPoint.y,
+        vector.control1.x, vector.control1.y,
+        vector.control2.x, vector.control2.y,
+        toPoint.x, toPoint.y
+    );
+    
+    this.svg.appendChild(vector.path);
+    
+    // Создаем направляющие элементы
+    this.createVectorGuides(vector, fromPoint, toPoint);
+    
+    // Сохраняем вектор
+    this.state.bezierVectors.push(vector);
+    
+    return vector;
+}
+ 
+    createBezierPath(x1, y1, cx1, cy1, cx2, cy2, x2, y2) {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        const d = `M ${x1} ${y1} C ${cx1} ${cy1} ${cx2} ${cy2} ${x2} ${y2}`;
+        
+        path.setAttribute('d', d);
+        path.setAttribute('stroke', this.state.strokeColor);
+        path.setAttribute('stroke-width', this.state.strokeWidth);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke-linecap', 'round');
+        path.classList.add('bezier-vector');
+        
+        return path;
+    }
+    
+createVectorGuides(vector, fromPoint, toPoint) {
+    const vectorIndex = this.state.bezierVectors.length - 1;
+    
+    // ЛИНИЯ 1: от точки "from" к ЕЁ контрольной точке (control1)
+    vector.guideElements.line1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    vector.guideElements.line1.setAttribute('class', 'bezier-guide-line');
+    vector.guideElements.line1.setAttribute('x1', fromPoint.x);
+    vector.guideElements.line1.setAttribute('y1', fromPoint.y);
+    vector.guideElements.line1.setAttribute('x2', vector.control1.x);
+    vector.guideElements.line1.setAttribute('y2', vector.control1.y);
+    vector.guideElements.line1.setAttribute('data-vector-index', vectorIndex);
+    vector.guideElements.line1.setAttribute('data-belongs-to', fromPoint.index);
+    vector.guideElements.line1.setAttribute('data-control-type', 'control1');
+    
+    // КОНТРОЛЬНАЯ ТОЧКА 1: принадлежит точке "from"
+    vector.guideElements.control1 = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    vector.guideElements.control1.setAttribute('class', 'bezier-control-point');
+    vector.guideElements.control1.setAttribute('cx', vector.control1.x);
+    vector.guideElements.control1.setAttribute('cy', vector.control1.y);
+    vector.guideElements.control1.setAttribute('r', '4');
+    vector.guideElements.control1.setAttribute('data-vector-index', vectorIndex);
+    vector.guideElements.control1.setAttribute('data-control-type', 'control1');
+    vector.guideElements.control1.setAttribute('data-belongs-to', fromPoint.index);
+    
+    // ЛИНИЯ 2: от точки "to" к ЕЁ контрольной точке (control2)
+    vector.guideElements.line2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    vector.guideElements.line2.setAttribute('class', 'bezier-guide-line');
+    vector.guideElements.line2.setAttribute('x1', toPoint.x);
+    vector.guideElements.line2.setAttribute('y1', toPoint.y);
+    vector.guideElements.line2.setAttribute('x2', vector.control2.x);
+    vector.guideElements.line2.setAttribute('y2', vector.control2.y);
+    vector.guideElements.line2.setAttribute('data-vector-index', vectorIndex);
+    vector.guideElements.line2.setAttribute('data-belongs-to', toPoint.index);
+    vector.guideElements.line2.setAttribute('data-control-type', 'control2');
+    
+    // КОНТРОЛЬНАЯ ТОЧКА 2: принадлежит точке "to"
+    vector.guideElements.control2 = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    vector.guideElements.control2.setAttribute('class', 'bezier-control-point');
+    vector.guideElements.control2.setAttribute('cx', vector.control2.x);
+    vector.guideElements.control2.setAttribute('cy', vector.control2.y);
+    vector.guideElements.control2.setAttribute('r', '4');
+    vector.guideElements.control2.setAttribute('data-vector-index', vectorIndex);
+    vector.guideElements.control2.setAttribute('data-control-type', 'control2');
+    vector.guideElements.control2.setAttribute('data-belongs-to', toPoint.index);
+    
+    // НОВЫЕ ОБРАБОТЧИКИ - используем единую функцию startBezierControlDrag
+    vector.guideElements.control1.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.startBezierControlDrag(e);
+    });
+    
+    vector.guideElements.control2.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.startBezierControlDrag(e);
+    });
+    
+    // Добавляем в SVG
+    this.svg.appendChild(vector.guideElements.line1);
+    this.svg.appendChild(vector.guideElements.control1);
+    this.svg.appendChild(vector.guideElements.line2);
+    this.svg.appendChild(vector.guideElements.control2);
+}
+  
+	
+    // ============================================
+    // РАСЧЕТ КОНТРОЛЬНЫХ ТОЧЕК БЕЗЬЕ
+    // ============================================
+ 
+calculateBezierControlPoints(pointA, pointB, previousVector = null) {
+    const dx = pointB.x - pointA.x;
+    const dy = pointB.y - pointA.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance === 0) {
+        return {
+            cp1: { x: pointA.x, y: pointA.y },
+            cp2: { x: pointB.x, y: pointB.y }
+        };
+    }
+    
+    // Простые встречные касательные длиной 0.39
+    const dirX = dx / distance;
+    const dirY = dy / distance;
+    const tangentLength = distance * 0.39;
+    
+    // Всегда создаем встречные касательные
+    const cp1 = {
+        x: pointA.x + dirX * tangentLength,
+        y: pointA.y + dirY * tangentLength
+    };
+    
+    const cp2 = {
+        x: pointB.x - dirX * tangentLength,
+        y: pointB.y - dirY * tangentLength
+    };
+    
+    return { cp1, cp2 };
+}
+
+alignTangentsForSmoothConnection(newVector, previousVector) {
+    if (!previousVector || !newVector) return;
+    
+    // Общая точка - где соединяются векторы
+    const commonPointIndex = newVector.from; // Это точка 2 в 1-2-3
+    const commonPoint = this.state.bezierPoints[commonPointIndex];
+    
+    // Точка 1 (начало предыдущего вектора)
+    const point1 = this.state.bezierPoints[previousVector.from];
+    // Точка 3 (конец нового вектора)
+    const point3 = this.state.bezierPoints[newVector.to];
+    
+    // Вектор 1->2 (от точки 1 к общей точке 2)
+    const vec1to2 = {
+        x: commonPoint.x - point1.x,
+        y: commonPoint.y - point1.y
+    };
+    
+    // Вектор 2->3 (от общей точки 2 к точке 3)
+    const vec2to3 = {
+        x: point3.x - commonPoint.x,
+        y: point3.y - commonPoint.y
+    };
+    
+    // Вычисляем длины
+    const length1to2 = Math.sqrt(vec1to2.x * vec1to2.x + vec1to2.y * vec1to2.y);
+    const length2to3 = Math.sqrt(vec2to3.x * vec2to3.x + vec2to3.y * vec2to3.y);
+    
+    if (length1to2 === 0 || length2to3 === 0) return;
+    
+    // Нормализуем векторы
+    const dir1to2 = { x: vec1to2.x / length1to2, y: vec1to2.y / length1to2 };
+    const dir2to3 = { x: vec2to3.x / length2to3, y: vec2to3.y / length2to3 };
+    
+    // Вычисляем биссектрису угла ВНУТРИ угла 1-2-3
+    // Для этого нужно усреднить НАПРАВЛЕНИЯ 1->2 и 2->3
+    // Но сначала инвертируем направление 1->2, потому что смотрим ИЗ точки 2
+    const dirFrom2to1 = { x: -dir1to2.x, y: -dir1to2.y }; // Направление от 2 к 1
+    const dirFrom2to3 = dir2to3; // Направление от 2 к 3
+    
+    // Биссектриса угла в точке 2 между направлениями к 1 и к 3
+    const bisector = {
+        x: dirFrom2to1.x + dirFrom2to3.x,
+        y: dirFrom2to1.y + dirFrom2to3.y
+    };
+    
+    const bisectorLength = Math.sqrt(bisector.x * bisector.x + bisector.y * bisector.y);
+    
+    let tangentDir;
+    
+    if (bisectorLength === 0) {
+        // Направления противоположны (180°) - используем любой перпендикуляр
+        tangentDir = { x: -dirFrom2to1.y, y: dirFrom2to1.x };
+    } else {
+        // Нормализуем биссектрису
+        const normalizedBisector = {
+            x: bisector.x / bisectorLength,
+            y: bisector.y / bisectorLength
+        };
+        
+        // Касательная перпендикулярна биссектрисе
+        tangentDir = {
+            x: -normalizedBisector.y,
+            y: normalizedBisector.x
+        };
+    }
+    
+    // Теперь ОЧЕНЬ ВАЖНО: касательные должны быть направлены:
+    // - Для вектора 1-2 (previousVector): control2 должен указывать ОТ точки 2 К точке 1
+    // - Для вектора 2-3 (newVector): control1 должен указывать ОТ точки 2 К точке 3
+    
+    // Проверяем, правильно ли направлена касательная для вектора 2->3
+    // Она должна иметь положительную проекцию на dirFrom2to3
+    const dotProductWith2to3 = tangentDir.x * dirFrom2to3.x + tangentDir.y * dirFrom2to3.y;
+    
+    if (dotProductWith2to3 < 0) {
+        // Если касательная направлена не туда - инвертируем её
+        tangentDir.x = -tangentDir.x;
+        tangentDir.y = -tangentDir.y;
+    }
+    
+    // Длины касательных (0.39 от длины вектора)
+    const tangentLength1to2 = length1to2 * 0.39;
+    const tangentLength2to3 = length2to3 * 0.39;
+    
+    // Обновляем контрольные точки:
+    
+    // 1. Для вектора 1-2: control2 (в точке 2) должен указывать К точке 1
+    // Это означает, что он должен быть направлен ПРОТИВОПОЛОЖНО tangentDir
+    previousVector.control2.x = commonPoint.x - tangentDir.x * tangentLength1to2;
+    previousVector.control2.y = commonPoint.y - tangentDir.y * tangentLength1to2;
+    
+    // 2. Для вектора 2-3: control1 (в точке 2) должен указывать К точке 3
+    // Это означает, что он должен быть направлен ВДОЛЬ tangentDir
+    newVector.control1.x = commonPoint.x + tangentDir.x * tangentLength2to3;
+    newVector.control1.y = commonPoint.y + tangentDir.y * tangentLength2to3;
+    
+    // Обновляем визуализацию
+    if (previousVector.guideElements.control2) {
+        previousVector.guideElements.control2.setAttribute('cx', previousVector.control2.x);
+        previousVector.guideElements.control2.setAttribute('cy', previousVector.control2.y);
+        if (previousVector.guideElements.line2) {
+            previousVector.guideElements.line2.setAttribute('x2', previousVector.control2.x);
+            previousVector.guideElements.line2.setAttribute('y2', previousVector.control2.y);
+        }
+    }
+    
+    if (newVector.guideElements.control1) {
+        newVector.guideElements.control1.setAttribute('cx', newVector.control1.x);
+        newVector.guideElements.control1.setAttribute('cy', newVector.control1.y);
+        if (newVector.guideElements.line1) {
+            newVector.guideElements.line1.setAttribute('x2', newVector.control1.x);
+            newVector.guideElements.line1.setAttribute('y2', newVector.control1.y);
+        }
+    }
+    
+    // Обновляем пути
+    this.updateBezierVectorPath(previousVector);
+    this.updateBezierVectorPath(newVector);
+    
+    console.log('Выровнены касательные:');
+    console.log('Касательная 2->1:', previousVector.control2.x, previousVector.control2.y);
+    console.log('Касательная 2->3:', newVector.control1.x, newVector.control1.y);
+    console.log('Общая точка:', commonPoint.x, commonPoint.y);
+}
+
+
+    // ============================================
+    // СОЗДАНИЕ ВИЗУАЛЬНЫХ ЭЛЕМЕНТОВ
+    // ============================================
+    
+    // СОЗДАНИЕ ЭЛЕМЕНТА ТОЧКИ
+createBezierPointElement(point) {
+    const element = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    element.setAttribute('class', 'bezier-point');
+    element.setAttribute('cx', point.x);
+    element.setAttribute('cy', point.y);
+    element.setAttribute('r', '6');
+    element.setAttribute('data-index', point.index);
+    
+    // Добавляем обработчик для начала перетаскивания
+    element.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const coords = this.getSVGCoordinates(e);
+        const pointIndex = parseInt(element.getAttribute('data-index'));
+        this.selectBezierPoint(pointIndex);
+        this.startPointDrag(pointIndex, coords.x, coords.y);
+    });
+    
+    // Двойной клик для удаления
+    element.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        this.deleteBezierPoint(point.index);
+    });
+    
+    return element;
+}
+       
+  
+    // ============================================
+    // ВЫДЕЛЕНИЕ И РЕДАКТИРОВАНИЕ
+    // ============================================
+    
+selectBezierPoint(pointIndex) {
+    // Снимаем выделение со всех точек
+    this.state.bezierPoints.forEach(point => {
+        if (point.element) {
+            point.element.classList.remove('selected');
+        }
+    });
+    
+    // Выделяем указанную точку
+    const point = this.state.bezierPoints[pointIndex];
+    if (point && point.element) {
+        point.element.classList.add('selected');
+        this.state.bezierSelectedPoint = pointIndex;
+    }
+}
+    
+    deselectAllPoints() {
+        this.state.bezierPoints.forEach(point => {
+            if (point.element) {
+                point.element.classList.remove('selected');
+            }
+        });
+        this.state.bezierSelectedPoint = null;
+    }
+
+    // ФУНКЦИЯ НАЧАЛА ПЕРЕТАСКИВАНИЯ КОНТРОЛЬНОЙ ТОЧКИ БЕЗЬЕ
+startBezierControlDrag(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const target = e.target;
+    if (!target.classList.contains('bezier-control-point')) return;
+    
+    const coords = this.getSVGCoordinates(e);
+    const controlType = target.getAttribute('data-control-type');
+    const belongsTo = parseInt(target.getAttribute('data-belongs-to'));
+    
+    // Ищем вектор по принадлежности контрольной точки
+    const vectorInfo = this.findVectorByControlPoint(controlType, belongsTo);
+    
+    if (!vectorInfo) {
+        console.warn('Вектор не найден для контрольной точки:', controlType, belongsTo);
+        return;
+    }
+    
+    const { vector, index: vectorIndex, type } = vectorInfo;
+    
+    // Запоминаем состояние
+    this.state.isDraggingBezierControl = true;
+    this.state.draggingBezierControlVectorIndex = vectorIndex;
+    this.state.draggingBezierControlType = type;
+    this.state.draggingBezierControlStartX = coords.x;
+    this.state.draggingBezierControlStartY = coords.y;
+    
+    // Запоминаем оригинальные координаты
+    if (type === 'control1') {
+        this.state.draggingBezierControlOriginalX = vector.control1.x;
+        this.state.draggingBezierControlOriginalY = vector.control1.y;
+    } else {
+        this.state.draggingBezierControlOriginalX = vector.control2.x;
+        this.state.draggingBezierControlOriginalY = vector.control2.y;
+    }
+    
+    console.log('Начато перетаскивание контрольной точки', type, 'вектора', vectorIndex);
+}
+   
+    // ОБНОВЛЕНИЕ ПЕРЕТАСКИВАНИЯ КОНТРОЛЬНОЙ ТОЧКИ БЕЗЬЕ
+updateBezierControlDrag(x, y) {
+    if (!this.state.isDraggingBezierControl) return;
+    
+    const vectorIndex = this.state.draggingBezierControlVectorIndex;
+    const vector = this.state.bezierVectors[vectorIndex];
+    if (!vector) {
+        console.warn('Вектор не найден по индексу:', vectorIndex);
+        return;
+    }
+    
+    // Вычисляем смещение
+    const dx = x - this.state.draggingBezierControlStartX;
+    const dy = y - this.state.draggingBezierControlStartY;
+    
+    // Обновляем координаты контрольной точки
+    if (this.state.draggingBezierControlType === 'control1') {
+        vector.control1.x = this.state.draggingBezierControlOriginalX + dx;
+        vector.control1.y = this.state.draggingBezierControlOriginalY + dy;
+        
+        // Обновляем визуальную точку
+        if (vector.guideElements.control1) {
+            vector.guideElements.control1.setAttribute('cx', vector.control1.x);
+            vector.guideElements.control1.setAttribute('cy', vector.control1.y);
+        }
+        
+        // Обновляем линию
+        if (vector.guideElements.line1) {
+            vector.guideElements.line1.setAttribute('x2', vector.control1.x);
+            vector.guideElements.line1.setAttribute('y2', vector.control1.y);
+        }
+    } else {
+        vector.control2.x = this.state.draggingBezierControlOriginalX + dx;
+        vector.control2.y = this.state.draggingBezierControlOriginalY + dy;
+        
+        // Обновляем визуальную точку
+        if (vector.guideElements.control2) {
+            vector.guideElements.control2.setAttribute('cx', vector.control2.x);
+            vector.guideElements.control2.setAttribute('cy', vector.control2.y);
+        }
+        
+        // Обновляем линию
+        if (vector.guideElements.line2) {
+            vector.guideElements.line2.setAttribute('x2', vector.control2.x);
+            vector.guideElements.line2.setAttribute('y2', vector.control2.y);
+        }
+    }
+    
+    // Обновляем путь Безье
+    this.updateBezierVectorPath(vector);
+    
+    // Обновляем стартовые координаты для плавности
+    this.state.draggingBezierControlStartX = x;
+    this.state.draggingBezierControlStartY = y;
+    this.state.draggingBezierControlOriginalX = 
+        this.state.draggingBezierControlType === 'control1' ? vector.control1.x : vector.control2.x;
+    this.state.draggingBezierControlOriginalY = 
+        this.state.draggingBezierControlType === 'control1' ? vector.control1.y : vector.control2.y;
+}
+   
+    // ЗАВЕРШЕНИЕ ПЕРЕТАСКИВАНИЯ КОНТРОЛЬНОЙ ТОЧКИ БЕЗЬЕ
+    endBezierControlDrag() {
+        this.state.isDraggingBezierControl = false;
+        this.state.draggingBezierControlVectorIndex = null;
+        this.state.draggingBezierControlType = null;
+        console.log('Завершено перетаскивание контрольной точки');
+    }
+        
+    // ОБНОВЛЕНИЕ ПУТИ БЕЗЬЕ (после перемещения контрольной точки)
+    updateBezierVectorPath(vector) {
+        const startPoint = this.state.bezierPoints[vector.from];
+        const endPoint = this.state.bezierPoints[vector.to];
+        
+        if (!startPoint || !endPoint || !vector.path) return;
+        
+        const d = `M ${startPoint.x} ${startPoint.y} 
+                   C ${vector.control1.x} ${vector.control1.y} 
+                     ${vector.control2.x} ${vector.control2.y} 
+                     ${endPoint.x} ${endPoint.y}`;
+        
+        vector.path.setAttribute('d', d);
+    }
+    // ============================================
+    // ПЕРЕТАСКИВАНИЕ ТОЧЕК
+    // ============================================
+    
+startPointDrag(pointIndex, x, y) {
+    const point = this.state.bezierPoints[pointIndex];
+    if (!point) return;
+    
+    // Выделяем точку
+    this.selectBezierPoint(pointIndex);
+    
+    // Устанавливаем флаги перетаскивания
+    this.state.isDraggingPoint = true;
+    this.state.draggingPointIndex = pointIndex;
+    this.state.draggingPointStartX = x;
+    this.state.draggingPointStartY = y;
+    this.state.draggingPointOriginalX = point.x;
+    this.state.draggingPointOriginalY = point.y;
+}
+    
+updatePointDrag(x, y) {
+    if (!this.state.isDraggingPoint) return;
+    
+    const pointIndex = this.state.draggingPointIndex;
+    const point = this.state.bezierPoints[pointIndex];
+    if (!point) return;
+    
+    // Вычисляем смещение
+    const dx = x - this.state.draggingPointStartX;
+    const dy = y - this.state.draggingPointStartY;
+    
+    // Обновляем координаты точки в объекте
+    point.x = this.state.draggingPointOriginalX + dx;
+    point.y = this.state.draggingPointOriginalY + dy;
+    
+    // Обновляем визуальный элемент
+    if (point.element) {
+        point.element.setAttribute('cx', point.x);
+        point.element.setAttribute('cy', point.y);
+    }
+    
+    // ОБНОВЛЯЕМ ВСЕ СВЯЗАННЫЕ КОНТРОЛЬНЫЕ ТОЧКИ
+    this.updateControlPointsForMovedPoint(pointIndex, dx, dy);
+    
+    // Обновляем стартовую позицию для плавного движения
+    this.state.draggingPointStartX = x;
+    this.state.draggingPointStartY = y;
+    this.state.draggingPointOriginalX = point.x;
+    this.state.draggingPointOriginalY = point.y;
+}
+
+updateControlPointsForMovedPoint(movedPointIndex, dx, dy) {
+    const movedPoint = this.state.bezierPoints[movedPointIndex];
+    if (!movedPoint) return;
+    
+    // Просто двигаем все связанные контрольные точки
+    this.state.bezierVectors.forEach(vector => {
+        if (vector.from === movedPointIndex) {
+            vector.control1.x += dx;
+            vector.control1.y += dy;
+            
+            if (vector.guideElements.control1) {
+                vector.guideElements.control1.setAttribute('cx', vector.control1.x);
+                vector.guideElements.control1.setAttribute('cy', vector.control1.y);
+                vector.guideElements.line1.setAttribute('x2', vector.control1.x);
+                vector.guideElements.line1.setAttribute('y2', vector.control1.y);
+            }
+        }
+        
+        if (vector.to === movedPointIndex) {
+            vector.control2.x += dx;
+            vector.control2.y += dy;
+            
+            if (vector.guideElements.control2) {
+                vector.guideElements.control2.setAttribute('cx', vector.control2.x);
+                vector.guideElements.control2.setAttribute('cy', vector.control2.y);
+                vector.guideElements.line2.setAttribute('x2', vector.control2.x);
+                vector.guideElements.line2.setAttribute('y2', vector.control2.y);
+            }
+        }
+        
+        this.updateBezierVectorPath(vector);
+    });
+}
+
+    endPointDrag() {
+        this.state.isDraggingPoint = false;
+        this.state.draggingPointIndex = null;
+    }
+   
+    // ============================================
+    // УДАЛЕНИЕ ЭЛЕМЕНТОВ
+    // ============================================
+    
+    // УДАЛЕНИЕ ТОЧКИ
+    deleteBezierPoint(pointIndex) {
+        const point = this.state.bezierPoints[pointIndex];
+        if (!point) return;
+        
+        // Удаляем визуальный элемент
+        if (point.element && point.element.parentNode) {
+            point.element.parentNode.removeChild(point.element);
+        }
+        
+        // Удаляем векторы, связанные с этой точкой
+        this.deleteVectorsForPoint(pointIndex);
+        
+        // Удаляем точку из массива
+        this.state.bezierPoints.splice(pointIndex, 1);
+        
+        // Обновляем индексы
+        this.updatePointIndices();
+        
+        // Сбрасываем выделение если удалили выделенную точку
+        if (this.state.bezierSelectedPoint === pointIndex) {
+            this.deselectAllPoints();
+        }
+    }
+    
+    deleteVectorsForPoint(pointIndex) {
+        // Удаляем с конца чтобы индексы не сбивались
+        for (let i = this.state.bezierVectors.length - 1; i >= 0; i--) {
+            const vector = this.state.bezierVectors[i];
+            
+            if (vector.from === pointIndex || vector.to === pointIndex) {
+                // Удаляем визуальные элементы
+                if (vector.path && vector.path.parentNode) {
+                    vector.path.parentNode.removeChild(vector.path);
+                }
+                
+                if (vector.guideElements) {
+                    if (vector.guideElements.line1) vector.guideElements.line1.remove();
+                    if (vector.guideElements.control1) vector.guideElements.control1.remove();
+                    if (vector.guideElements.line2) vector.guideElements.line2.remove();
+                    if (vector.guideElements.control2) vector.guideElements.control2.remove();
+                }
+                
+                // Удаляем из массива
+                this.state.bezierVectors.splice(i, 1);
+            }
+        }
+    }
+    
+    updatePointIndices() {
+        // Обновляем индексы точек
+        this.state.bezierPoints.forEach((point, index) => {
+            point.index = index;
+            if (point.element) {
+                point.element.setAttribute('data-index', index);
+            }
+        });
+        
+        // Обновляем индексы в векторах
+        this.state.bezierVectors.forEach(vector => {
+            // Уменьшаем индекс если он больше удаленного
+            if (vector.from > this.state.bezierSelectedPoint) vector.from--;
+            if (vector.to > this.state.bezierSelectedPoint) vector.to--;
+        });
+    }
+    
+
+    // ============================================
+    // УТИЛИТЫ
+    // ============================================
+    
+    // ПОЛУЧЕНИЕ КООРДИНАТ В SVG
+    getSVGCoordinates(e) {
+        const pt = this.svg.createSVGPoint();
+        pt.x = e.clientX;
+        pt.y = e.clientY;
+        return pt.matrixTransform(this.svg.getScreenCTM().inverse());
+    }
+      
+// конец безье
+// УПРОЩЕННАЯ функция привязки (оптимизированная)
+snapToBlackLine(x, y) {
+    // Используем ТО ЖЕ изображение что видит пользователь
+    const imageForAnalysis = this.state.imageForDisplay || this.state.image;
+    
+    if (!imageForAnalysis || !this.state.imageUrl) return null;
+    
+    const imageElement = document.getElementById('background-image');
+    if (!imageElement) return null;
+    
+    // Получаем преобразования изображения
+    const imgX = parseFloat(imageElement.getAttribute('x')) || 0;
+    const imgY = parseFloat(imageElement.getAttribute('y')) || 0;
+    const imgWidth = parseFloat(imageElement.getAttribute('width'));
+    const imgHeight = parseFloat(imageElement.getAttribute('height'));
+    
+    // Преобразуем координаты SVG в координаты изображения
+    const imgCoordX = Math.round(((x - imgX) / imgWidth) * imageForAnalysis.width);
+    const imgCoordY = Math.round(((y - imgY) / imgHeight) * imageForAnalysis.height);
+    
+    if (imgCoordX < 0 || imgCoordX >= imageForAnalysis.width || 
+        imgCoordY < 0 || imgCoordY >= imageForAnalysis.height) {
+        return null;
+    }
+    
+    // Используем кэшированный canvas для анализа
+    if (!this.imageCanvasCache) {
+        this.imageCanvasCache = document.createElement('canvas');
+        this.imageCanvasCache.width = imageForAnalysis.width;
+        this.imageCanvasCache.height = imageForAnalysis.height;
+        const ctx = this.imageCanvasCache.getContext('2d');
+        ctx.drawImage(imageForAnalysis, 0, 0);
+        this.imageDataCache = ctx.getImageData(0, 0, imageForAnalysis.width, imageForAnalysis.height);
+    }
+    
+    // Ищем ТЁМНЫЕ (черные) пиксели на обычном изображении
+    const radius = 8;
+    let darkestPoint = null;
+    let darkestValue = 256;
+    
+    const data = this.imageDataCache.data;
+    const width = imageForAnalysis.width;
+    
+    // Проверяем точки по кругу
+    for (let angle = 0; angle < 360; angle += 45) {
+        const rad = angle * Math.PI / 180;
+        const px = Math.round(imgCoordX + radius * Math.cos(rad));
+        const py = Math.round(imgCoordY + radius * Math.sin(rad));
+        
+        if (px >= 0 && px < width && py >= 0 && py < imageForAnalysis.height) {
+            const idx = (py * width + px) * 4;
+            const brightness = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+            
+            // Ищем ТЁМНЫЕ пиксели (черные линии) - чем меньше значение, тем темнее
+            if (brightness < this.snapSettings.blackThreshold && brightness < darkestValue) {
+                darkestValue = brightness;
+                darkestPoint = {x: px, y: py};
+            }
+        }
+    }
+    
+    // Проверяем центральную точку
+    const centerIdx = (imgCoordY * width + imgCoordX) * 4;
+    const centerBrightness = (data[centerIdx] + data[centerIdx + 1] + data[centerIdx + 2]) / 3;
+    
+    if (centerBrightness < this.snapSettings.blackThreshold && centerBrightness < darkestValue) {
+        darkestValue = centerBrightness;
+        darkestPoint = {x: imgCoordX, y: imgCoordY};
+    }
+    
+    if (darkestPoint) {
+        const snapX = (darkestPoint.x / imageForAnalysis.width) * imgWidth + imgX;
+        const snapY = (darkestPoint.y / imageForAnalysis.height) * imgHeight + imgY;
+        
+        const dist = Math.sqrt((x - snapX) ** 2 + (y - snapY) ** 2);
+        if (dist <= this.snapSettings.snapDistance / this.state.zoom) {
+            return {x: snapX, y: snapY};
+        }
+    }
+    
+    return null;
+}
+
+			 startLine(x, y) {
+                this.state.currentElement = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                this.state.currentElement.setAttribute('x1', x);
+                this.state.currentElement.setAttribute('y1', y);
+                this.state.currentElement.setAttribute('x2', x);
+                this.state.currentElement.setAttribute('y2', y);
+                this.state.currentElement.setAttribute('stroke', this.state.strokeColor);
+				this.state.currentElement.setAttribute('stroke-width', this.state.strokeWidth);
+                this.state.currentElement.setAttribute('fill', 'none');
+                
+                this.svg.appendChild(this.state.currentElement);
+            }
+            
+            updateLine(x, y) {
+                this.state.currentElement.setAttribute('x2', x);
+                this.state.currentElement.setAttribute('y2', y);
+            }
+            
+            startRect(x, y) {
+                this.state.currentElement = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                this.state.currentElement.setAttribute('x', x);
+                this.state.currentElement.setAttribute('y', y);
+                this.state.currentElement.setAttribute('width', '0');
+                this.state.currentElement.setAttribute('height', '0');
+                this.state.currentElement.setAttribute('stroke', this.state.strokeColor);
+                this.state.currentElement.setAttribute('stroke-width', this.state.strokeWidth);
+                this.state.currentElement.setAttribute('fill', 'none');
+                
+                this.svg.appendChild(this.state.currentElement);
+            }
+            
+            updateRect(x, y) {
+                const width = x - this.state.startPoint.x;
+                const height = y - this.state.startPoint.y;
+                
+                this.state.currentElement.setAttribute('x', width >= 0 ? this.state.startPoint.x : x);
+                this.state.currentElement.setAttribute('y', height >= 0 ? this.state.startPoint.y : y);
+                this.state.currentElement.setAttribute('width', Math.abs(width));
+                this.state.currentElement.setAttribute('height', Math.abs(height));
+            }
+            
+            startCircle(x, y) {
+                this.state.currentElement = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                this.state.currentElement.setAttribute('cx', x);
+                this.state.currentElement.setAttribute('cy', y);
+                this.state.currentElement.setAttribute('r', '0');
+                this.state.currentElement.setAttribute('stroke', this.state.strokeColor);
+                this.state.currentElement.setAttribute('stroke-width', this.state.strokeWidth);
+                this.state.currentElement.setAttribute('fill', 'none');
+                
+                this.svg.appendChild(this.state.currentElement);
+            }
+            
+            updateCircle(x, y) {
+                const dx = x - this.state.startPoint.x;
+                const dy = y - this.state.startPoint.y;
+                const radius = Math.sqrt(dx * dx + dy * dy);
+                
+                this.state.currentElement.setAttribute('r', radius);
+            }
+
+            updateCoordinates(e) {
+                const coords = this.getSVGCoordinates(e);
+                document.getElementById('coordinates').textContent = 
+                    `X: ${Math.round(coords.x)}, Y: ${Math.round(coords.y)}`;
+            }
+// СКРЫТЬ ВСЕ ВСПОМОГАТЕЛЬНЫЕ ЭЛЕМЕНТЫ БЕЗЬЕ
+hideBezierHelpers() {
+    // Скрываем все вспомогательные линии
+    document.querySelectorAll('.bezier-guide-line').forEach(line => {
+        line.style.display = 'none';
+    });
+    
+    // Скрываем все контрольные точки
+    document.querySelectorAll('.bezier-control-point').forEach(point => {
+        point.style.display = 'none';
+    });
+    
+    // Снимаем выделение с точек
+    this.deselectAllPoints();
+}
+
+// ПОКАЗАТЬ ВСЕ ВСПОМОГАТЕЛЬНЫЕ ЭЛЕМЕНТЫ БЕЗЬЕ
+showBezierHelpers() {
+    // Показываем все вспомогательные линии
+    document.querySelectorAll('.bezier-guide-line').forEach(line => {
+        line.style.display = 'block';
+    });
+    
+    // Показываем все контрольные точки
+    document.querySelectorAll('.bezier-control-point').forEach(point => {
+        point.style.display = 'block';
+    });
+}
+
+// СКРЫТЬ/ПОКАЗАТЬ ОСНОВНЫЕ ТОЧКИ БЕЗЬЕ
+toggleBezierPoints(show) {
+    document.querySelectorAll('.bezier-point').forEach(point => {
+        point.style.display = show ? 'block' : 'none';
+    });
+}
+       
+clearVectors() {
+    if (!confirm('Удалить все векторы?')) return;
+    
+    // Удаляем все векторы Безье (и вспомогательные элементы)
+    document.querySelectorAll('.bezier-vector, .bezier-guide-line, .bezier-control-point, .bezier-point').forEach(el => {
+        el.remove();
+    });
+    
+    // Также удаляем обычные векторы
+    const vectorElements = this.svg.querySelectorAll('path:not([id*="indicator"]):not([id*="background"]), line, rect, circle');
+    vectorElements.forEach(el => {
+        if (!el.classList.contains('bezier-vector') && 
+            !el.classList.contains('bezier-guide-line') && 
+            !el.classList.contains('bezier-control-point') && 
+            !el.classList.contains('bezier-point')) {
+            el.remove();
+        }
+    });
+    
+    // Сбрасываем состояние
+    this.state.currentElement = null;
+    this.state.isDrawing = false;
+    this.state.penPoints = [];
+    this.pushData = null;
+    this.state.bezierPoints = [];
+    this.state.bezierVectors = [];
+    this.state.bezierSelectedPoint = null;
+    this.state.lastBezierDirection = null;
+    this.state.lastBezierLength = null;
+}
+          
+saveSVG() {
+    // Показываем диалоговое окно с выбором
+    const saveWithBackground = confirm('Сохранить SVG с подложкой? Нажмите OK для сохранения с подложкой, Отмена - для сохранения только векторов.');
+    
+    // Клонируем SVG
+    const clone = this.svg.cloneNode(true);
+    
+    // Если пользователь выбрал сохранение БЕЗ подложки
+    if (!saveWithBackground) {
+        // Удаляем изображение из клона
+        const backgroundImage = clone.querySelector('#background-image');
+        if (backgroundImage) {
+            backgroundImage.remove();
+        }
+        
+        // Удаляем все вспомогательные элементы Безье (шары-точки и направляющие)
+        const bezierHelpers = clone.querySelectorAll(
+            '.bezier-guide-line, .bezier-control-point, .bezier-point'
+        );
+        bezierHelpers.forEach(el => el.remove());
+        
+        // Удаляем временные индикаторы
+        const indicators = clone.querySelectorAll('[id*="indicator"]');
+        indicators.forEach(el => el.remove());
+    } else {
+        // Сохраняем с подложкой - удаляем только временные индикаторы
+        const indicators = clone.querySelectorAll('[id*="indicator"]');
+        indicators.forEach(el => el.remove());
+        
+        // Также удаляем точки Безье (шарики), но оставляем сами кривые
+        const bezierPoints = clone.querySelectorAll('.bezier-point, .bezier-control-point');
+        bezierPoints.forEach(el => el.remove());
+    }
+    
+    // В ЛЮБОМ СЛУЧАЕ удаляем шары-точки Безье из финального SVG
+    // (они нужны только для редактирования, а не для финального файла)
+    const allBezierPoints = clone.querySelectorAll('.bezier-point, .bezier-control-point');
+    allBezierPoints.forEach(el => el.remove());
+    
+    // Удаляем направляющие линии (но оставляем сами кривые Безье)
+    const guideLines = clone.querySelectorAll('.bezier-guide-line');
+    guideLines.forEach(el => el.remove());
+    
+    // Создаем строку SVG
+    const serializer = new XMLSerializer();
+    let svgString = serializer.serializeToString(clone);
+    
+    // Добавляем заголовок
+    svgString = '<?xml version="1.0" encoding="UTF-8"?>\n' + svgString;
+    
+    // Создаем файл для скачивания
+    const blob = new Blob([svgString], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = saveWithBackground ? 'рисунок_с_подложкой.svg' : 'рисунок_векторы.svg';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    // Показываем уведомление о сохранении
+    alert(`SVG успешно сохранен как "${a.download}"`);
+}
+
+       }
+        
+        // Запуск редактора
+        document.addEventListener('DOMContentLoaded', () => {
+            window.editor = new VectorEditor();
+        });
+    </script>
+</body>
+</html>
