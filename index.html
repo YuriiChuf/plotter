@@ -250,29 +250,49 @@
             </p>
         </header>
 
-        <div class="workflow">
-            <div class="workflow-step">
-                <div class="step-number">1</div>
-                <div class="step-description">Векторный редактор</div>
-            </div>
-            <div class="arrow">→</div>
-            <div class="workflow-step">
-                <div class="step-number">2</div>
-                <div class="step-description">Редактор шрифтов</div>
-            </div>
-            <div class="arrow">→</div>
-            <div class="workflow-step">
-                <div class="step-number">3</div>
-                <div class="step-description">Редактор текста</div>
-            </div>
-            <div class="arrow">→</div>
-            <div class="workflow-step">
-                <div class="step-number">4</div>
-                <div class="step-description">Конвертер в G-код</div>
-            </div>
-        </div>
-
         <div class="tools-grid">
+            <!-- Инструмент 4: Конвертер в G-код -->
+            <div class="tool-card">
+                <div class="tool-icon">
+                    <i class="fas fa-code"></i>
+                </div>
+                <h3 class="tool-title">Конвертер в G-код</h3>
+                <p class="tool-description">
+                    Конвертер изображений в G-код для плоттера Sovol SO-1 с расширенными настройками трассировки.
+                </p>
+                <ul class="tool-features">
+                    <li>Поддержка JPEG, PNG, SVG</li>
+                    <li>Настройки трассировки изображений</li>
+                    <li>Оптимизация путей для плоттера</li>
+                    <li>Предпросмотр векторов</li>
+                    <li>Генерация G-кода для Sovol SO-1</li>
+                </ul>
+                <a href="gui_gkode.html" class="btn">
+                    <i class="fas fa-external-link-alt"></i> Открыть конвертер
+                </a>
+            </div>
+			
+            <!-- Инструмент 3: Редактор текста для плоттера -->
+            <div class="tool-card">
+                <div class="tool-icon">
+                    <i class="fas fa-text-height"></i>
+                </div>
+                <h3 class="tool-title">Редактор текста для плоттера</h3>
+                <p class="tool-description">
+                    Инструмент для компоновки текста и векторных элементов перед отправкой на плоттер.
+                </p>
+                <ul class="tool-features">
+                    <li>Работа с текстом и SVG элементами</li>
+                    <li>Загрузка SVG шрифтов</li>
+                    <li>Настройка размеров листа</li>
+                    <li>Фоновая подложка для точности</li>
+                    <li>Экспорт в SVG и G-код</li>
+                </ul>
+                <a href="TextTOplot.html" class="btn">
+                    <i class="fas fa-external-link-alt"></i> Открыть редактор текста
+                </a>
+            </div>
+		
             <!-- Инструмент 1: Векторный редактор -->
             <div class="tool-card">
                 <div class="tool-icon">
@@ -315,47 +335,6 @@
                 </a>
             </div>
 
-            <!-- Инструмент 3: Редактор текста для плоттера -->
-            <div class="tool-card">
-                <div class="tool-icon">
-                    <i class="fas fa-text-height"></i>
-                </div>
-                <h3 class="tool-title">Редактор текста для плоттера</h3>
-                <p class="tool-description">
-                    Инструмент для компоновки текста и векторных элементов перед отправкой на плоттер.
-                </p>
-                <ul class="tool-features">
-                    <li>Работа с текстом и SVG элементами</li>
-                    <li>Загрузка SVG шрифтов</li>
-                    <li>Настройка размеров листа</li>
-                    <li>Фоновая подложка для точности</li>
-                    <li>Экспорт в SVG и G-код</li>
-                </ul>
-                <a href="TextTOplot.html" class="btn">
-                    <i class="fas fa-external-link-alt"></i> Открыть редактор текста
-                </a>
-            </div>
-
-            <!-- Инструмент 4: Конвертер в G-код -->
-            <div class="tool-card">
-                <div class="tool-icon">
-                    <i class="fas fa-code"></i>
-                </div>
-                <h3 class="tool-title">Конвертер в G-код</h3>
-                <p class="tool-description">
-                    Конвертер изображений в G-код для плоттера Sovol SO-1 с расширенными настройками трассировки.
-                </p>
-                <ul class="tool-features">
-                    <li>Поддержка JPEG, PNG, SVG</li>
-                    <li>Настройки трассировки изображений</li>
-                    <li>Оптимизация путей для плоттера</li>
-                    <li>Предпросмотр векторов</li>
-                    <li>Генерация G-кода для Sovol SO-1</li>
-                </ul>
-                <a href="gui_gkode.html" class="btn">
-                    <i class="fas fa-external-link-alt"></i> Открыть конвертер
-                </a>
-            </div>
         </div>
 
         <div class="info-section">
