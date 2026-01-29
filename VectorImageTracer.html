@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -285,6 +284,8 @@
             
             <div class="panel">
                 <h3>Действия</h3>
+				<button id="loadSvgBtn">Загрузить SVG</button>
+				<input type="file" id="svgInput" accept=".svg" style="display: none">
                 <button id="saveBtn">Сохранить SVG</button>
                 <button id="clearBtn" style="background: #6c757d;">Очистить векторы</button>
             </div>
@@ -364,128 +365,135 @@
 			lastBezierDirection: null, // Последнее направление касательной
 			lastBezierLength: null    // Последняя длина касательной
         };
-    this.snapSettings = {
-        enabled: true,
-        snapDistance: 10,
-        blackThreshold: 50,
-        searchRadius: 15,
-        continueVector: true 
-    };
-this.pushData = null;
-		this.pushUpdateQueue = [];
-		this.isPushUpdatePending = false;
-		this.pathCache = new Map();
-		this.lastPushUpdate = 0;
-	    this.lastEraseTime = null; 
-		this.lastErasePoint = null; 
-		this.imageCanvasCache = null;
-		this.imageDataCache = null;
-		this.init();
-		this.setupCursorRestore();
-    }
-	
+		this.snapSettings = {
+			enabled: true,
+			snapDistance: 10,
+			blackThreshold: 50,
+			searchRadius: 15,
+			continueVector: true 
+		};
+		this.pushData = null;
+				this.pushUpdateQueue = [];
+				this.isPushUpdatePending = false;
+				this.pathCache = new Map();
+				this.lastPushUpdate = 0;
+				this.lastEraseTime = null; 
+				this.lastErasePoint = null; 
+				this.imageCanvasCache = null;
+				this.imageDataCache = null;
+				this.init();
+				this.setupCursorRestore();
+			}
+			
 
-// ВИЗУАЛЬНЫЙ ИНДИКАТОР ЛАСТИКА
-showEraserIndicator(x, y, radius) {
-    let indicator = document.getElementById('eraser-indicator');
-    
-    if (!indicator) {
-        indicator = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        indicator.id = 'eraser-indicator';
-        indicator.setAttribute('stroke', '#ff6b6b');
-        indicator.setAttribute('stroke-width', '2');
-        indicator.setAttribute('fill', 'rgba(255, 107, 107, 0.2)');
-        indicator.setAttribute('stroke-dasharray', '5,5');
-        indicator.style.pointerEvents = 'none';
+		// ВИЗУАЛЬНЫЙ ИНДИКАТОР ЛАСТИКА
+		showEraserIndicator(x, y, radius) {
+			let indicator = document.getElementById('eraser-indicator');
+			
+			if (!indicator) {
+				indicator = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+				indicator.id = 'eraser-indicator';
+				indicator.setAttribute('stroke', '#ff6b6b');
+				indicator.setAttribute('stroke-width', '2');
+				indicator.setAttribute('fill', 'rgba(255, 107, 107, 0.2)');
+				indicator.setAttribute('stroke-dasharray', '5,5');
+				indicator.style.pointerEvents = 'none';
 
-        const pushIndicator = document.getElementById('push-indicator');
-        if (pushIndicator) {
-            this.svg.insertBefore(indicator, pushIndicator.nextSibling);
-        } else {
-            this.svg.appendChild(indicator);
-        }
-    }
-    
-    indicator.setAttribute('cx', x);
-    indicator.setAttribute('cy', y);
-    indicator.setAttribute('r', radius);
-    indicator.style.display = 'block';
-    
-    // УБИРАЕМ анимацию пульсации, которая может вызывать остатки
-    indicator.style.animation = 'none';
-    
-    // Устанавливаем z-index для гарантии, что индикатор будет поверх
-    indicator.style.zIndex = '9999';
-}
+				const pushIndicator = document.getElementById('push-indicator');
+				if (pushIndicator) {
+					this.svg.insertBefore(indicator, pushIndicator.nextSibling);
+				} else {
+					this.svg.appendChild(indicator);
+				}
+			}
+			
+			indicator.setAttribute('cx', x);
+			indicator.setAttribute('cy', y);
+			indicator.setAttribute('r', radius);
+			indicator.style.display = 'block';
+			
+			// УБИРАЕМ анимацию пульсации, которая может вызывать остатки
+			indicator.style.animation = 'none';
+			
+			// Устанавливаем z-index для гарантии, что индикатор будет поверх
+			indicator.style.zIndex = '9999';
+		}
 
-// СКРЫВАЕМ ИНДИКАТОР ЛАСТИКА
-hideEraserIndicator() {
-    const indicator = document.getElementById('eraser-indicator');
-    if (indicator) {
-        // Полностью скрываем индикатор
-        indicator.style.display = 'none';
-        
-        // Очищаем координаты чтобы точно не было остатков
-        indicator.setAttribute('cx', '-100');
-        indicator.setAttribute('cy', '-100');
-    }
-}
-         
-init() {
-    // Инициализация SVG
-    this.svg = document.getElementById('svg-canvas');
-    this.svg.setAttribute('width', '100%');
-    this.svg.setAttribute('height', '100%');
-    this.svg.setAttribute('viewBox', '0 0 1000 1000');
-    this.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-    
-    // Обработчики событий
-    this.setupEventListeners();
-    
-    // ОБНОВЛЯЕМ ВСЕ ТЕКСТОВЫЕ ЭЛЕМЕНТЫ ОТ СЛАЙДЕРОВ ПРИ ЗАГРУЗКЕ
-    this.updateAllSliderTexts();
-    
-    // Загружаем настройки из UI
-    this.loadSettingsFromUI();
-	this.setupGlobalDragHandlers();
-    
-    // Обновление интерфейса
-    this.updateZoomDisplay();
-        // Создаем группу для контрольных элементов
-        this.state.bezierControlGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        this.state.bezierControlGroup.id = 'bezier-control-group';
-        this.svg.appendChild(this.state.bezierControlGroup);
-	
-}
-setupGlobalDragHandlers() {
-    // Глобальный обработчик движения мыши
-    document.addEventListener('mousemove', (e) => {
-        // Если перетаскиваем основную точку Безье
-        if (this.state.isDraggingPoint) {
-            const coords = this.getSVGCoordinates(e);
-            this.updatePointDrag(coords.x, coords.y);
-        }
-        
-        // Если перетаскиваем контрольную точку Безье
-        if (this.state.isDraggingBezierControl) {
-            const coords = this.getSVGCoordinates(e);
-            this.updateBezierControlDrag(coords.x, coords.y);
-        }
-    });
-    
-    // Глобальный обработчик отпускания мыши
-    document.addEventListener('mouseup', (e) => {
-        // Завершаем перетаскивание основной точки Безье
-        if (this.state.isDraggingPoint) {
-            this.endPointDrag();
-        }
-        
-        // Завершаем перетаскивание контрольной точки Безье
-        if (this.state.isDraggingBezierControl) {
-            this.endBezierControlDrag();
-        }
-    });
-}
+		// СКРЫВАЕМ ИНДИКАТОР ЛАСТИКА
+		hideEraserIndicator() {
+			const indicator = document.getElementById('eraser-indicator');
+			if (indicator) {
+				// Полностью скрываем индикатор
+				indicator.style.display = 'none';
+				
+				// Очищаем координаты чтобы точно не было остатков
+				indicator.setAttribute('cx', '-100');
+				indicator.setAttribute('cy', '-100');
+			}
+		}
+				 
+		init() {
+			// Инициализация SVG
+			this.svg = document.getElementById('svg-canvas');
+			this.svg.setAttribute('width', '100%');
+			this.svg.setAttribute('height', '100%');
+			this.svg.setAttribute('viewBox', '0 0 1000 1000');
+			this.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+			// Загрузка SVG
+			document.getElementById('loadSvgBtn').onclick = () => {
+				document.getElementById('svgInput').click();
+			};
+
+			document.getElementById('svgInput').onchange = (e) => {
+				if (e.target.files[0]) this.loadSVG(e.target.files[0]);
+			};
+			// Обработчики событий
+			this.setupEventListeners();
+			
+			// ОБНОВЛЯЕМ ВСЕ ТЕКСТОВЫЕ ЭЛЕМЕНТЫ ОТ СЛАЙДЕРОВ ПРИ ЗАГРУЗКЕ
+			this.updateAllSliderTexts();
+			
+			// Загружаем настройки из UI
+			this.loadSettingsFromUI();
+			this.setupGlobalDragHandlers();
+			
+			// Обновление интерфейса
+			this.updateZoomDisplay();
+				// Создаем группу для контрольных элементов
+				this.state.bezierControlGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+				this.state.bezierControlGroup.id = 'bezier-control-group';
+				this.svg.appendChild(this.state.bezierControlGroup);
+			
+		}
+		setupGlobalDragHandlers() {
+			// Глобальный обработчик движения мыши
+			document.addEventListener('mousemove', (e) => {
+				// Если перетаскиваем основную точку Безье
+				if (this.state.isDraggingPoint) {
+					const coords = this.getSVGCoordinates(e);
+					this.updatePointDrag(coords.x, coords.y);
+				}
+				
+				// Если перетаскиваем контрольную точку Безье
+				if (this.state.isDraggingBezierControl) {
+					const coords = this.getSVGCoordinates(e);
+					this.updateBezierControlDrag(coords.x, coords.y);
+				}
+			});
+			
+			// Глобальный обработчик отпускания мыши
+			document.addEventListener('mouseup', (e) => {
+				// Завершаем перетаскивание основной точки Безье
+				if (this.state.isDraggingPoint) {
+					this.endPointDrag();
+				}
+				
+				// Завершаем перетаскивание контрольной точки Безье
+				if (this.state.isDraggingBezierControl) {
+					this.endBezierControlDrag();
+				}
+			});
+		}
 
            setupEventListeners() {
                 // Загрузка изображения
@@ -880,166 +888,316 @@ addWhiteBackgroundToPNG(img) {
         imgWithBackground.src = canvas.toDataURL();
     });
 }
+		loadSVG(file) {
+			const reader = new FileReader();
+			reader.onload = (e) => {
+				// Парсим SVG файл
+				const parser = new DOMParser();
+				const svgDoc = parser.parseFromString(e.target.result, 'image/svg+xml');
+				const loadedSvg = svgDoc.querySelector('svg');
+				
+				if (!loadedSvg) {
+					alert('Файл не является валидным SVG');
+					return;
+				}
 
-loadImage(file) {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        const img = new Image();
-        img.onload = async () => {
-            this.state.image = img;
-            this.state.imageUrl = e.target.result;
-            
-            let imageForDisplay = img;
-            let imageForSnapping = img; // Для привязки - то же самое что видит пользователь
-            
-            // ПРОВЕРЯЕМ: если PNG
-            if (file.type === 'image/png' || file.name.toLowerCase().endsWith('.png')) {
-                try {
-                    
-                    imageForDisplay = await this.addWhiteBackgroundToPNG(img);
+				// Очищаем текущий холст
+				this.clearVectors();
+				
+				// Ищем элементы в загруженном SVG
+				const backgroundImage = loadedSvg.querySelector('#background-image');
+				const vectors = loadedSvg.querySelectorAll('path:not(#background-image), line, rect, circle');
+				
+				// Загружаем подложку если она есть
+				if (backgroundImage) {
+					const href = backgroundImage.getAttribute('href') || 
+								backgroundImage.getAttribute('xlink:href');
+					
+					if (href && href.startsWith('data:image')) {
+						// Создаем изображение из data URL
+						const img = new Image();
+						img.onload = () => {
+							this.state.image = img;
+							this.state.imageUrl = href;
+							this.displayImage(img);
+							document.getElementById('noImage').style.display = 'none';
+							document.getElementById('imageControls').style.display = 'block';
+							
+							// Применяем прозрачность
+							const opacitySlider = document.getElementById('opacitySlider');
+							const imageElement = document.getElementById('background-image');
+							if (opacitySlider && imageElement) {
+								imageElement.style.opacity = opacitySlider.value / 100;
+							}
+						};
+						img.src = href;
+					}
+				}
+				
+				// Загружаем векторы
+				vectors.forEach(vector => {
+					// Клонируем элемент
+					const clonedVector = vector.cloneNode(true);
+					
+					// Обрабатываем различные типы элементов
+					const tag = clonedVector.tagName.toLowerCase();
+					
+					// Для путей проверяем классы Безье
+					if (tag === 'path') {
+						const classList = clonedVector.getAttribute('class') || '';
+						if (classList.includes('bezier-vector')) {
+							// Это кривая Безье - добавляем в массив Безье
+							this.addBezierFromSVG(clonedVector);
+							return;
+						}
+					}
+					
+					// Обычные векторы добавляем на холст
+					this.svg.appendChild(clonedVector);
+				});
+				
+				alert('SVG успешно загружен');
+			};
+			reader.readAsText(file);
+		}
 
-                    imageForSnapping = imageForDisplay;
-                    
-                    // Обновляем URL для отображения
-                    this.state.imageUrl = imageForDisplay.src;
-                    
-                } catch (error) {
-                    console.warn('Не удалось обработать PNG:', error);
-                    imageForDisplay = img;
-                    imageForSnapping = img;
-                }
-            }
-            
-            this.state.imageForDisplay = imageForDisplay; 
+		// Метод для добавления кривой Безье из SVG
+		addBezierFromSVG(pathElement) {
+			// Получаем данные пути
+			const d = pathElement.getAttribute('d');
+			if (!d) return;
+			
+			// Парсим команды кривой Безье
+			// Формат: M x1 y1 C cx1 cy1 cx2 cy2 x2 y2
+			const commands = d.split(/(?=[MCL])/);
+			
+			if (commands.length < 2) return;
+			
+			// Парсим первую точку
+			const moveCmd = commands[0];
+			const moveMatch = moveCmd.match(/[\d.-]+/g);
+			if (!moveCmd || moveCmd[0] !== 'M' || !moveMatch) return;
+			
+			const x1 = parseFloat(moveMatch[0]);
+			const y1 = parseFloat(moveMatch[1]);
+			
+			// Парсим кривую Безье
+			const curveCmd = commands[1];
+			const curveMatch = curveCmd.match(/[\d.-]+/g);
+			if (!curveCmd || curveCmd[0] !== 'C' || !curveMatch) return;
+			
+			const cx1 = parseFloat(curveMatch[0]);
+			const cy1 = parseFloat(curveMatch[1]);
+			const cx2 = parseFloat(curveMatch[2]);
+			const cy2 = parseFloat(curveMatch[3]);
+			const x2 = parseFloat(curveMatch[4]);
+			const y2 = parseFloat(curveMatch[5]);
+			
+			// Создаем точки Безье
+			const point1 = {
+				x: x1,
+				y: y1,
+				element: null,
+				index: this.state.bezierPoints.length
+			};
+			
+			const point2 = {
+				x: x2,
+				y: y2,
+				element: null,
+				index: this.state.bezierPoints.length + 1
+			};
+			
+			// Создаем визуальные элементы точек
+			point1.element = this.createBezierPointElement(point1);
+			point2.element = this.createBezierPointElement(point2);
+			
+			this.svg.appendChild(point1.element);
+			this.svg.appendChild(point2.element);
+			
+			// Добавляем точки в массив
+			this.state.bezierPoints.push(point1, point2);
+			
+			// Создаем вектор Безье
+			const vector = {
+				from: point1.index,
+				to: point2.index,
+				control1: { x: cx1, y: cy1, belongsTo: point1.index },
+				control2: { x: cx2, y: cy2, belongsTo: point2.index },
+				path: pathElement,
+				guideElements: {}
+			};
+			
+			// Добавляем вектор на холст
+			pathElement.classList.add('bezier-vector');
+			this.svg.appendChild(pathElement);
+			
+			// Создаем направляющие элементы
+			this.createVectorGuides(vector, point1, point2);
+			
+			// Добавляем вектор в массив
+			this.state.bezierVectors.push(vector);
+		}
 
-            // Отображаем версию с белым фоном
-            this.displayImage(imageForDisplay);
-            document.getElementById('noImage').style.display = 'none';
-            document.getElementById('imageControls').style.display = 'block';
-            
-            // Применяем прозрачность из слайдера
-            const opacitySlider = document.getElementById('opacitySlider');
-            const imageElement = document.getElementById('background-image');
-            if (opacitySlider && imageElement) {
-                imageElement.style.opacity = opacitySlider.value / 100;
-            }
-            
-            this.updateImageCache(imageForSnapping);
-            
-            this.fitImageToCanvas();
-        };
-        img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-}
+		loadImage(file) {
+			const reader = new FileReader();
+			reader.onload = async (e) => {
+				const img = new Image();
+				img.onload = async () => {
+					this.state.image = img;
+					this.state.imageUrl = e.target.result;
+					
+					let imageForDisplay = img;
+					let imageForSnapping = img; // Для привязки - то же самое что видит пользователь
+					
+					// ПРОВЕРЯЕМ: если PNG
+					if (file.type === 'image/png' || file.name.toLowerCase().endsWith('.png')) {
+						try {
+							
+							imageForDisplay = await this.addWhiteBackgroundToPNG(img);
 
-updateImageCache(imageToCache) {
-    // Очищаем старый кэш
-    this.imageCanvasCache = null;
-    this.imageDataCache = null;
-    
-    // Создаем новый кэш из переданного изображения
-    this.imageCanvasCache = document.createElement('canvas');
-    this.imageCanvasCache.width = imageToCache.width;
-    this.imageCanvasCache.height = imageToCache.height;
-    const ctx = this.imageCanvasCache.getContext('2d');
-    ctx.drawImage(imageToCache, 0, 0);
-    this.imageDataCache = ctx.getImageData(0, 0, imageToCache.width, imageToCache.height);
-    
-    console.log('Кэш изображения обновлен (размер:', imageToCache.width, 'x', imageToCache.height, ')');
-}
-           
-displayImage(img) {
-    // Удаляем старое изображение если есть
-    const oldImage = document.getElementById('background-image');
-    if (oldImage) oldImage.remove();
-    
-    // Создаем новое изображение
-    const imageElement = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-    imageElement.id = 'background-image';
-    
-    // Используем imageForDisplay если есть, иначе оригинал
-    const imageToShow = this.state.imageForDisplay || img;
-    imageElement.setAttribute('href', imageToShow.src || this.state.imageUrl);
-    
-    imageElement.style.opacity = '0.5';
-    imageElement.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-    
-    // Отключаем события мыши для изображения
-    imageElement.style.pointerEvents = 'none';
-    
-    // Добавляем первым элементом (фон)
-    this.svg.insertBefore(imageElement, this.svg.firstChild);
-    
-    // Центрируем
-    this.centerImage();
-}
+							imageForSnapping = imageForDisplay;
+							
+							// Обновляем URL для отображения
+							this.state.imageUrl = imageForDisplay.src;
+							
+						} catch (error) {
+							console.warn('Не удалось обработать PNG:', error);
+							imageForDisplay = img;
+							imageForSnapping = img;
+						}
+					}
+					
+					this.state.imageForDisplay = imageForDisplay; 
 
-centerImage() {
-    if (!this.state.image) return;
-    
-    const img = this.state.image;
-    const imageElement = document.getElementById('background-image');
-    if (!imageElement) return;
-    
-    // Рассчитываем размеры для viewBox 1000x1000
-    const viewBoxSize = 1000;
-    const scale = Math.min(viewBoxSize / img.width, viewBoxSize / img.height) * 0.9;
-    
-    // Устанавливаем размеры и позицию
-    imageElement.setAttribute('width', img.width * scale);
-    imageElement.setAttribute('height', img.height * scale);
-    
-    const x = (viewBoxSize - img.width * scale) / 2;
-    const y = (viewBoxSize - img.height * scale) / 2;
-    
-    imageElement.setAttribute('x', x);
-    imageElement.setAttribute('y', y);
-}
+					// Отображаем версию с белым фоном
+					this.displayImage(imageForDisplay);
+					document.getElementById('noImage').style.display = 'none';
+					document.getElementById('imageControls').style.display = 'block';
+					
+					// Применяем прозрачность из слайдера
+					const opacitySlider = document.getElementById('opacitySlider');
+					const imageElement = document.getElementById('background-image');
+					if (opacitySlider && imageElement) {
+						imageElement.style.opacity = opacitySlider.value / 100;
+					}
+					
+					this.updateImageCache(imageForSnapping);
+					
+					this.fitImageToCanvas();
+				};
+				img.src = e.target.result;
+			};
+			reader.readAsDataURL(file);
+		}
 
-fitImageToCanvas() {
-    if (!this.state.image) return;
-    
-    const img = this.state.image;
-    const scale = Math.min(1000 / img.width, 1000 / img.height) * 0.9;
+		updateImageCache(imageToCache) {
+			// Очищаем старый кэш
+			this.imageCanvasCache = null;
+			this.imageDataCache = null;
+			
+			// Создаем новый кэш из переданного изображения
+			this.imageCanvasCache = document.createElement('canvas');
+			this.imageCanvasCache.width = imageToCache.width;
+			this.imageCanvasCache.height = imageToCache.height;
+			const ctx = this.imageCanvasCache.getContext('2d');
+			ctx.drawImage(imageToCache, 0, 0);
+			this.imageDataCache = ctx.getImageData(0, 0, imageToCache.width, imageToCache.height);
+			
+			console.log('Кэш изображения обновлен (размер:', imageToCache.width, 'x', imageToCache.height, ')');
+		}
+				   
+		displayImage(img) {
+			// Удаляем старое изображение если есть
+			const oldImage = document.getElementById('background-image');
+			if (oldImage) oldImage.remove();
+			
+			// Создаем новое изображение
+			const imageElement = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+			imageElement.id = 'background-image';
+			
+			// Используем imageForDisplay если есть, иначе оригинал
+			const imageToShow = this.state.imageForDisplay || img;
+			imageElement.setAttribute('href', imageToShow.src || this.state.imageUrl);
+			
+			imageElement.style.opacity = '0.5';
+			imageElement.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+			
+			// Отключаем события мыши для изображения
+			imageElement.style.pointerEvents = 'none';
+			
+			// Добавляем первым элементом (фон)
+			this.svg.insertBefore(imageElement, this.svg.firstChild);
+			
+			// Центрируем
+			this.centerImage();
+		}
 
-    const imageElement = document.getElementById('background-image');
-    if (imageElement) {
-        // Убираем transform
-        imageElement.removeAttribute('transform');
-        
-        // Устанавливаем размеры изображения с учетом масштаба
-        imageElement.setAttribute('width', img.width * scale);
-        imageElement.setAttribute('height', img.height * scale);
-        
-        // Центрируем вручную
-        const x = (1000 - img.width * scale) / 2;
-        const y = (1000 - img.height * scale) / 2;
-        imageElement.setAttribute('x', x);
-        imageElement.setAttribute('y', y);
-    }
-    
-    // Сбрасываем зум чтобы видеть всё изображение
-    this.setZoom(1);
-}
-            
-removeImage() {
-    const imageElement = document.getElementById('background-image');
-    if (imageElement) imageElement.remove();
-    
-    this.state.image = null;
-    this.state.imageUrl = null;
-    this.state.imageForDisplay = null;
-    
-    this.imageCanvasCache = null;
-    this.imageDataCache = null;
-    
-    document.getElementById('noImage').style.display = 'block';
-    document.getElementById('imageControls').style.display = 'none';
-    
-    this.setZoom(1);
-}
-            
+		centerImage() {
+			if (!this.state.image) return;
+			
+			const img = this.state.image;
+			const imageElement = document.getElementById('background-image');
+			if (!imageElement) return;
+			
+			// Рассчитываем размеры для viewBox 1000x1000
+			const viewBoxSize = 1000;
+			const scale = Math.min(viewBoxSize / img.width, viewBoxSize / img.height) * 0.9;
+			
+			// Устанавливаем размеры и позицию
+			imageElement.setAttribute('width', img.width * scale);
+			imageElement.setAttribute('height', img.height * scale);
+			
+			const x = (viewBoxSize - img.width * scale) / 2;
+			const y = (viewBoxSize - img.height * scale) / 2;
+			
+			imageElement.setAttribute('x', x);
+			imageElement.setAttribute('y', y);
+		}
+
+		fitImageToCanvas() {
+			if (!this.state.image) return;
+			
+			const img = this.state.image;
+			const scale = Math.min(1000 / img.width, 1000 / img.height) * 0.9;
+
+			const imageElement = document.getElementById('background-image');
+			if (imageElement) {
+				// Убираем transform
+				imageElement.removeAttribute('transform');
+				
+				// Устанавливаем размеры изображения с учетом масштаба
+				imageElement.setAttribute('width', img.width * scale);
+				imageElement.setAttribute('height', img.height * scale);
+				
+				// Центрируем вручную
+				const x = (1000 - img.width * scale) / 2;
+				const y = (1000 - img.height * scale) / 2;
+				imageElement.setAttribute('x', x);
+				imageElement.setAttribute('y', y);
+			}
+			
+			// Сбрасываем зум чтобы видеть всё изображение
+			this.setZoom(1);
+		}
+					
+		removeImage() {
+			const imageElement = document.getElementById('background-image');
+			if (imageElement) imageElement.remove();
+			
+			this.state.image = null;
+			this.state.imageUrl = null;
+			this.state.imageForDisplay = null;
+			
+			this.imageCanvasCache = null;
+			this.imageDataCache = null;
+			
+			document.getElementById('noImage').style.display = 'block';
+			document.getElementById('imageControls').style.display = 'none';
+			
+			this.setZoom(1);
+		}
+					
             // ИНСТРУМЕНТЫ
 setTool(tool) {
     // Сбрасываем все состояния перетаскивания
