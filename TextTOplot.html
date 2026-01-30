@@ -464,6 +464,17 @@
 						<button id="deleteSelectedSVGBtn" style="background: #dc3545;">Удалить выделенный SVG</button>
 					</div>
 				</div>
+<div class="control-group  collapsible">
+    <h3>Извлечение частей SVG</h3>
+	<div class="content">
+    <div class="tools">
+        <button id="startExtractBtn">Выделить часть</button>
+        <button id="extractBtn">Отделить</button>
+		<button id="cancelExtractBtn">Отменить</button>
+		<button id="CopyBtn">Копировать</button>
+        </div>
+    </div>
+</div>
                 <div class="control-group collapsible collapsed">
                     <h3>Настройки G-code</h3>
                     <div class="content">
@@ -611,6 +622,11 @@
 		let svgElements = [];
 		let selectedSVGIndex = -1;
 		let isSVGSelected = false;
+let isSelectingSVGPart = false;
+let selectionStart = { x: 0, y: 0 };
+let selectionCurrent = { x: 0, y: 0 };
+let isDrawingSelection = false;
+		
 
 // Класс для SVG элементов (рисунков)
 class SVGElement {
@@ -1326,6 +1342,11 @@ getGcodePaths() {
     }
 }
 
+// Включить режим выделения
+function enableSVGPartSelection() {
+    isSelectingSVGPart = true;
+    updateStatus('Режим выделения части SVG: кликните и перетащите для выделения', 'success');
+}
         // Инициализация
         async function init() {
             updateCanvasSize();
@@ -1474,6 +1495,10 @@ async function loadFiles(files) {
         }
         
         function setupEventListeners() {
+		document.getElementById('startExtractBtn').addEventListener('click', enableSVGPartSelection);
+document.getElementById('extractBtn').addEventListener('click', extractSVGPartFromSelection);
+document.getElementById('CopyBtn').addEventListener('click', CopySVGPartFromSelection);
+document.getElementById('cancelExtractBtn').addEventListener('click', clearSelection);
             updateSheetSizeBtn.addEventListener('click', updateSheetSize);
             loadFontsBtn.addEventListener('click', () => fontUploadInput.click());
             fontUploadInput.addEventListener('change', (e) => loadFiles(Array.from(e.target.files)));
@@ -1859,6 +1884,384 @@ function selectPreviousElement() {
     }
 }
 
+// Извлечь выделенную часть
+function extractSVGPartFromSelection() {
+    if (!isValidSelection()) {
+        updateStatus('Сначала выделите область', 'error');
+        return;
+    }
+    
+    const rect = getSelectionRect();
+    let extractedCount = 0;
+    
+    // Проходим по копии массива, так как мы будем удалять элементы
+    const elementsToProcess = [...svgElements];
+    
+    for (let i = 0; i < elementsToProcess.length; i++) {
+        const svg = elementsToProcess[i];
+        const svgBounds = svg.getBoundingBox();
+        
+        // Проверяем пересечение
+        if (rectsIntersect(rect, svgBounds)) {
+            // Извлекаем часть (функция сама удалит из оригинала)
+            const newPart = extractPartFromSVG(svg, rect);
+            if (newPart) {
+                // Добавляем как новый элемент
+                svgElements.push(newPart);
+                extractedCount++;
+            }
+        }
+    }
+    
+    if (extractedCount > 0) {
+        updateStatus(`Вырезано ${extractedCount} частей`, 'success');
+        updateSVGElementsList();
+        drawScene();
+    } else {
+        updateStatus('В выделенной области нет SVG элементов', 'warning');
+    }
+    
+    clearSelection();
+}
+
+// Извлечь часть из SVG элемента
+function extractPartFromSVG(svgElement, selectionRect) {
+    const pathsInSelection = [];
+    const pathsToKeep = [];
+    const selectionMinX = selectionRect.x;
+    const selectionMinY = selectionRect.y;
+    const selectionMaxX = selectionRect.x + selectionRect.width;
+    const selectionMaxY = selectionRect.y + selectionRect.height;
+    
+    const originalPaths = svgElement.vectorPaths || [];
+    
+    // Находим границы извлеченной части
+    let extractedMinX = Infinity;
+    let extractedMinY = Infinity;
+    let extractedMaxX = -Infinity;
+    let extractedMaxY = -Infinity;
+    
+    for (let pathIndex = 0; pathIndex < originalPaths.length; pathIndex++) {
+        const originalPath = originalPaths[pathIndex];
+        
+        // Конвертируем путь в мировые координаты для проверки
+        const worldPath = originalPath.map(point => {
+            const worldX = svgElement.x + point.x * svgElement.scale;
+            const worldY = svgElement.y + point.y * svgElement.scale;
+            return { x: worldX, y: worldY, move: point.move };
+        });
+        
+        let currentExtractedSegment = [];
+        let currentKeptSegment = [];
+        let lastState = null;
+        
+        for (let i = 0; i < worldPath.length; i++) {
+            const worldPoint = worldPath[i];
+            const isInside = worldPoint.x >= selectionMinX && worldPoint.x <= selectionMaxX &&
+                           worldPoint.y >= selectionMinY && worldPoint.y <= selectionMaxY;
+            const currentState = isInside ? 'inside' : 'outside';
+            
+            if (lastState === null) {
+                lastState = currentState;
+                if (isInside) {
+                    currentExtractedSegment.push({
+                        x: worldPoint.x,
+                        y: worldPoint.y,
+                        move: true
+                    });
+                } else {
+                    currentKeptSegment.push({
+                        x: worldPoint.x,
+                        y: worldPoint.y,
+                        move: true
+                    });
+                }
+            } else if (currentState === lastState) {
+                if (isInside) {
+                    currentExtractedSegment.push({
+                        x: worldPoint.x,
+                        y: worldPoint.y,
+                        move: false
+                    });
+                } else {
+                    currentKeptSegment.push({
+                        x: worldPoint.x,
+                        y: worldPoint.y,
+                        move: false
+                    });
+                }
+            } else {
+                // Сохраняем сегменты
+                if (lastState === 'inside' && currentExtractedSegment.length > 1) {
+                    pathsInSelection.push([...currentExtractedSegment]);
+                    
+                    // Обновляем границы извлеченной части
+                    currentExtractedSegment.forEach(p => {
+                        extractedMinX = Math.min(extractedMinX, p.x);
+                        extractedMinY = Math.min(extractedMinY, p.y);
+                        extractedMaxX = Math.max(extractedMaxX, p.x);
+                        extractedMaxY = Math.max(extractedMaxY, p.y);
+                    });
+                }
+                if (lastState === 'outside' && currentKeptSegment.length > 1) {
+                    // Конвертируем обратно в локальные координаты для сохранения
+                    const localKeptSegment = currentKeptSegment.map(p => ({
+                        x: (p.x - svgElement.x) / svgElement.scale,
+                        y: (p.y - svgElement.y) / svgElement.scale,
+                        move: p.move
+                    }));
+                    pathsToKeep.push(localKeptSegment);
+                }
+                
+                // Начинаем новые сегменты
+                currentExtractedSegment = [];
+                currentKeptSegment = [];
+                
+                if (isInside) {
+                    currentExtractedSegment.push({
+                        x: worldPoint.x,
+                        y: worldPoint.y,
+                        move: true
+                    });
+                } else {
+                    currentKeptSegment.push({
+                        x: worldPoint.x,
+                        y: worldPoint.y,
+                        move: true
+                    });
+                }
+                
+                lastState = currentState;
+            }
+        }
+        
+        // Сохраняем последние сегменты
+        if (lastState === 'inside' && currentExtractedSegment.length > 1) {
+            pathsInSelection.push([...currentExtractedSegment]);
+            currentExtractedSegment.forEach(p => {
+                extractedMinX = Math.min(extractedMinX, p.x);
+                extractedMinY = Math.min(extractedMinY, p.y);
+                extractedMaxX = Math.max(extractedMaxX, p.x);
+                extractedMaxY = Math.max(extractedMaxY, p.y);
+            });
+        }
+        if (lastState === 'outside' && currentKeptSegment.length > 1) {
+            const localKeptSegment = currentKeptSegment.map(p => ({
+                x: (p.x - svgElement.x) / svgElement.scale,
+                y: (p.y - svgElement.y) / svgElement.scale,
+                move: p.move
+            }));
+            pathsToKeep.push(localKeptSegment);
+        }
+    }
+    
+    // Обновляем оригинальный SVG
+    svgElement.vectorPaths = pathsToKeep;
+    
+    // Удаляем пустой SVG
+    if (pathsToKeep.length === 0) {
+        const index = svgElements.indexOf(svgElement);
+        if (index !== -1) {
+            svgElements.splice(index, 1);
+        }
+    }
+    
+    if (pathsInSelection.length === 0) return null;
+    
+    // Рассчитываем размер извлеченной части
+    const extractedWidth = extractedMaxX - extractedMinX;
+    const extractedHeight = extractedMaxY - extractedMinY;
+    
+    // Создаем новый SVG элемент
+    const newSVG = new SVGElement(
+        Date.now(),
+        '<svg><path/></svg>',
+        extractedMinX, // Начальная позиция по минимальным координатам
+        extractedMinY,
+        extractedWidth,
+        extractedHeight
+    );
+    
+    // Преобразуем пути к локальным координатам нового SVG
+    const transformedPaths = pathsInSelection.map(path => {
+        return path.map(point => ({
+            x: (point.x - extractedMinX), // Относительно левого верхнего угла
+            y: (point.y - extractedMinY), // Относительно левого верхнего угла
+            move: point.move
+        }));
+    });
+    
+    newSVG.vectorPaths = transformedPaths;
+    newSVG.scale = 1; // Используем масштаб 1, так как координаты уже правильные
+    newSVG.rotation = 0;
+    
+    // Создаем простой canvas для отображения
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(10, Math.min(50, extractedWidth));
+    canvas.height = Math.max(10, Math.min(50, extractedHeight));
+    
+    // Рисуем на canvas для предпросмотра
+    const ctx = canvas.getContext('2d');
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 1;
+    
+    for (const path of transformedPaths) {
+        if (path.length < 2) continue;
+        
+        const scaleX = canvas.width / extractedWidth;
+        const scaleY = canvas.height / extractedHeight;
+        const scale = Math.min(scaleX, scaleY);
+        
+        ctx.beginPath();
+        ctx.moveTo(path[0].x * scale, path[0].y * scale);
+        
+        for (let i = 1; i < path.length; i++) {
+            ctx.lineTo(path[i].x * scale, path[i].y * scale);
+        }
+        
+        ctx.stroke();
+    }
+    
+    newSVG.svgImage = canvas;
+    
+    return newSVG;
+}
+
+function CopySVGPartFromSelection() {
+    if (!isValidSelection()) {
+        updateStatus('Сначала выделите область', 'error');
+        return;
+    }
+    
+    const rect = getSelectionRect();
+    let extractedCount = 0;
+    
+    // Проходим по копии массива, так как мы будем удалять элементы
+    const elementsToProcess = [...svgElements];
+    
+    for (let i = 0; i < elementsToProcess.length; i++) {
+        const svg = elementsToProcess[i];
+        const svgBounds = svg.getBoundingBox();
+        
+        // Проверяем пересечение
+        if (rectsIntersect(rect, svgBounds)) {
+            // Извлекаем часть (функция сама удалит из оригинала)
+            const newPart = CopyPartFromSVG(svg, rect);
+            if (newPart) {
+                // Добавляем как новый элемент
+                svgElements.push(newPart);
+                extractedCount++;
+            }
+        }
+    }
+    
+    if (extractedCount > 0) {
+        updateStatus(`Вырезано ${extractedCount} частей`, 'success');
+        updateSVGElementsList();
+        drawScene();
+    } else {
+        updateStatus('В выделенной области нет SVG элементов', 'warning');
+    }
+    
+    clearSelection();
+}
+
+//копировать
+function CopyPartFromSVG(svgElement, selectionRect) {
+    const pathsInSelection = [];
+    const selectionMinX = selectionRect.x;
+    const selectionMinY = selectionRect.y;
+    const selectionMaxX = selectionRect.x + selectionRect.width;
+    const selectionMaxY = selectionRect.y + selectionRect.height;
+    
+    // Получаем все пути элемента (уже преобразованные с учетом поворота и масштаба)
+    const gcodePaths = svgElement.getGcodePaths();
+    
+    for (const path of gcodePaths) {
+        const newPath = [];
+        let hasPointsInSelection = false;
+        
+        for (const point of path) {
+            // Проверяем, находится ли точка в выделенной области
+            if (point.x >= selectionMinX && point.x <= selectionMaxX &&
+                point.y >= selectionMinY && point.y <= selectionMaxY) {
+                
+                hasPointsInSelection = true;
+                // Сохраняем точку относительно начала выделения
+                newPath.push({
+                    x: point.x - selectionRect.x,
+                    y: point.y - selectionRect.y,
+                    move: newPath.length === 0 // Первая точка - move
+                });
+            } else if (hasPointsInSelection && newPath.length > 0) {
+                // Если вышли за пределы выделения, завершаем путь
+                break;
+            }
+        }
+        
+        if (hasPointsInSelection && newPath.length > 1) {
+            pathsInSelection.push(newPath);
+        }
+    }
+    
+    if (pathsInSelection.length === 0) return null;
+    
+    // Создаем новый SVG элемент
+    const newSVG = new SVGElement(
+        Date.now(),
+        '<svg><path/></svg>', // Минимальный SVG контент
+        selectionRect.x,
+        selectionRect.y,
+        selectionRect.width,
+        selectionRect.height
+    );
+    
+    // Переопределяем векторные пути
+    newSVG.vectorPaths = pathsInSelection;
+    newSVG.scale = 1;
+    newSVG.rotation = 0;
+    
+    // Создаем простой SVG для отображения
+    newSVG.svgImage = document.createElement('canvas');
+    newSVG.svgImage.width = 50;
+    newSVG.svgImage.height = 50;
+    
+    return newSVG;
+}
+
+// Проверка валидности выделения
+function isValidSelection() {
+    const rect = getSelectionRect();
+    return rect.width > 1 && rect.height > 1;
+}
+
+// Получить прямоугольник выделения
+function getSelectionRect() {
+    return {
+        x: Math.min(selectionStart.x, selectionCurrent.x),
+        y: Math.min(selectionStart.y, selectionCurrent.y),
+        width: Math.abs(selectionCurrent.x - selectionStart.x),
+        height: Math.abs(selectionCurrent.y - selectionStart.y)
+    };
+}
+
+// Очистить выделение
+function clearSelection() {
+    if (isSelectingSVGPart) {
+        isSelectingSVGPart = false;
+        isDrawingSelection = false;
+        selectionStart = { x: 0, y: 0 };
+        selectionCurrent = { x: 0, y: 0 };
+        drawScene();
+        updateStatus('Режим выделения отключен', 'success');
+    }
+}
+function rectsIntersect(rect1, rect2) {
+    return !(rect1.x + rect1.width < rect2.x || 
+             rect2.x + rect2.width < rect1.x || 
+             rect1.y + rect1.height < rect2.y || 
+             rect2.y + rect2.height < rect1.y);
+}
 function showHelp() {
     const helpText = `
 Клавиши управления:
@@ -2387,7 +2790,14 @@ function handleMouseDown(event) {
     const rect = mainCanvas.getBoundingClientRect();
     const x = (event.clientX - rect.left) / scaleFactor;
     const y = sheetHeight - (event.clientY - rect.top) / scaleFactor;
-    
+
+    // Если в режиме выделения части SVG
+    if (isSelectingSVGPart) {
+        isDrawingSelection = true;
+        selectionStart = { x: x, y: y };
+        selectionCurrent = { x: x, y: y };
+        return;
+    }
     // Проверка на перо
     const penX = parseFloat(penStartXInput.value) || 0;
     const penY = parseFloat(penStartYInput.value) || 0;
@@ -2476,13 +2886,32 @@ function handleMouseMove(event) {
         penStartXInput.value = x.toFixed(1);
         penStartYInput.value = y.toFixed(1);
         updatePenCrosshair();
+        } else if (isSelectingSVGPart && isDrawingSelection) {
+        const rect = mainCanvas.getBoundingClientRect();
+        const x = (event.clientX - rect.left) / scaleFactor;
+        const y = sheetHeight - (event.clientY - rect.top) / scaleFactor;
+        
+        selectionCurrent = { x: x, y: y };
+        drawScene();
     }
+    
+    updateCoordinatesDisplay(event);
 }
         
-        function handleMouseUp() {
-            isDragging = false;
-            isMovingPen = false;
+function handleMouseUp(event) {
+    if (isSelectingSVGPart && isDrawingSelection) {
+        isDrawingSelection = false;
+        
+        const rect = getSelectionRect();
+        if (rect.width > 1 && rect.height > 1) {
+            updateStatus(`Область выделена: ${rect.width.toFixed(1)}×${rect.height.toFixed(1)} мм`, 'success');
         }
+    }
+    
+    isDragging = false;
+    isMovingPen = false;
+    drawScene();
+}
         
 		function isPointInTextElement(x, y, element) {
 			const bbox = element.getBoundingBox();
@@ -2558,7 +2987,31 @@ function handleMouseMove(event) {
                 }
                 ctx.globalAlpha = 1.0;
             }
-            
+    // Отрисовка выделения
+    if (isSelectingSVGPart && (selectionStart.x !== selectionCurrent.x || selectionStart.y !== selectionCurrent.y)) {
+        const rect = getSelectionRect();
+        const x = rect.x * scaleFactor;
+        const y = (sheetHeight - rect.y - rect.height) * scaleFactor;
+        const width = rect.width * scaleFactor;
+        const height = rect.height * scaleFactor;
+        
+        // Рамка выделения
+        ctx.strokeStyle = '#ff6600';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 3]);
+        ctx.strokeRect(x, y, width, height);
+        
+        // Заливка
+        ctx.fillStyle = 'rgba(255, 102, 0, 0.1)';
+        ctx.fillRect(x, y, width, height);
+        
+        ctx.setLineDash([]);
+        
+        // Подсказка
+        ctx.fillStyle = '#ff6600';
+        ctx.font = '12px Arial';
+        ctx.fillText('Выделенная часть SVG', x + 5, y + 15);
+    }
             // Остальная отрисовка (сетка, текст и т.д.)
             ctx.strokeStyle = '#cccccc';
             ctx.lineWidth = 1;
