@@ -224,15 +224,42 @@
 <body>
     <div class="container">
         <div class="sidebar">
-            <div class="panel">
-                <h3>Изображение</h3>
-                <button id="loadImageBtn">Загрузить фото</button>
-                <div id="imageControls" style="display: none;">
-                    <button id="removeImageBtn" style="background: #dc3545;">Удалить</button>
-                    <label style="display: block; margin: 10px 0;">Прозрачность: <span id="opacityValue">50%</span></label>
-                    <input type="range" id="opacitySlider" min="1" max="100" value="50">
-                </div>
+<div class="panel">
+    <h3>Изображение</h3>
+    
+    <!-- Поля для ввода размеров в мм -->
+    <div style="margin: 10px 0;">
+        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+            <div style="flex: 1;">
+                <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">Ширина (мм)</label>
+                <input type="number" id="mmWidth" value="210" min="10" max="1000" step="1"
+                       style="width: 100%; padding: 5px; border-radius: 3px; border: 1px solid #444; background: #222; color: white;">
             </div>
+            <div style="flex: 1;">
+                <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">Высота (мм)</label>
+                <input type="number" id="mmHeight" value="297" min="10" max="1000" step="1"
+                       style="width: 100%; padding: 5px; border-radius: 3px; border: 1px solid #444; background: #222; color: white;">
+            </div>
+        </div>
+        
+        <!-- Отображение в пикселях -->
+        <div style="font-size: 11px; color: #888; text-align: center; margin-bottom: 10px;">
+            В пикселях: <span id="pixelSizeDisplay">794×1123</span> (96 DPI)
+        </div>
+        
+        <!-- Кнопка создания подложки -->
+        <button id="createBackgroundBtn" style="width: 100%; margin-bottom: 10px;">Создать подложку</button>
+    </div>
+    
+    <!-- Кнопка загрузки фото -->
+    <button id="loadImageBtn">Загрузить фото</button>
+    
+    <div id="imageControls" style="display: none;">
+        <button id="removeImageBtn" style="background: #dc3545;">Удалить фото</button>
+        <label style="display: block; margin: 10px 0;">Прозрачность: <span id="opacityValue">50%</span></label>
+        <input type="range" id="opacitySlider" min="1" max="100" value="50">
+    </div>
+</div>
             
             <div class="panel">
                 <h3>Инструменты</h3>
@@ -464,8 +491,19 @@
 				this.state.bezierControlGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
 				this.state.bezierControlGroup.id = 'bezier-control-group';
 				this.svg.appendChild(this.state.bezierControlGroup);
+			// Автоматически создаем подложку A4 при запуске
+			this.createA4Background();
+			
+			// Обновляем отображение пикселей при изменении размеров
+			document.getElementById('mmWidth').oninput = () => this.updatePixelDisplay();
+			document.getElementById('mmHeight').oninput = () => this.updatePixelDisplay();
+			
+			// Создание подложки по нажатию кнопки
+			document.getElementById('createBackgroundBtn').onclick = () => this.createBackgroundFromInput();
 			
 		}
+		
+		
 		setupGlobalDragHandlers() {
 			// Глобальный обработчик движения мыши
 			document.addEventListener('mousemove', (e) => {
@@ -1143,7 +1181,115 @@ transformPathCoordinates(d, scaleX, scaleY, offsetX, offsetY) {
 			// Добавляем вектор в массив
 			this.state.bezierVectors.push(vector);
 		}
+// Метод для создания подложки A4
+createA4Background() {
+    const widthMm = 210;  // A4 ширина
+    const heightMm = 297; // A4 высота
+    
+    // Преобразуем мм в пиксели (96 DPI)
+    const widthPx = Math.round(widthMm * 96 / 25.4);
+    const heightPx = Math.round(heightMm * 96 / 25.4);
+    
+    // Устанавливаем значения в поля ввода
+    document.getElementById('mmWidth').value = widthMm;
+    document.getElementById('mmHeight').value = heightMm;
+    this.updatePixelDisplay();
+    
+    // Создаем подложку
+    this.createBackground(widthPx, heightPx);
+}
 
+// Обновление отображения пикселей
+updatePixelDisplay() {
+    const widthMm = parseInt(document.getElementById('mmWidth').value) || 210;
+    const heightMm = parseInt(document.getElementById('mmHeight').value) || 297;
+    
+    const widthPx = Math.round(widthMm * 96 / 25.4);
+    const heightPx = Math.round(heightMm * 96 / 25.4);
+    
+    document.getElementById('pixelSizeDisplay').textContent = `${widthPx}×${heightPx}`;
+}
+
+// Создание подложки из полей ввода
+createBackgroundFromInput() {
+    const widthMm = parseInt(document.getElementById('mmWidth').value) || 210;
+    const heightMm = parseInt(document.getElementById('mmHeight').value) || 297;
+    
+    if (widthMm < 10 || heightMm < 10) {
+        alert('Минимальный размер 10×10 мм');
+        return;
+    }
+    
+    if (widthMm > 1000 || heightMm > 1000) {
+        alert('Максимальный размер 1000×1000 мм');
+        return;
+    }
+    
+    // Преобразуем мм в пиксели
+    const widthPx = Math.round(widthMm * 96 / 25.4);
+    const heightPx = Math.round(heightMm * 96 / 25.4);
+    
+    this.createBackground(widthPx, heightPx);
+}
+
+createBackground(width, height) {
+    // Создаем canvas для генерации белого изображения
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    
+    const ctx = canvas.getContext('2d');
+    
+    // Заливаем белым цветом
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, width, height);
+    
+    // Добавляем тонкую серую рамку для визуализации границ
+    ctx.strokeStyle = '#e0e0e0';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
+    
+    // Создаем изображение из canvas
+    const img = new Image();
+    img.onload = () => {
+        // Удаляем старое изображение если есть
+        this.removeBackgroundImage();
+        
+        // Сохраняем новое изображение
+        this.state.image = img;
+        this.state.imageUrl = canvas.toDataURL('image/png');
+        this.state.imageForDisplay = img;
+        
+        // Отображаем изображение
+        this.displayImage(img);
+        document.getElementById('noImage').style.display = 'none';
+        document.getElementById('imageControls').style.display = 'none'; // Скрываем контролы фото
+        
+        // Применяем прозрачность из слайдера (если нужно)
+        const opacitySlider = document.getElementById('opacitySlider');
+        const imageElement = document.getElementById('background-image');
+        if (opacitySlider && imageElement) {
+            imageElement.style.opacity = opacitySlider.value / 100;
+        }
+        
+        this.updateImageCache(img);
+        this.fitImageToCanvas();
+        
+        console.log(`Создана белая подложка ${width}x${height}px`);
+    };
+    img.src = canvas.toDataURL('image/png');
+}
+
+
+removeBackgroundImage() {
+    const imageElement = document.getElementById('background-image');
+    if (imageElement) {
+        // Проверяем, является ли это белой подложкой (по src)
+        if (imageElement.getAttribute('href') && imageElement.getAttribute('href').startsWith('data:image/png')) {
+            imageElement.remove();
+        }
+    }
+}
 		loadImage(file) {
 			const reader = new FileReader();
 			reader.onload = async (e) => {
@@ -1151,6 +1297,8 @@ transformPathCoordinates(d, scaleX, scaleY, offsetX, offsetY) {
 				img.onload = async () => {
 					this.state.image = img;
 					this.state.imageUrl = e.target.result;
+				
+					this.removeBackgroundImage();
 					
 					let imageForDisplay = img;
 					let imageForSnapping = img; // Для привязки - то же самое что видит пользователь
@@ -1286,22 +1434,22 @@ transformPathCoordinates(d, scaleX, scaleY, offsetX, offsetY) {
 			this.setZoom(1);
 		}
 					
-		removeImage() {
-			const imageElement = document.getElementById('background-image');
-			if (imageElement) imageElement.remove();
-			
-			this.state.image = null;
-			this.state.imageUrl = null;
-			this.state.imageForDisplay = null;
-			
-			this.imageCanvasCache = null;
-			this.imageDataCache = null;
-			
-			document.getElementById('noImage').style.display = 'block';
-			document.getElementById('imageControls').style.display = 'none';
-			
-			this.setZoom(1);
-		}
+removeImage() {
+    const imageElement = document.getElementById('background-image');
+    if (imageElement) imageElement.remove();
+    
+    this.state.image = null;
+    this.state.imageUrl = null;
+    this.state.imageForDisplay = null;
+    
+    this.imageCanvasCache = null;
+    this.imageDataCache = null;
+    
+    // После удаления фото создаем белую подложку
+    this.createBackgroundFromInput();
+    
+    document.getElementById('imageControls').style.display = 'none';
+}
 					
             // ИНСТРУМЕНТЫ
 setTool(tool) {
