@@ -697,73 +697,94 @@ class SVGElement {
     }
 
     // Упрощенный парсер SVG путей
-    parseSVGPaths(doc, svgWidth, svgHeight) {
-        const paths = [];
-        const pathElements = doc.querySelectorAll('path');
-        
-        // Находим bounding box всех путей
-        let allPoints = [];
-        
-        pathElements.forEach(path => {
-            const d = path.getAttribute('d');
-            if (d && d.trim() !== '') {
-                const points = this.parsePathData(d);
-                allPoints.push(...points);
+parseSVGPaths(doc, svgWidth, svgHeight) {
+    const pathElements = doc.querySelectorAll('path');
+    
+    // Получаем размеры из viewBox
+    const svgElement = doc.querySelector('svg');
+    let docMinX = 0, docMinY = 0, docWidth = 100, docHeight = 100;
+    
+    if (svgElement) {
+        const viewBox = svgElement.getAttribute('viewBox');
+        if (viewBox) {
+            const parts = viewBox.split(' ').map(Number);
+            if (parts.length >= 4) {
+                docMinX = parts[0]; 
+                docMinY = parts[1];  
+                docWidth = parts[2];
+                docHeight = parts[3];
             }
-        });
-        
-        if (allPoints.length === 0) return;
-        
-        // Находим min/max
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        allPoints.forEach(point => {
-            minX = Math.min(minX, point.x);
-            minY = Math.min(minY, point.y);
-            maxX = Math.max(maxX, point.x);
-            maxY = Math.max(maxY, point.y);
-        });
-        
-        const contentWidth = maxX - minX;
-        const contentHeight = maxY - minY;
-        
-        // Масштаб для приведения к 50мм
-        const targetSize = 50;
-        const scale = targetSize / Math.max(contentWidth, contentHeight);
-        
-        // Фактические размеры с сохранением пропорций
-        this.width = contentWidth * scale;
-        this.height = contentHeight * scale;
-        
-        // Парсим пути с масштабированием
-        pathElements.forEach(path => {
-            const d = path.getAttribute('d');
-            if (d && d.trim() !== '') {
-                const points = this.parsePathData(d);
-                const vectorPath = [];
-                
-                for (let i = 0; i < points.length; i++) {
-                    const point = points[i];
-                    // Смещаем и масштабируем
-                    const x = (point.x - minX) * scale;
-                    const y = (point.y - minY) * scale;
-                    
-                    // Инвертируем Y для плоттера
-                    const plotterY = this.height - y;
-                    
-                    vectorPath.push({
-                        x: x,
-                        y: plotterY,
-                        move: point.move || (i === 0) // Первая точка - move
-                    });
-                }
-                
-                if (vectorPath.length > 1) {
-                    this.vectorPaths.push(vectorPath);
-                }
+        }
+        // Пробуем получить размеры из атрибутов width/height
+        const widthAttr = svgElement.getAttribute('width');
+        const heightAttr = svgElement.getAttribute('height');
+        if (widthAttr && heightAttr) {
+            const widthNum = parseFloat(widthAttr);
+            const heightNum = parseFloat(heightAttr);
+            if (!isNaN(widthNum) && !isNaN(heightNum)) {
+                docWidth = widthNum;
+                docHeight = heightNum;
             }
-        });
-        
+        }
     }
+    
+    // Устанавливаем реальные размеры картинки
+    this.originalWidth = docWidth;
+    this.originalHeight = docHeight;
+    
+    // Целевой размер для отображения
+    const percentOfSheet = 1; // 20% от ширины листа
+    const targetWidth = sheetWidth * percentOfSheet;
+    
+    // Масштабируем пропорционально
+    const scale = targetWidth / docWidth;
+    const targetHeight = docHeight * scale;
+    
+    // Масштабированные размеры для отображения
+    this.width = targetWidth;
+    this.height = targetHeight;
+    this.baseScale = scale; // Сохраняем базовый масштаб
+    
+    // ВЫЧИСЛЯЕМ ПОЗИЦИЮ ДЛЯ ЦЕНТРИРОВАНИЯ
+    this.x = (sheetWidth - this.width) / 2;  // Центр по горизонтали
+    this.y = (sheetHeight - this.height) / 2; // Центр по вертикали
+    
+    // Парсим пути
+    this.vectorPaths = [];
+    pathElements.forEach(path => {
+        const d = path.getAttribute('d');
+        if (d && d.trim() !== '') {
+            const points = this.parsePathData(d);
+            const vectorPath = [];
+            
+            for (let i = 0; i < points.length; i++) {
+                const point = points[i];
+                
+                const originalX = point.x;
+                const originalY = point.y;
+                
+                // Масштабируем к нашему целевому размеру
+                const scaledX = originalX * scale;
+                const scaledY = originalY * scale;
+                
+                vectorPath.push({
+                    x: scaledX,
+                    y: scaledY,
+                    move: point.move || (i === 0)
+                });
+            }
+            
+            if (vectorPath.length > 1) {
+                this.vectorPaths.push(vectorPath);
+            }
+        }
+    });
+    
+    // Если не нашли пути, создаем пустой
+    if (this.vectorPaths.length === 0) {
+        console.warn('В SVG нет векторных путей');
+    }
+}
 
     // Простейший парсер пути SVG (только M, L, Z команды)
     parsePathData(pathData) {
@@ -844,11 +865,10 @@ getGcodePaths() {
     const sin = Math.sin(this.rotation);
     
     if (!this.vectorPaths || this.vectorPaths.length === 0) {
-        console.warn('Нет векторных путей в SVG!');
         return gcodePaths;
     }
     
-    // Центр для вращения
+    // Центр для вращения - центр отображаемого элемента
     const centerX = this.x + this.width * this.scale / 2;
     const centerY = this.y + this.height * this.scale / 2;
     
@@ -856,11 +876,17 @@ getGcodePaths() {
         const transformedPath = [];
         
         for (const point of path) {
-
-            const worldX = this.x + point.x * this.scale;
-            const worldY = this.y + point.y * this.scale;
+            // 1. Берем масштабированные координаты из vectorPaths
+            // 2. Применяем дополнительный масштаб (this.scale)
+            const scaledX = point.x * this.scale;
+            const scaledY = point.y * this.scale;
             
-            // Поворачиваем
+            // 3. Сдвигаем к позиции элемента (this.x, this.y)
+            // 4. ИНВЕРТИРУЕМ Y: SVG Y растет вниз, плоттер Y растет вверх
+            const worldX = this.x + scaledX;
+            const worldY = this.y + (this.height * this.scale - scaledY); // ИНВЕРСИЯ ЗДЕСЬ!
+            
+            // 5. Поворачиваем вокруг центра элемента
             const rotatedX = (worldX - centerX) * cos - (worldY - centerY) * sin + centerX;
             const rotatedY = (worldX - centerX) * sin + (worldY - centerY) * cos + centerY;
             
@@ -872,10 +898,10 @@ getGcodePaths() {
         
         if (transformedPath.length > 1) {
             gcodePaths.push(transformedPath);
-            
         }
     }
-        return gcodePaths;
+    
+    return gcodePaths;
 }
 
     getBoundingBox() {

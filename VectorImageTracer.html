@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -888,78 +889,182 @@ addWhiteBackgroundToPNG(img) {
         imgWithBackground.src = canvas.toDataURL();
     });
 }
-		loadSVG(file) {
-			const reader = new FileReader();
-			reader.onload = (e) => {
-				// Парсим SVG файл
-				const parser = new DOMParser();
-				const svgDoc = parser.parseFromString(e.target.result, 'image/svg+xml');
-				const loadedSvg = svgDoc.querySelector('svg');
-				
-				if (!loadedSvg) {
-					alert('Файл не является валидным SVG');
-					return;
-				}
+loadSVG(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        // Парсим SVG файл
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(e.target.result, 'image/svg+xml');
+        const loadedSvg = svgDoc.querySelector('svg');
+        
+        if (!loadedSvg) {
+            alert('Файл не является валидным SVG');
+            return;
+        }
 
-				// Очищаем текущий холст
-				this.clearVectors();
-				
-				// Ищем элементы в загруженном SVG
-				const backgroundImage = loadedSvg.querySelector('#background-image');
-				const vectors = loadedSvg.querySelectorAll('path:not(#background-image), line, rect, circle');
-				
-				// Загружаем подложку если она есть
-				if (backgroundImage) {
-					const href = backgroundImage.getAttribute('href') || 
-								backgroundImage.getAttribute('xlink:href');
-					
-					if (href && href.startsWith('data:image')) {
-						// Создаем изображение из data URL
-						const img = new Image();
-						img.onload = () => {
-							this.state.image = img;
-							this.state.imageUrl = href;
-							this.displayImage(img);
-							document.getElementById('noImage').style.display = 'none';
-							document.getElementById('imageControls').style.display = 'block';
-							
-							// Применяем прозрачность
-							const opacitySlider = document.getElementById('opacitySlider');
-							const imageElement = document.getElementById('background-image');
-							if (opacitySlider && imageElement) {
-								imageElement.style.opacity = opacitySlider.value / 100;
-							}
-						};
-						img.src = href;
-					}
-				}
-				
-				// Загружаем векторы
-				vectors.forEach(vector => {
-					// Клонируем элемент
-					const clonedVector = vector.cloneNode(true);
-					
-					// Обрабатываем различные типы элементов
-					const tag = clonedVector.tagName.toLowerCase();
-					
-					// Для путей проверяем классы Безье
-					if (tag === 'path') {
-						const classList = clonedVector.getAttribute('class') || '';
-						if (classList.includes('bezier-vector')) {
-							// Это кривая Безье - добавляем в массив Безье
-							this.addBezierFromSVG(clonedVector);
-							return;
-						}
-					}
-					
-					// Обычные векторы добавляем на холст
-					this.svg.appendChild(clonedVector);
-				});
-				
-				alert('SVG успешно загружен');
-			};
-			reader.readAsText(file);
-		}
+        // Получаем размеры загруженного SVG
+        const loadedWidth = parseFloat(loadedSvg.getAttribute('width')) || 
+                           parseFloat(loadedSvg.getAttribute('viewBox')?.split(' ')[2]) || 
+                           1000;
+        const loadedHeight = parseFloat(loadedSvg.getAttribute('height')) || 
+                            parseFloat(loadedSvg.getAttribute('viewBox')?.split(' ')[3]) || 
+                            1000;
+
+        // Если нет изображения - просто добавляем векторы
+        if (!this.state.image) {
+            this.loadVectorsToCurrentCanvas(loadedSvg, 1, 1, 0, 0);
+            alert('SVG успешно загружен (без изображения)');
+            return;
+        }
+
+        // Получаем размеры и позицию текущего изображения
+        const imageElement = document.getElementById('background-image');
+        if (!imageElement) {
+            this.loadVectorsToCurrentCanvas(loadedSvg, 1, 1, 0, 0);
+            alert('SVG успешно загружен');
+            return;
+        }
+
+        const currentImageX = parseFloat(imageElement.getAttribute('x')) || 0;
+        const currentImageY = parseFloat(imageElement.getAttribute('y')) || 0;
+        const currentImageWidth = parseFloat(imageElement.getAttribute('width')) || loadedWidth;
+        const currentImageHeight = parseFloat(imageElement.getAttribute('height')) || loadedHeight;
+
+        // Рассчитываем масштаб для преобразования координат
+        const scaleX = currentImageWidth / loadedWidth;
+        const scaleY = currentImageHeight / loadedHeight;
+
+        // Рассчитываем смещение
+        const offsetX = currentImageX;
+        const offsetY = currentImageY;
+
+        // Загружаем векторы с преобразованием координат
+        this.loadVectorsToCurrentCanvas(loadedSvg, scaleX, scaleY, offsetX, offsetY);
+        
+    };
+    reader.readAsText(file);
+}
+
+// Новый метод для загрузки векторов с преобразованием координат
+loadVectorsToCurrentCanvas(sourceSvg, scaleX, scaleY, offsetX, offsetY) {
+    // Находим все векторные элементы в загруженном SVG
+    const vectors = sourceSvg.querySelectorAll('path, line, rect, circle, ellipse');
+    
+    vectors.forEach(vector => {
+        const clonedVector = vector.cloneNode(true);
+        const tag = clonedVector.tagName.toLowerCase();
+        
+        // Преобразуем координаты в зависимости от типа элемента
+        switch(tag) {
+            case 'path':
+                const d = clonedVector.getAttribute('d');
+                if (d) {
+                    const transformedD = this.transformPathCoordinates(d, scaleX, scaleY, offsetX, offsetY);
+                    clonedVector.setAttribute('d', transformedD);
+                }
+                break;
+                
+            case 'line':
+                const x1 = parseFloat(clonedVector.getAttribute('x1'));
+                const y1 = parseFloat(clonedVector.getAttribute('y1'));
+                const x2 = parseFloat(clonedVector.getAttribute('x2'));
+                const y2 = parseFloat(clonedVector.getAttribute('y2'));
+                
+                if (!isNaN(x1) && !isNaN(y1)) {
+                    clonedVector.setAttribute('x1', x1 * scaleX + offsetX);
+                    clonedVector.setAttribute('y1', y1 * scaleY + offsetY);
+                }
+                if (!isNaN(x2) && !isNaN(y2)) {
+                    clonedVector.setAttribute('x2', x2 * scaleX + offsetX);
+                    clonedVector.setAttribute('y2', y2 * scaleY + offsetY);
+                }
+                break;
+                
+            case 'rect':
+                const rectX = parseFloat(clonedVector.getAttribute('x'));
+                const rectY = parseFloat(clonedVector.getAttribute('y'));
+                const rectWidth = parseFloat(clonedVector.getAttribute('width'));
+                const rectHeight = parseFloat(clonedVector.getAttribute('height'));
+                
+                if (!isNaN(rectX)) clonedVector.setAttribute('x', rectX * scaleX + offsetX);
+                if (!isNaN(rectY)) clonedVector.setAttribute('y', rectY * scaleY + offsetY);
+                if (!isNaN(rectWidth)) clonedVector.setAttribute('width', rectWidth * scaleX);
+                if (!isNaN(rectHeight)) clonedVector.setAttribute('height', rectHeight * scaleY);
+                break;
+                
+            case 'circle':
+                const cx = parseFloat(clonedVector.getAttribute('cx'));
+                const cy = parseFloat(clonedVector.getAttribute('cy'));
+                const radius = parseFloat(clonedVector.getAttribute('r'));
+                
+                if (!isNaN(cx)) clonedVector.setAttribute('cx', cx * scaleX + offsetX);
+                if (!isNaN(cy)) clonedVector.setAttribute('cy', cy * scaleY + offsetY);
+                if (!isNaN(radius)) clonedVector.setAttribute('r', radius * scaleX);
+                break;
+                
+            case 'ellipse':
+                const ellipseCx = parseFloat(clonedVector.getAttribute('cx'));
+                const ellipseCy = parseFloat(clonedVector.getAttribute('cy'));
+                const ellipseRx = parseFloat(clonedVector.getAttribute('rx'));
+                const ellipseRy = parseFloat(clonedVector.getAttribute('ry'));
+                
+                if (!isNaN(ellipseCx)) clonedVector.setAttribute('cx', ellipseCx * scaleX + offsetX);
+                if (!isNaN(ellipseCy)) clonedVector.setAttribute('cy', ellipseCy * scaleY + offsetY);
+                if (!isNaN(ellipseRx)) clonedVector.setAttribute('rx', ellipseRx * scaleX);
+                if (!isNaN(ellipseRy)) clonedVector.setAttribute('ry', ellipseRy * scaleY);
+                break;
+        }
+        
+        // Добавляем стили если их нет
+        if (!clonedVector.getAttribute('stroke')) {
+            clonedVector.setAttribute('stroke', '#4dabf7');
+        }
+        if (!clonedVector.getAttribute('stroke-width')) {
+            clonedVector.setAttribute('stroke-width', '2');
+        }
+        if (!clonedVector.getAttribute('fill')) {
+            clonedVector.setAttribute('fill', 'none');
+        }
+        
+        // Добавляем на холст
+        this.svg.appendChild(clonedVector);
+    });
+}
+
+// Метод для преобразования координат в пути (d атрибут)
+transformPathCoordinates(d, scaleX, scaleY, offsetX, offsetY) {
+    // Парсим команды пути
+    const commands = d.match(/[MLCQZmlcqz][^MLCQZmlcqz]*/g) || [];
+    
+    let transformedPath = '';
+    
+    commands.forEach(commandStr => {
+        const command = commandStr[0];
+        const numbers = commandStr.substring(1).trim();
+        
+        if (!numbers) {
+            transformedPath += command + ' ';
+            return;
+        }
+        
+        // Разбиваем числа
+        const numArray = numbers.split(/[\s,]+/).map(Number);
+        let transformedNumbers = '';
+        
+        // Обрабатываем пары координат
+        for (let i = 0; i < numArray.length; i += 2) {
+            if (i + 1 < numArray.length) {
+                const x = numArray[i] * scaleX + offsetX;
+                const y = numArray[i + 1] * scaleY + offsetY;
+                transformedNumbers += `${x} ${y} `;
+            }
+        }
+        
+        transformedPath += command + ' ' + transformedNumbers.trim() + ' ';
+    });
+    
+    return transformedPath.trim();
+}
 
 		// Метод для добавления кривой Безье из SVG
 		addBezierFromSVG(pathElement) {
@@ -3808,51 +3913,138 @@ clearVectors() {
 }
           
 saveSVG() {
-    // Показываем диалоговое окно с выбором
-    const saveWithBackground = confirm('Сохранить SVG с подложкой? Нажмите OK для сохранения с подложкой, Отмена - для сохранения только векторов.');
+    // Создаем новый SVG элемент для сохранения
+    const svgDoc = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     
-    // Клонируем SVG
-    const clone = this.svg.cloneNode(true);
+    // Используем реальные размеры изображения (если есть)
+    let baseWidth = 1000;
+    let baseHeight = 1000;
     
-    // Если пользователь выбрал сохранение БЕЗ подложки
-    if (!saveWithBackground) {
-        // Удаляем изображение из клона
-        const backgroundImage = clone.querySelector('#background-image');
-        if (backgroundImage) {
-            backgroundImage.remove();
-        }
-        
-        // Удаляем все вспомогательные элементы Безье (шары-точки и направляющие)
-        const bezierHelpers = clone.querySelectorAll(
-            '.bezier-guide-line, .bezier-control-point, .bezier-point'
-        );
-        bezierHelpers.forEach(el => el.remove());
-        
-        // Удаляем временные индикаторы
-        const indicators = clone.querySelectorAll('[id*="indicator"]');
-        indicators.forEach(el => el.remove());
-    } else {
-        // Сохраняем с подложкой - удаляем только временные индикаторы
-        const indicators = clone.querySelectorAll('[id*="indicator"]');
-        indicators.forEach(el => el.remove());
-        
-        // Также удаляем точки Безье (шарики), но оставляем сами кривые
-        const bezierPoints = clone.querySelectorAll('.bezier-point, .bezier-control-point');
-        bezierPoints.forEach(el => el.remove());
+    if (this.state.image) {
+        baseWidth = this.state.image.naturalWidth || this.state.image.width || 1000;
+        baseHeight = this.state.image.naturalHeight || this.state.image.height || 1000;
     }
     
-    // В ЛЮБОМ СЛУЧАЕ удаляем шары-точки Безье из финального SVG
-    // (они нужны только для редактирования, а не для финального файла)
-    const allBezierPoints = clone.querySelectorAll('.bezier-point, .bezier-control-point');
-    allBezierPoints.forEach(el => el.remove());
+    // Устанавливаем размеры сохраненного SVG
+    svgDoc.setAttribute('width', baseWidth + 'px');
+    svgDoc.setAttribute('height', baseHeight + 'px');
+    svgDoc.setAttribute('viewBox', `0 0 ${baseWidth} ${baseHeight}`);
+    svgDoc.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     
-    // Удаляем направляющие линии (но оставляем сами кривые Безье)
-    const guideLines = clone.querySelectorAll('.bezier-guide-line');
-    guideLines.forEach(el => el.remove());
+    // Получаем позицию и размер изображения в текущем viewBox
+    const imageElement = document.getElementById('background-image');
+    let imageX = 0, imageY = 0, imageWidth = baseWidth, imageHeight = baseHeight;
+    
+    if (imageElement) {
+        imageX = parseFloat(imageElement.getAttribute('x')) || 0;
+        imageY = parseFloat(imageElement.getAttribute('y')) || 0;
+        imageWidth = parseFloat(imageElement.getAttribute('width')) || baseWidth;
+        imageHeight = parseFloat(imageElement.getAttribute('height')) || baseHeight;
+    }
+    
+    // Функция для преобразования координат
+    const convertToOriginalCoordinates = (x, y) => {
+        // Преобразуем из координат viewBox в координаты изображения
+        const scaleX = baseWidth / imageWidth;
+        const scaleY = baseHeight / imageHeight;
+        
+        return {
+            x: (x - imageX) * scaleX,
+            y: (y - imageY) * scaleY
+        };
+    };
+    
+    // Копируем ВСЕ векторные элементы из текущего SVG
+    const allElements = this.svg.querySelectorAll('path, line, rect, circle, ellipse');
+    
+    allElements.forEach(originalElement => {
+        // Пропускаем вспомогательные элементы и индикаторы
+        if (originalElement.id && originalElement.id.includes('indicator')) {
+            return;
+        }
+        
+        if (originalElement.classList && 
+            (originalElement.classList.contains('bezier-guide-line') || 
+             originalElement.classList.contains('bezier-control-point') ||
+             originalElement.classList.contains('bezier-point'))) {
+            return;
+        }
+        
+        // Клонируем элемент
+        const clonedElement = originalElement.cloneNode(true);
+        
+        // Для путей (включая кривые Безье)
+        if (originalElement.tagName.toLowerCase() === 'path') {
+            const d = originalElement.getAttribute('d');
+            if (d) {
+                // Преобразуем координаты пути
+                const convertedD = this.convertPathCoordinates(d, convertToOriginalCoordinates);
+                clonedElement.setAttribute('d', convertedD);
+            }
+        }
+        
+        // Для линий
+        if (originalElement.tagName.toLowerCase() === 'line') {
+            const x1 = parseFloat(originalElement.getAttribute('x1'));
+            const y1 = parseFloat(originalElement.getAttribute('y1'));
+            const x2 = parseFloat(originalElement.getAttribute('x2'));
+            const y2 = parseFloat(originalElement.getAttribute('y2'));
+            
+            if (!isNaN(x1) && !isNaN(y1) && !isNaN(x2) && !isNaN(y2)) {
+                const coord1 = convertToOriginalCoordinates(x1, y1);
+                const coord2 = convertToOriginalCoordinates(x2, y2);
+                
+                clonedElement.setAttribute('x1', coord1.x);
+                clonedElement.setAttribute('y1', coord1.y);
+                clonedElement.setAttribute('x2', coord2.x);
+                clonedElement.setAttribute('y2', coord2.y);
+            }
+        }
+        
+        // Для прямоугольников
+        if (originalElement.tagName.toLowerCase() === 'rect') {
+            const x = parseFloat(originalElement.getAttribute('x'));
+            const y = parseFloat(originalElement.getAttribute('y'));
+            const width = parseFloat(originalElement.getAttribute('width'));
+            const height = parseFloat(originalElement.getAttribute('height'));
+            
+            if (!isNaN(x) && !isNaN(y)) {
+                const coord = convertToOriginalCoordinates(x, y);
+                clonedElement.setAttribute('x', coord.x);
+                clonedElement.setAttribute('y', coord.y);
+                
+                // Масштабируем размеры
+                const scaleX = baseWidth / imageWidth;
+                const scaleY = baseHeight / imageHeight;
+                
+                if (!isNaN(width)) clonedElement.setAttribute('width', width * scaleX);
+                if (!isNaN(height)) clonedElement.setAttribute('height', height * scaleY);
+            }
+        }
+        
+        // Для кругов
+        if (originalElement.tagName.toLowerCase() === 'circle') {
+            const cx = parseFloat(originalElement.getAttribute('cx'));
+            const cy = parseFloat(originalElement.getAttribute('cy'));
+            const r = parseFloat(originalElement.getAttribute('r'));
+            
+            if (!isNaN(cx) && !isNaN(cy)) {
+                const coord = convertToOriginalCoordinates(cx, cy);
+                clonedElement.setAttribute('cx', coord.x);
+                clonedElement.setAttribute('cy', coord.y);
+                
+                // Масштабируем радиус
+                const scaleX = baseWidth / imageWidth;
+                if (!isNaN(r)) clonedElement.setAttribute('r', r * scaleX);
+            }
+        }
+        
+        svgDoc.appendChild(clonedElement);
+    });
     
     // Создаем строку SVG
     const serializer = new XMLSerializer();
-    let svgString = serializer.serializeToString(clone);
+    let svgString = serializer.serializeToString(svgDoc);
     
     // Добавляем заголовок
     svgString = '<?xml version="1.0" encoding="UTF-8"?>\n' + svgString;
@@ -3862,16 +4054,51 @@ saveSVG() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = saveWithBackground ? 'рисунок_с_подложкой.svg' : 'рисунок_векторы.svg';
+    a.download = 'векторы.svg';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     
-    // Показываем уведомление о сохранении
-    alert(`SVG успешно сохранен как "${a.download}"`);
+    alert('SVG сохранен!');
 }
 
+convertPathCoordinates(d, convertFunction) {
+    // Парсим команды пути
+    const commands = d.match(/[a-df-zA-DF-Z][^a-df-zA-DF-Z]*/g) || [];
+    
+    let convertedPath = '';
+    
+    commands.forEach(commandStr => {
+        const command = commandStr[0];
+        const numbers = commandStr.substring(1).trim();
+        
+        if (!numbers) {
+            convertedPath += command + ' ';
+            return;
+        }
+        
+        // Разбиваем числа
+        const numArray = numbers.split(/[\s,]+/).map(Number);
+        let convertedNumbers = '';
+        
+        // Обрабатываем пары координат
+        for (let i = 0; i < numArray.length; i += 2) {
+            if (i + 1 < numArray.length) {
+                const x = numArray[i];
+                const y = numArray[i + 1];
+                
+                // Преобразуем координаты
+                const converted = convertFunction(x, y);
+                convertedNumbers += `${converted.x},${converted.y} `;
+            }
+        }
+        
+        convertedPath += command + ' ' + convertedNumbers.trim() + ' ';
+    });
+    
+    return convertedPath.trim();
+}
        }
         
         // Запуск редактора
