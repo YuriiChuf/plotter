@@ -173,12 +173,12 @@
 .push-mode {
     cursor: none !important;
 }
-		@keyframes pulse-ring {
-			0% { stroke-opacity: 0.7; }
-			50% { stroke-opacity: 1; }
-			100% { stroke-opacity: 0.7; }
-		}
-		/* Точка НЕ выделена */
+@keyframes pulse-ring {
+	0% { stroke-opacity: 0.7; }
+	50% { stroke-opacity: 1; }
+	100% { stroke-opacity: 0.7; }
+}
+/* Точка НЕ выделена */
 .bezier-point {
     fill: #4dabf7;
     stroke: #1971c2;
@@ -241,10 +241,14 @@
                        style="width: 100%; padding: 5px; border-radius: 3px; border: 1px solid #444; background: #222; color: white;">
             </div>
         </div>
-        
+    <div style=" display: flex; gap: 10px;">
+<label style="flex: 1; display: block; font-size: 12px; color: #ccc; margin-top: 8px;">DPI:</label>
+<input type="number" id="dpiInput" value="96" min="10" max="600" step="1"
+               style=" width: 100%; padding: 5px; border-radius: 3px; border: 1px solid #444; background: #222; color: white;">
+    </div>
         <!-- Отображение в пикселях -->
-        <div style="font-size: 11px; color: #888; text-align: center; margin-bottom: 10px;">
-            В пикселях: <span id="pixelSizeDisplay">794×1123</span> (96 DPI)
+        <div style="font-size: 11px; color: #888; text-align: center; margin-bottom: 5px; margin-top: 3px;">
+            В px: <span id="pixelSizeDisplay">794×1123</span>
         </div>
         
         <!-- Кнопка создания подложки -->
@@ -467,6 +471,7 @@
 			this.svg.setAttribute('height', '100%');
 			this.svg.setAttribute('viewBox', '0 0 1000 1000');
 			this.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+			document.getElementById('dpiInput').oninput = () => this.updatePixelDisplay();
 			// Загрузка SVG
 			document.getElementById('loadSvgBtn').onclick = () => {
 				document.getElementById('svgInput').click();
@@ -1203,17 +1208,19 @@ createA4Background() {
 updatePixelDisplay() {
     const widthMm = parseInt(document.getElementById('mmWidth').value) || 210;
     const heightMm = parseInt(document.getElementById('mmHeight').value) || 297;
+    const dpi = parseInt(document.getElementById('dpiInput').value) || 96;
     
-    const widthPx = Math.round(widthMm * 96 / 25.4);
-    const heightPx = Math.round(heightMm * 96 / 25.4);
+    const widthPx = Math.round(widthMm * dpi / 25.4);
+    const heightPx = Math.round(heightMm * dpi / 25.4);
     
-    document.getElementById('pixelSizeDisplay').textContent = `${widthPx}×${heightPx}`;
+    document.getElementById('pixelSizeDisplay').textContent = `${widthPx}×${heightPx} (${dpi} DPI)`;
 }
 
 // Создание подложки из полей ввода
 createBackgroundFromInput() {
     const widthMm = parseInt(document.getElementById('mmWidth').value) || 210;
     const heightMm = parseInt(document.getElementById('mmHeight').value) || 297;
+    const dpi = parseInt(document.getElementById('dpiInput').value) || 96;
     
     if (widthMm < 10 || heightMm < 10) {
         alert('Минимальный размер 10×10 мм');
@@ -1225,9 +1232,14 @@ createBackgroundFromInput() {
         return;
     }
     
-    // Преобразуем мм в пиксели
-    const widthPx = Math.round(widthMm * 96 / 25.4);
-    const heightPx = Math.round(heightMm * 96 / 25.4);
+    if (dpi < 10 || dpi > 600) {
+        alert('DPI должен быть от 10 до 600');
+        return;
+    }
+    
+    // Преобразуем мм в пиксели с учетом DPI
+    const widthPx = Math.round(widthMm * dpi / 25.4);
+    const heightPx = Math.round(heightMm * dpi / 25.4);
     
     this.createBackground(widthPx, heightPx);
 }
