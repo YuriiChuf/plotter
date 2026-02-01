@@ -6,384 +6,426 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Конвертер JPEG/PNG/SVG в G-code для Sovol SO-1</title>
 <style>
-    body {
-        font-family: Arial, sans-serif;
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 20px;
-        background-color: #f5f5f5;
-    }
-    .main-container {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-        align-items: start;
-    }
-    .left-panel {
-        display: grid;
-        grid-template-rows: auto auto;
-        gap: 20px;
-        height: fit-content;
-    }
-    .right-panel {
-        display: grid;
-        grid-template-rows: auto auto;
-        gap: 20px;
-        height: fit-content;
-    }
-    .panel {
-        background: white;
-        padding: 20px;
-        border-radius: 8px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        min-height: 0;
-    }
+body {
+    font-family: Arial, sans-serif;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #2d2d2d;
+    color: white;
+}
 
-    .image-upload-panel,
-    .original-image-panel {
-        grid-row: 1;
-		height: 601px;
-    }
-    .tracing-settings-panel,
-    .vector-preview-panel {
-        grid-row: 2;
-		height: 601px;
-    }
-    .canvas-container {
-        position: relative;
-        width: 100%;
-        margin-bottom: 20px;
-    }
-    canvas {
-        border: 1px solid #ddd;
-        max-width: 100%;
-        background: white;
-        display: block;
-    }
-    .canvas-frame {
-        position: absolute;
-        top: 0;
-        left: 0;
-        pointer-events: none;
-        box-sizing: border-box;
-    }
-    .controls {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-    input, select, button {
-        padding: 6px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 14px;
-    }
-    button {
-        background: #007cba;
-        color: white;
-        border: none;
-        padding: 8px;
-    }
-    button:hover {
-        background: #005a87;
-    }
-	button:disabled {
-		background: #cccccc !important;
-		color: #666666 !important;
-		opacity: 0.6;
-	}
-	
-    .gcode-output {
-        width: 100%;
-        height: 300px;
-        font-family: monospace;
-        font-size: 12px;
-        resize: vertical;
-    }
-    .status {
-        padding: 10px;
-        margin: 10px 0;
-        border-radius: 4px;
-    }
-    .success {
-        background: #d4edda;
-        color: #155724;
-    }
-    .error {
-        background: #f8d7da;
-        color: #721c24;
-    }
-    h1, h2, h3 {
-        color: #333;
-    }
-	.butsett {
-		background: #CDD0D3;
-		color: black;
-		border: none;
-		border-radius: 2px;
-		font-size: 12px;
-		line-height: 1;
-		width: 100%;
-		margin-top: 0px;
-	}
-	.butsett:hover {
-		background: #E2E4E7;
-		color: black;
-	}
-    .setting-group {
-		margin-top: 20px;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-        font-size: 15px;
-    }
-    .compact-group {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-        align-items: end;
-	}
+.main-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: start;
+}
 
-    .compact-group > div {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-	.path-info {
-		font-size: 12px;
-		color: #333;
-		margin-top: 8px;
-		line-height: 1.3;
-		min-height: 20px;
-		background: rgba(255, 255, 255, 0.8);
-		padding: 4px 8px;
-		border-radius: 4px;
-		display: inline-block;
-	}
-	.info-text-1 {
-        font-size: 11px;
-        color: #666;
-        margin-top: 0px;
-        margin-bottom: -11px;
-        line-height: 1.2;
-    }
-	 .info-text {
-        font-size: 11px;
-        color: #666;
-        margin-top: -4px;
-        margin-bottom: 8px;
-        line-height: 1.2;
-    }
-	.button-group button.active {
-		background: #005a87;
-		border: 2px solid #003d5c;
-	}
+.left-panel {
+    display: grid;
+    grid-template-rows: auto auto;
+    gap: 20px;
+    height: fit-content;
+}
 
-	.button-2-group {
-		display: grid;
-		grid-template-columns: 3fr 0.95fr 1.2fr 0.2fr 0.5fr;
-		gap: 10px;
-		align-items: center;
-		margin-top: -30px;
-	}
+.right-panel {
+    display: grid;
+    grid-template-rows: auto auto;
+    gap: 20px;
+    height: fit-content;
+}
 
-	.button-group {
-		display: grid;
-		grid-template-columns: 1fr 1fr 1fr;
-		gap: 10px;
-	}
+.panel {
+    background: #333;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    min-height: 0;
+}
 
-	.button-2-group button,
-	.button-group button {
-		height: 35px;
-		min-height: 35px;
-		padding: 8px 5px;
-		font-size: 13px;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
+.image-upload-panel,
+.original-image-panel {
+    grid-row: 1;
+    height: 601px;
+}
 
-    .dimension-inputs span {
-        text-align: center;
-        font-weight: bold;
-    }
-    .legend {
-        display: flex;
-        gap: 12px;
-        margin-top: 8px;
-        font-size: 11px;
-        flex-wrap: wrap;
-    }
-    .legend-item {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-		margin-top: -10px;
-    }
-    .legend-color {
-        width: 12px;
-        height: 2px;
-        display: inline-block;
-    }
-    .file-info {
-        background: #f8f9fa;
-        padding: 6px;
-        border-radius: 4px;
-        margin-top: 4px;
-        font-size: 11px;
-        line-height: 1.3;
-		height: 50px;
-    }
-    
-    .tracing-settings .controls {
-        gap: 10px;
-    }
-    
-    .tracing-settings label {
-        font-size: 13px;
-        margin-bottom: 2px;
-    }
-    
-    .tracing-settings input,
-    .tracing-settings select {
-        padding: 5px;
-        font-size: 13px;
-    }
-    
-    .tracing-settings .setting-group {
-        gap: 6px;
-    }
-    
-    .position-controls {
-        background: #f8f9fa;
-        padding: 12px;
-        border-radius: 2px;
-        margin-top: 0px;
-    }
-    
-    .position-controls h4 {
-        margin: 0 0 5px 0;
-        font-size: 14px;
-        color: #333;
-    }
-    
-    .lock-proportions {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        margin-top: 4px;
-    }
-    
-    .lock-proportions input {
-        margin: 0;
-    }
-    
-    .lock-proportions label {
-        font-size: 12px;
-        cursor: pointer;
-    }
+.tracing-settings-panel,
+.vector-preview-panel {
+    grid-row: 2;
+    height: 601px;
+}
+.canvas-container {
+    position: relative;
+    width: 100%;
+    margin-bottom: 20px;
+}
 
-	.layout-toggle {
-		position: fixed;
-		top: 20px;
-		right: 20px;
-		background: rgba(255,255,255,0.95);
-		padding: 8px 15px;
-		border-radius: 20px;
-		font-size: 12px;
-		cursor: pointer;
-		border: 1px solid #ddd;
-		z-index: 1000;
-		box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-	}
+canvas {
+    border: 1px solid #444;
+    max-width: 100%;
+    background: #2d2d2d;
+    display: block;
+}
 
-	.layout-toggle:hover {
-		background: white;
-		box-shadow: 0 2px 12px rgba(0,0,0,0.2);
-	}
+.canvas-frame {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    box-sizing: border-box;
+}
 
-	.eraser-cursor {
-		cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="red" stroke-width="1"/><circle cx="10" cy="10" r="2" fill="red"/></svg>') 10 10, auto;
-	}
+.controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
 
-	#eraserTool.active {
-		background: #005a87;
-		border: 2px solid #003d5c;
-		font-weight: bold;
-	}
-	.position-group {
-		display: grid;
-		grid-template-columns: 1fr 1fr 1fr;
-		gap: 15px;
-		align-items: start;
-	}
+input, select, button {
+    padding: 6px;
+    border: 1px solid #444;
+    border-radius: 4px;
+    font-size: 14px;
+    background: #444;
+    color: white;
+}
 
-	.position-group > div {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
+button {
+    background: #4dabf7;
+    color: white;
+    border: none;
+    padding: 8px;
+}
 
-	.position-group label {
-		font-weight: bold;
-		margin: 0;
-		font-size: small;
-	}
+button:hover {
+    background: #339af0;
+}
 
-	.input-row {
-		display: flex;
-		align-items: center;
-		gap: 5px;
-	}
+button:disabled {
+    background: #666666 !important;
+    color: #999999 !important;
+    opacity: 0.6;
+}
 
-	.position-group input[type="number"] {
-		height: 32px;
-		width: 80px;
-		box-sizing: border-box;
-		padding: 4px 8px;
-	}
+.gcode-output {
+    width: 100%;
+    height: 300px;
+    font-family: monospace;
+    font-size: 12px;
+    resize: vertical;
+    background: #444;
+    color: white;
+    border: 1px solid #555;
+}
 
-	.align-btn {
-		width: 30px;
-		height: 30px;
-		padding: 0;
-		background: #507657;
-		color: white;
-		border: none;
-		border-radius: 4px;
-		cursor: pointer;
-		font-size: 25px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-		padding-bottom: 4px;
-	}
+.status {
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 4px;
+}
 
+.success {
+    background: rgba(40, 167, 69, 0.2);
+    color: #75b798;
+    border: 1px solid rgba(40, 167, 69, 0.3);
+}
 
-	#imageInput {
-		width: 80%;
-		padding: 15px;
-		border: 2px dashed #ccc;
-		border-radius: 8px;
-		background: #F1F1F1;
-		cursor: pointer;
-		transition: all 0.3s ease;
-	}
+.error {
+    background: rgba(220, 53, 69, 0.2);
+    color: #e6a2a9;
+    border: 1px solid rgba(220, 53, 69, 0.3);
+}
 
-	#imageInput:hover {
-		border-color: #2CC00C;
-		background: #D5FDCE;
-	}
+h1, h2, h3 {
+    color: #4dabf7;
+}
 
-	#imageInput::file-selector-button {
-	display: none;
+.butsett {
+    background: #555;
+    color: white;
+    border: none;
+    border-radius: 2px;
+    font-size: 12px;
+    line-height: 1;
+    width: 100%;
+    margin-top: 0px;
+}
 
-	}
+.butsett:hover {
+    background: #666;
+}
 
+.setting-group {
+    margin-top: 20px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    font-size: 15px;
+}
 
+.compact-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: end;
+}
+
+.compact-group > div {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.path-info {
+    font-size: 12px;
+    color: #ccc;
+    margin-top: 8px;
+    line-height: 1.3;
+    min-height: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 4px 8px;
+    border-radius: 4px;
+    display: inline-block;
+}
+
+.info-text-1 {
+    font-size: 11px;
+    color: #888;
+    margin-top: 0px;
+    margin-bottom: -11px;
+    line-height: 1.2;
+}
+
+ .info-text {
+    font-size: 11px;
+    color: #888;
+    margin-top: -4px;
+    margin-bottom: 8px;
+    line-height: 1.2;
+}
+
+.button-group button.active {
+    background: #1971c2;
+    border: 2px solid #0c4d8c;
+}
+
+.button-2-group {
+    display: grid;
+    grid-template-columns: 3fr 0.95fr 1.2fr 0.2fr 0.5fr;
+    gap: 10px;
+    align-items: center;
+    margin-top: -30px;
+}
+
+.button-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+}
+
+.button-2-group button,
+.button-group button {
+    height: 35px;
+    min-height: 35px;
+    padding: 8px 5px;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dimension-inputs span {
+    text-align: center;
+    font-weight: bold;
+}
+
+.legend {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+    font-size: 11px;
+    flex-wrap: wrap;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: -10px;
+}
+
+.legend-color {
+    width: 12px;
+    height: 2px;
+    display: inline-block;
+}
+
+.file-info {
+    background: #444;
+    padding: 6px;
+    border-radius: 4px;
+    margin-top: 4px;
+    font-size: 11px;
+    line-height: 1.3;
+    height: 50px;
+    color: #ccc;
+}
+
+.tracing-settings .controls {
+    gap: 10px;
+}
+
+.tracing-settings label {
+    font-size: 13px;
+    margin-bottom: 2px;
+    color: #ccc;
+}
+
+.tracing-settings input,
+.tracing-settings select {
+    padding: 5px;
+    font-size: 13px;
+}
+
+.tracing-settings .setting-group {
+    gap: 6px;
+}
+
+.position-controls {
+    background: #444;
+    padding: 12px;
+    border-radius: 2px;
+    margin-top: 0px;
+}
+
+.position-controls h4 {
+    margin: 0 0 5px 0;
+    font-size: 14px;
+    color: #ccc;
+}
+
+.lock-proportions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.lock-proportions input {
+    margin: 0;
+}
+
+.lock-proportions label {
+    font-size: 12px;
+    cursor: pointer;
+    color: #ccc;
+}
+
+.layout-toggle {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: rgba(44, 44, 44, 0.95);
+    padding: 8px 15px;
+    border-radius: 20px;
+    font-size: 12px;
+    cursor: pointer;
+    border: 1px solid #555;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    color: white;
+}
+
+.layout-toggle:hover {
+    background: #555;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+}
+
+.eraser-cursor {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="red" stroke-width="1"/><circle cx="10" cy="10" r="2" fill="red"/></svg>') 10 10, auto;
+}
+
+#eraserTool.active {
+    background: #1971c2;
+    border: 2px solid #0c4d8c;
+    font-weight: bold;
+}
+
+.position-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 15px;
+    align-items: start;
+}
+
+.position-group > div {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.position-group label {
+    font-weight: bold;
+    margin: 0;
+    font-size: small;
+    color: #ccc;
+}
+
+.input-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.position-group input[type="number"] {
+    height: 32px;
+    width: 80px;
+    box-sizing: border-box;
+    padding: 4px 8px;
+    background: #444;
+    color: white;
+    border: 1px solid #555;
+}
+
+.align-btn {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    background: #507657;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 25px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding-bottom: 4px;
+}
+
+#imageInput {
+    width: 80%;
+    padding: 15px;
+    border: 2px dashed #555;
+    border-radius: 8px;
+    background: #444;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    color: white;
+}
+
+#imageInput:hover {
+    border-color: #4dabf7;
+    background: #555;
+}
+
+#imageInput::file-selector-button {
+    display: none;
+}
 </style>
+
 </head>
 <body>
     <h1>Конвертер JPEG/PNG/SVG в G-code для Sovol SO-1</h1>
