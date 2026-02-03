@@ -96,6 +96,9 @@
         .tool-btn.active {
             background: #4dabf7;
         }
+		.tool-btn:hover::after {
+    content: attr(hotkey);
+}
         
         .tools {
             display: flex;
@@ -276,15 +279,15 @@
             <div class="panel">
                 <h3>Инструменты</h3>
                 <div class="tools">
-                    <button class="tool-btn active" data-tool="select">✓</button>
-					<button class="tool-btn" data-tool="push">👆</button>
-					<button class="tool-btn" data-tool="eraser">🧽</button>
-                    <button class="tool-btn" data-tool="line">─</button>
-                    <button class="tool-btn" data-tool="rect">▭</button>
-                    <button class="tool-btn" data-tool="circle">○</button>
-					<button class="tool-btn" data-tool="pen">✏️</button>
-					<button class="tool-btn" data-tool="bezier-points">B</button>
-					<input type="color" id="strokeColor" value="#4dabf7">
+                    <button class="tool-btn active" data-tool="select" hotkey=" V">✓</button>
+					<button class="tool-btn" data-tool="push" hotkey=" U">👆</button>
+					<button class="tool-btn" data-tool="eraser" hotkey=" E">🧽</button>
+                    <button class="tool-btn" data-tool="line" hotkey=" L">─</button>
+                    <button class="tool-btn" data-tool="rect" hotkey=" R">▭</button>
+                    <button class="tool-btn" data-tool="circle" hotkey=" C">○</button>
+					<button class="tool-btn" data-tool="pen" hotkey=" P">✏️</button>
+					<button class="tool-btn" data-tool="bezier-points" hotkey="ezier">B</button>
+					<input type="color" id="strokeColor" title="цвет линии" value="#4dabf7">
 					<label style="display: block; margin-top: 0px; margin: 5px;">Толщина: <span id="widthValue">3</span></label>
 					<input type="range" id="widthSlider" min="1" max="20" value="3">
                 </div>
@@ -413,6 +416,7 @@
 			searchRadius: 15,
 			continueVector: true 
 		};
+		this.setupHotkeys();
 		this.pushData = null;
 				this.pushUpdateQueue = [];
 				this.isPushUpdatePending = false;
@@ -540,6 +544,96 @@ document.getElementById('aspectRatioDisplay').addEventListener('click', (e) => {
 			document.getElementById('createBackgroundBtn').onclick = () => this.createBackgroundFromInput();
 			
 		}
+
+setupHotkeys() {
+    document.addEventListener('keydown', (e) => {
+        // Игнорируем если фокус в поле ввода
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        
+        // Ctrl/Cmd + S - сохранить
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            this.saveSVG();
+            return;
+        }
+        
+        // Ctrl/Cmd + O - загрузить SVG
+        if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
+            e.preventDefault();
+            document.getElementById('svgInput').click();
+            return;
+        }
+        
+        // Esc - сброс инструмента
+        if (e.key === 'Escape') {
+            this.setTool('select');
+            return;
+        }
+        
+        // Горячие клавиши для инструментов
+        switch(e.key.toLowerCase()) {
+            case 'v': // Выделение
+                this.setTool('select');
+                break;
+            case 'b': // Кривые Безье
+                this.setTool('bezier-points');
+                break;
+            case 'p': // Карандаш
+                this.setTool('pen');
+                break;
+            case 'l': // Линия
+                this.setTool('line');
+                break;
+            case 'r': // Прямоугольник
+                this.setTool('rect');
+                break;
+            case 'c': // Круг
+                this.setTool('circle');
+                break;
+            case 'e': // Ластик
+                this.setTool('eraser');
+                break;
+            case 'u': // Push инструмент
+                this.setTool('push');
+                break;
+            case 'z': // Zoom
+                if (e.ctrlKey || e.metaKey) {
+                    if (e.shiftKey) {
+                        this.zoomIn();
+                    } else {
+                        this.zoomOut();
+                    }
+                }
+                break;
+            case '=': // Zoom in
+            case '+':
+                if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    this.zoomIn();
+                }
+                break;
+            case '-': // Zoom out
+                if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    this.zoomOut();
+                }
+                break;
+            case '0': // Сброс zoom
+                if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    this.setZoom(1);
+                }
+                break;
+            case 'delete': // Удалить выделенное
+            case 'backspace':
+                if (this.state.currentTool === 'bezier-points' && 
+                    this.state.bezierSelectedPoint !== null) {
+                    this.deleteBezierPoint(this.state.bezierSelectedPoint);
+                }
+                break;
+        }
+    });
+}
 
 updateAspectRatioDisplay(width, height) {
     const ratioDisplay = document.getElementById('aspectRatioDisplay');
@@ -1913,7 +2007,7 @@ updateCursor() {
     if (this.state.currentTool === 'push') {
         this.svg.style.cursor = 'none';
     } else if (this.state.currentTool === 'eraser') {
-        this.svg.style.cursor = 'crosshair'; // Или можно свой курсор для ластика
+        this.svg.style.cursor = 'none'; // Или можно свой курсор для ластика
     } else if (this.state.currentTool === 'select') {
         this.svg.style.cursor = this.state.isMoving ? 'grabbing' : 'move';
     } else if (this.state.currentTool === 'bezier-points') {
