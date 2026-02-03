@@ -245,6 +245,10 @@
 <label style="flex: 1; display: block; font-size: 12px; color: #ccc; margin-top: 8px;">DPI:</label>
 <input type="number" id="dpiInput" value="96" min="10" max="600" step="1"
                style=" width: 100%; padding: 5px; border-radius: 3px; border: 1px solid #444; background: #222; color: white;">
+			   <input type="checkbox" id="keepAspectRatio" checked>
+			   <span id="aspectRatioDisplay" style="font-size: 10px; color: #888; margin-left: 5px; margin-top: 8px; cursor: pointer; user-select: none;">
+        210/<br>297
+    </span>
     </div>
         <!-- Отображение в пикселях -->
         <div style="font-size: 11px; color: #888; text-align: center; margin-bottom: 5px; margin-top: 3px;">
@@ -257,8 +261,12 @@
     
     <!-- Кнопка загрузки фото -->
     <button id="loadImageBtn">Загрузить фото</button>
+	<div id="imageControls" style="display: none;">
+<div id="loadedImageInfo" style="font-size: 11px; text-align: center; margin: 5px 0;">	
+    <div style="color: #4dabf7;">Фото: <span id="loadedImageSizeDisplay">-</span></div>
+    <div id="loadedImageDpiInfo" style="color: #888; font-size: 10px; margin-top: 2px;"></div>
+</div>
     
-    <div id="imageControls" style="display: none;">
         <button id="removeImageBtn" style="background: #dc3545;">Удалить фото</button>
         <label style="display: block; margin: 10px 0;">Прозрачность: <span id="opacityValue">50%</span></label>
         <input type="range" id="opacitySlider" min="1" max="100" value="50">
@@ -290,7 +298,7 @@
                     <input type="range" id="smoothSlider" min="1" max="20" value="5">
 					<h3>Привязка</h3>
     <label style="display: block; margin: 10px 0;">
-        <input type="checkbox" id="continueVectorToggle" checked> Продолжать вектор
+        <input type="checkbox" id="continueVectorToggle" > Продолжать вектор
     </label>
     <label style="display: block; margin: 10px 0;">
         <input type="checkbox" id="blackSnapToggle" checked> Привязка к черной линии
@@ -378,6 +386,7 @@
 			bezierSelectedPoint: null, // Выделенная точка Безье
             bezierPoints: [],
             bezierVectors: [],
+			originalImageRatio: 1,
             
             // Флаги для перетаскивания
             isDraggingPoint: false,
@@ -471,7 +480,31 @@
 			this.svg.setAttribute('height', '100%');
 			this.svg.setAttribute('viewBox', '0 0 1000 1000');
 			this.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-			document.getElementById('dpiInput').oninput = () => this.updatePixelDisplay();
+document.getElementById('dpiInput').oninput = () => {
+	    this.updatePixelDisplay();
+    if (this.state.image) {
+        //this.updateLoadedImageSizeDisplay(this.state.image);
+    }
+};
+document.getElementById('mmWidth').addEventListener('input', (e) => {
+    this.updateSizeWithAspectRatio('width', e.target.value);
+});
+
+document.getElementById('mmHeight').addEventListener('input', (e) => {
+    this.updateSizeWithAspectRatio('height', e.target.value);
+});
+document.getElementById('aspectRatioDisplay').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Берем текущие значения из полей ввода
+    const currentWidth = parseFloat(document.getElementById('mmWidth').value) || 210;
+    const currentHeight = parseFloat(document.getElementById('mmHeight').value) || 297;
+    
+    // Просто обновляем отображение соотношения сторон
+    this.updateAspectRatioDisplay(currentWidth, currentHeight);
+    
+});
 			// Загрузка SVG
 			document.getElementById('loadSvgBtn').onclick = () => {
 				document.getElementById('svgInput').click();
@@ -507,8 +540,63 @@
 			document.getElementById('createBackgroundBtn').onclick = () => this.createBackgroundFromInput();
 			
 		}
-		
-		
+
+updateAspectRatioDisplay(width, height) {
+    const ratioDisplay = document.getElementById('aspectRatioDisplay');
+    if (!ratioDisplay) return;
+	
+    this.state.originalImageRatio = width / height;
+    // Упрощаем соотношение
+    const simplified = this.simplifyRatio(width, height);
+    
+    // Обновляем отображение
+    ratioDisplay.innerHTML = `${simplified.replace(':', '/<br>')}`;
+    ratioDisplay.title = `Соотношение сторон: ${(width/height).toFixed(3)}`;
+    
+}
+
+updateSizeWithAspectRatio(changedField, value) {
+    if (!this.state.image || !this.state.originalImageRatio) {
+        // Если нет фото, просто обновляем отображение
+        this.updatePixelDisplay();
+        return;
+    }
+    
+    const keepRatio = document.getElementById('keepAspectRatio').checked;
+    const widthInput = document.getElementById('mmWidth');
+    const heightInput = document.getElementById('mmHeight');
+    
+    if (!keepRatio) {
+        // Если не сохранять пропорции - просто обновляем
+        this.updatePixelDisplay();
+        return;
+    }
+    
+    try {
+        const newValue = parseFloat(value);
+        if (isNaN(newValue) || newValue <= 0) return;
+        
+        if (changedField === 'width') {
+            // Изменили ширину - пересчитываем высоту
+            const newHeight = Math.round(newValue / this.state.originalImageRatio);
+            heightInput.value = newHeight;
+        } else {
+            // Изменили высоту - пересчитываем ширину
+            const newWidth = Math.round(newValue * this.state.originalImageRatio);
+            widthInput.value = newWidth;
+        }
+        
+        // Обновляем отображение пикселей
+        this.updatePixelDisplay();
+        
+        // Если есть подложка - обновляем её
+        this.updateBackgroundSize();
+        
+    } catch (error) {
+        console.error('Ошибка при обновлении размеров:', error);
+    }
+}
+
 		setupGlobalDragHandlers() {
 			// Глобальный обработчик движения мыши
 			document.addEventListener('mousemove', (e) => {
@@ -540,6 +628,20 @@
 		}
 
            setupEventListeners() {
+				document.getElementById('keepAspectRatio').addEventListener('change', (e) => {
+					if (e.target.checked && this.state.image && this.state.originalImageRatio) {
+						// Если включили сохранение пропорций - пересчитываем размеры
+						const widthInput = document.getElementById('mmWidth');
+						const currentWidth = parseFloat(widthInput.value) || 210;
+						
+						// Пересчитываем высоту на основе текущей ширины
+						const newHeight = Math.round(currentWidth / this.state.originalImageRatio);
+						document.getElementById('mmHeight').value = newHeight;
+						
+						this.updatePixelDisplay();
+						this.updateBackgroundSize();
+					}
+				});
                 // Загрузка изображения
                 document.getElementById('loadImageBtn').onclick = () => {
                     document.getElementById('imageInput').click();
@@ -609,14 +711,13 @@ document.getElementById('eraserSizeSlider').oninput = (e) => {
                 this.svg.onmouseleave = () => this.onMouseLeave();
                 
                 // Зум колесиком
-                document.getElementById('canvasContainer').onwheel = (e) => {
-                    if (e.ctrlKey) {
-                        e.preventDefault();
-                        const delta = e.deltaY > 0 ? 0.9 : 1.1;
-                        const coords = this.getSVGCoordinates(e);
-                        this.zoomToPoint(coords.x, coords.y, delta);
-                    }
-                };
+				document.getElementById('canvasContainer').onwheel = (e) => {
+					e.preventDefault(); // Предотвращаем стандартную прокрутку
+					
+					const delta = e.deltaY > 0 ? 0.9 : 1.1; // Уменьшение при прокрутке вниз, увеличение вверх
+					const coords = this.getSVGCoordinates(e);
+					this.zoomToPoint(coords.x, coords.y, delta);
+				};
 				const snapPanel = document.createElement('div');
 
 				// Вставляем после панели свойств
@@ -997,6 +1098,17 @@ loadVectorsToCurrentCanvas(sourceSvg, scaleX, scaleY, offsetX, offsetY) {
         const clonedVector = vector.cloneNode(true);
         const tag = clonedVector.tagName.toLowerCase();
         
+        // Пропускаем кривые Безье - они будут обработаны отдельно
+        if (tag === 'path') {
+            const d = clonedVector.getAttribute('d') || '';
+            // Если это кривая Безье (команда C), пропускаем обычную обработку
+            if (d.includes(' C ') || d.includes(' c ') || d.startsWith('C') || d.startsWith('c')) {
+                // Обработаем кривую Безье отдельно
+                this.processBezierFromSVG(clonedVector, scaleX, scaleY, offsetX, offsetY);
+                return;
+            }
+        }
+        
         // Преобразуем координаты в зависимости от типа элемента
         switch(tag) {
             case 'path':
@@ -1074,6 +1186,137 @@ loadVectorsToCurrentCanvas(sourceSvg, scaleX, scaleY, offsetX, offsetY) {
     });
 }
 
+parseBezierFromSVG(pathElement, scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0) {
+    // Получаем данные пути
+    const d = pathElement.getAttribute('d');
+    if (!d) return null;
+    
+    // Парсим команды кривой Безье
+    const commands = d.split(/(?=[MCL])/);
+    
+    if (commands.length < 2) return null;
+    
+    // Проверяем, что это кривая Безье (команда C)
+    const firstCmd = commands[0].trim();
+    const secondCmd = commands[1].trim();
+    
+    if (!firstCmd.startsWith('M') || !secondCmd.startsWith('C')) {
+        return null; // Это не кривая Безье
+    }
+    
+    // Парсим первую точку
+    const moveCoords = firstCmd.substring(1).trim().split(/[\s,]+/).map(Number);
+    if (moveCoords.length < 2) return null;
+    
+    // Парсим кривую Безье
+    const curveCoords = secondCmd.substring(1).trim().split(/[\s,]+/).map(Number);
+    if (curveCoords.length < 6) return null;
+    
+    // Применяем трансформации
+    const applyTransform = (x, y) => ({
+        x: x * scaleX + offsetX,
+        y: y * scaleY + offsetY
+    });
+    
+    return {
+        startPoint: applyTransform(moveCoords[0], moveCoords[1]),
+        control1: applyTransform(curveCoords[0], curveCoords[1]),
+        control2: applyTransform(curveCoords[2], curveCoords[3]),
+        endPoint: applyTransform(curveCoords[4], curveCoords[5]),
+        originalElement: pathElement
+    };
+}
+
+processBezierFromSVG(pathElement, scaleX, scaleY, offsetX, offsetY) {
+    // Парсим кривую Безье
+    const bezierData = this.parseBezierFromSVG(pathElement, scaleX, scaleY, offsetX, offsetY);
+    if (!bezierData) {
+        // Если не удалось распарсить как кривую Безье, добавляем как обычный путь
+        this.svg.appendChild(pathElement);
+        return;
+    }
+    
+    const { startPoint, control1, control2, endPoint } = bezierData;
+    
+    // Создаем точки Безье
+    const point1 = {
+        x: startPoint.x,
+        y: startPoint.y,
+        element: null,
+        index: this.state.bezierPoints.length
+    };
+    
+    const point2 = {
+        x: endPoint.x,
+        y: endPoint.y,
+        element: null,
+        index: this.state.bezierPoints.length + 1
+    };
+    
+    // Создаем визуальные элементы точек (но скрываем их до включения режима Безье)
+    point1.element = this.createBezierPointElement(point1);
+    point2.element = this.createBezierPointElement(point2);
+    point1.element.style.display = 'none';
+    point2.element.style.display = 'none';
+    
+    this.svg.appendChild(point1.element);
+    this.svg.appendChild(point2.element);
+    
+    // Добавляем точки в массив
+    this.state.bezierPoints.push(point1, point2);
+    
+    // Создаем вектор Безье
+    const vector = {
+        from: point1.index,
+        to: point2.index,
+        control1: { 
+            x: control1.x, 
+            y: control1.y, 
+            belongsTo: point1.index 
+        },
+        control2: { 
+            x: control2.x, 
+            y: control2.y, 
+            belongsTo: point2.index 
+        },
+        path: pathElement,
+        guideElements: {}
+    };
+    
+    // Обновляем путь
+    pathElement.setAttribute('d', 
+        `M ${startPoint.x} ${startPoint.y} C ${control1.x} ${control1.y} ${control2.x} ${control2.y} ${endPoint.x} ${endPoint.y}`
+    );
+    
+    // Добавляем класс и стили
+    pathElement.classList.add('bezier-vector');
+    if (!pathElement.getAttribute('stroke')) {
+        pathElement.setAttribute('stroke', this.state.strokeColor);
+    }
+    if (!pathElement.getAttribute('stroke-width')) {
+        pathElement.setAttribute('stroke-width', this.state.strokeWidth);
+    }
+    if (!pathElement.getAttribute('fill')) {
+        pathElement.setAttribute('fill', 'none');
+    }
+    pathElement.setAttribute('stroke-linecap', 'round');
+    
+    // Добавляем на холст
+    this.svg.appendChild(pathElement);
+    
+    // Создаем направляющие элементы (но скрываем их)
+    this.createVectorGuides(vector, point1, point2);
+    
+    // Скрываем направляющие до включения режима Безье
+    if (vector.guideElements.line1) vector.guideElements.line1.style.display = 'none';
+    if (vector.guideElements.control1) vector.guideElements.control1.style.display = 'none';
+    if (vector.guideElements.line2) vector.guideElements.line2.style.display = 'none';
+    if (vector.guideElements.control2) vector.guideElements.control2.style.display = 'none';
+    
+    // Добавляем вектор в массив
+    this.state.bezierVectors.push(vector);
+}
+
 // Метод для преобразования координат в пути (d атрибут)
 transformPathCoordinates(d, scaleX, scaleY, offsetX, offsetY) {
     // Парсим команды пути
@@ -1110,86 +1353,118 @@ transformPathCoordinates(d, scaleX, scaleY, offsetX, offsetY) {
 }
 
 		// Метод для добавления кривой Безье из SVG
-		addBezierFromSVG(pathElement) {
-			// Получаем данные пути
-			const d = pathElement.getAttribute('d');
-			if (!d) return;
-			
-			// Парсим команды кривой Безье
-			// Формат: M x1 y1 C cx1 cy1 cx2 cy2 x2 y2
-			const commands = d.split(/(?=[MCL])/);
-			
-			if (commands.length < 2) return;
-			
-			// Парсим первую точку
-			const moveCmd = commands[0];
-			const moveMatch = moveCmd.match(/[\d.-]+/g);
-			if (!moveCmd || moveCmd[0] !== 'M' || !moveMatch) return;
-			
-			const x1 = parseFloat(moveMatch[0]);
-			const y1 = parseFloat(moveMatch[1]);
-			
-			// Парсим кривую Безье
-			const curveCmd = commands[1];
-			const curveMatch = curveCmd.match(/[\d.-]+/g);
-			if (!curveCmd || curveCmd[0] !== 'C' || !curveMatch) return;
-			
-			const cx1 = parseFloat(curveMatch[0]);
-			const cy1 = parseFloat(curveMatch[1]);
-			const cx2 = parseFloat(curveMatch[2]);
-			const cy2 = parseFloat(curveMatch[3]);
-			const x2 = parseFloat(curveMatch[4]);
-			const y2 = parseFloat(curveMatch[5]);
-			
-			// Создаем точки Безье
-			const point1 = {
-				x: x1,
-				y: y1,
-				element: null,
-				index: this.state.bezierPoints.length
-			};
-			
-			const point2 = {
-				x: x2,
-				y: y2,
-				element: null,
-				index: this.state.bezierPoints.length + 1
-			};
-			
-			// Создаем визуальные элементы точек
-			point1.element = this.createBezierPointElement(point1);
-			point2.element = this.createBezierPointElement(point2);
-			
-			this.svg.appendChild(point1.element);
-			this.svg.appendChild(point2.element);
-			
-			// Добавляем точки в массив
-			this.state.bezierPoints.push(point1, point2);
-			
-			// Создаем вектор Безье
-			const vector = {
-				from: point1.index,
-				to: point2.index,
-				control1: { x: cx1, y: cy1, belongsTo: point1.index },
-				control2: { x: cx2, y: cy2, belongsTo: point2.index },
-				path: pathElement,
-				guideElements: {}
-			};
-			
-			// Добавляем вектор на холст
-			pathElement.classList.add('bezier-vector');
-			this.svg.appendChild(pathElement);
-			
-			// Создаем направляющие элементы
-			this.createVectorGuides(vector, point1, point2);
-			
-			// Добавляем вектор в массив
-			this.state.bezierVectors.push(vector);
-		}
+addBezierFromSVG(pathElement, scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0) {
+    // Получаем данные пути
+    const d = pathElement.getAttribute('d');
+    if (!d) return null;
+    
+    // Парсим команды кривой Безье (C или c команда)
+    const commands = d.match(/[MCQZLmcqzl][^MCQZLmcqzl]*/gi) || [];
+    
+    if (commands.length < 2) return null;
+    
+    // Находим первую команду M (начальная точка)
+    let moveCmd = null;
+    let curveCmd = null;
+    
+    for (const cmd of commands) {
+        const cmdType = cmd[0].toUpperCase();
+        if (cmdType === 'M' && !moveCmd) {
+            moveCmd = cmd;
+        } else if ((cmdType === 'C' || cmdType === 'Q') && moveCmd && !curveCmd) {
+            curveCmd = cmd;
+            break;
+        }
+    }
+    
+    if (!moveCmd || !curveCmd) return null;
+    
+    // Парсим координаты из команды M
+    const moveCoords = moveCmd.substring(1).trim().split(/[\s,]+/).map(Number);
+    if (moveCoords.length < 2) return null;
+    
+    // Парсим координаты из команды C (кубическая кривая Безье)
+    const curveCoords = curveCmd.substring(1).trim().split(/[\s,]+/).map(Number);
+    if (curveCoords.length < 6) return null;
+    
+    // Применяем трансформации (масштаб и смещение)
+    const applyTransform = (x, y) => ({
+        x: x * scaleX + offsetX,
+        y: y * scaleY + offsetY
+    });
+    
+    const startPoint = applyTransform(moveCoords[0], moveCoords[1]);
+    const control1 = applyTransform(curveCoords[0], curveCoords[1]);
+    const control2 = applyTransform(curveCoords[2], curveCoords[3]);
+    const endPoint = applyTransform(curveCoords[4], curveCoords[5]);
+    
+    // Создаем точки Безье
+    const point1 = {
+        x: startPoint.x,
+        y: startPoint.y,
+        element: null,
+        index: this.state.bezierPoints.length
+    };
+    
+    const point2 = {
+        x: endPoint.x,
+        y: endPoint.y,
+        element: null,
+        index: this.state.bezierPoints.length + 1
+    };
+    
+    // Создаем визуальные элементы точек
+    point1.element = this.createBezierPointElement(point1);
+    point2.element = this.createBezierPointElement(point2);
+    
+    this.svg.appendChild(point1.element);
+    this.svg.appendChild(point2.element);
+    
+    // Добавляем точки в массив
+    this.state.bezierPoints.push(point1, point2);
+    
+    // Создаем вектор Безье
+    const vector = {
+        from: point1.index,
+        to: point2.index,
+        control1: { 
+            x: control1.x, 
+            y: control1.y, 
+            belongsTo: point1.index 
+        },
+        control2: { 
+            x: control2.x, 
+            y: control2.y, 
+            belongsTo: point2.index 
+        },
+        path: pathElement,
+        guideElements: {}
+    };
+    
+    // Обновляем путь с учетом трансформаций
+    pathElement.setAttribute('d', 
+        `M ${startPoint.x} ${startPoint.y} C ${control1.x} ${control1.y} ${control2.x} ${control2.y} ${endPoint.x} ${endPoint.y}`
+    );
+    pathElement.classList.add('bezier-vector');
+    pathElement.setAttribute('stroke', this.state.strokeColor);
+    pathElement.setAttribute('stroke-width', this.state.strokeWidth);
+    pathElement.setAttribute('fill', 'none');
+    pathElement.setAttribute('stroke-linecap', 'round');
+    
+    // Создаем направляющие элементы
+    this.createVectorGuides(vector, point1, point2);
+    
+    // Добавляем вектор в массив
+    this.state.bezierVectors.push(vector);
+    
+    return vector;
+}
+
 // Метод для создания подложки A4
 createA4Background() {
     const widthMm = 210;  // A4 ширина
     const heightMm = 297; // A4 высота
+	this.state.originalImageRatio = widthMm / heightMm;
     
     // Преобразуем мм в пиксели (96 DPI)
     const widthPx = Math.round(widthMm * 96 / 25.4);
@@ -1235,6 +1510,16 @@ createBackgroundFromInput() {
     if (dpi < 10 || dpi > 600) {
         alert('DPI должен быть от 10 до 600');
         return;
+    }
+    const display = document.getElementById('loadedImageSizeDisplay');
+    const dpiInfo = document.getElementById('loadedImageDpiInfo');
+    
+    if (display) {
+        display.textContent = '-';
+    }
+    
+    if (dpiInfo) {
+        dpiInfo.textContent = '';
     }
     
     // Преобразуем мм в пиксели с учетом DPI
@@ -1309,7 +1594,9 @@ removeBackgroundImage() {
 				img.onload = async () => {
 					this.state.image = img;
 					this.state.imageUrl = e.target.result;
-				
+					this.state.originalImageRatio = img.width / img.height;
+					this.updateSizeInputsFromImage(img);
+					this.updateLoadedImageSizeDisplay(img);
 					this.removeBackgroundImage();
 					
 					let imageForDisplay = img;
@@ -1356,6 +1643,90 @@ removeBackgroundImage() {
 			reader.readAsDataURL(file);
 		}
 
+// Автоматическое заполнение размеров при загрузке фото
+updateSizeInputsFromImage(img) {
+    if (!img || !img.width || !img.height) return;
+    
+    const dpiInput = document.getElementById('dpiInput');
+    const currentDpi = parseInt(dpiInput.value) || 96;
+    
+    const mmWidth = Math.round((img.width * 25.4) / currentDpi);
+    const mmHeight = Math.round((img.height * 25.4) / currentDpi);
+    
+    // Заполняем поля ввода
+    document.getElementById('mmWidth').value = mmWidth;
+    document.getElementById('mmHeight').value = mmHeight;
+    
+    // Обновляем отображение пикселей
+    this.updatePixelDisplay();
+    
+}
+
+// Обновление отображения размера загруженного фото
+updateLoadedImageSizeDisplay(img) {
+    const display = document.getElementById('loadedImageSizeDisplay');
+    const dpiInfo = document.getElementById('loadedImageDpiInfo');
+    const ratioDisplay = document.getElementById('aspectRatioDisplay');
+    
+    if (display && img) {
+        const currentDpi = parseInt(document.getElementById('dpiInput').value) || 96;
+        const mmWidth = Math.round((img.width * 25.4) / currentDpi);
+        const mmHeight = Math.round((img.height * 25.4) / currentDpi);
+        
+        display.textContent = `${img.width}×${img.height} px`;
+        
+        if (dpiInfo) {
+            // Информация о DPI на новой строке
+            dpiInfo.textContent = `${mmWidth}×${mmHeight} мм (при ${currentDpi} DPI)`;
+        }
+        
+        if (ratioDisplay) {
+            // Отображение соотношения сторон
+            const ratio = img.width / img.height;
+            const simplifiedRatio = this.simplifyRatio(img.width, img.height);
+            ratioDisplay.textContent = `${simplifiedRatio}`;
+            ratioDisplay.title = `Соотношение сторон: ${ratio.toFixed(3)}`;
+        }
+    }
+}
+
+simplifyRatio(width, height) {
+    // Функция для нахождения наибольшего общего делителя (НОД)
+    const gcd = (a, b) => {
+        a = Math.abs(a);
+        b = Math.abs(b);
+        
+        // Используем алгоритм Евклида
+        while (b !== 0) {
+            const temp = b;
+            b = a % b;
+            a = temp;
+        }
+        return a;
+    };
+    
+    // Находим НОД для текущих чисел
+    let divisor = gcd(width, height);
+    
+    // Если числа очень большие, пробуем упростить до более читаемого формата
+    if (divisor === 1 && (width > 1000 || height > 1000)) {
+        // Пробуем делить на 10, 5, 2 для упрощения
+        const tryDivisors = [10, 5, 2];
+        for (const tryDiv of tryDivisors) {
+            if (width % tryDiv === 0 && height % tryDiv === 0) {
+                divisor = tryDiv;
+                break;
+            }
+        }
+    }
+    
+    // Упрощаем соотношение
+    const simplifiedWidth = width / divisor;
+    const simplifiedHeight = height / divisor;
+    
+    // Форматируем вывод
+    return `${simplifiedWidth}/\n${simplifiedHeight}`;
+}
 		updateImageCache(imageToCache) {
 			// Очищаем старый кэш
 			this.imageCanvasCache = null;
@@ -1454,6 +1825,13 @@ removeImage() {
     this.state.imageUrl = null;
     this.state.imageForDisplay = null;
     
+    // Сброс отображения размера фото
+    const display = document.getElementById('loadedImageSizeDisplay');
+    const dpiInfo = document.getElementById('loadedImageDpiInfo');
+    const ratioDisplay = document.getElementById('aspectRatioDisplay');
+    
+    if (display) display.textContent = '-';
+    if (dpiInfo) dpiInfo.textContent = '';
     this.imageCanvasCache = null;
     this.imageDataCache = null;
     
@@ -1476,8 +1854,17 @@ setTool(tool) {
     // Всегда сбрасываем currentElement при переключении инструмента
     this.state.currentElement = null;
     
-    // Если ВЫХОДИМ из режима Безье
-    if (this.state.currentTool === 'bezier-points' && tool !== 'bezier-points') {
+        // Если ВХОДИМ в режим Безье
+    if (tool === 'bezier-points') {
+        this.state.lastBezierDirection = null;
+        this.state.lastBezierLength = null;
+        
+        // Показываем все элементы Безье
+        this.showBezierHelpers();
+        this.toggleBezierPoints(true);
+        
+    } else if (this.state.currentTool === 'bezier-points' && tool !== 'bezier-points') {
+        // Если ВЫХОДИМ из режима Безье
         this.deselectAllPoints();
         this.state.lastBezierDirection = null;
         this.state.lastBezierLength = null;
@@ -1485,25 +1872,6 @@ setTool(tool) {
         // Скрываем вспомогательные элементы
         this.hideBezierHelpers();
         this.toggleBezierPoints(false);
-    }
-    
-    // Если ВХОДИМ в режим Безье
-    if (tool === 'bezier-points') {
-        this.state.lastBezierDirection = null;
-        this.state.lastBezierLength = null;
-        
-        // Показываем вспомогательные элементы
-        this.showBezierHelpers();
-        this.toggleBezierPoints(true);
-        
-        // Если есть выделенная точка - показываем её
-        if (this.state.bezierSelectedPoint !== null) {
-            const point = this.state.bezierPoints[this.state.bezierSelectedPoint];
-            if (point && point.element) {
-                point.element.style.display = 'block';
-                point.element.classList.add('selected');
-            }
-        }
     }
     
     this.state.currentTool = tool;
