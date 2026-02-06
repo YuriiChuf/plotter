@@ -79,6 +79,25 @@ canvas {
     background: #555;
 }
 
+.control-group h3 .add-btn {
+    float: right;
+    background: #28a745;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 20px;
+    padding: 0;
+    margin-left: 10px;
+}
+
+.control-group h3 .add-btn:hover {
+    background: #218838;
+}
+
 label {
     display: block;
     margin-bottom: 5px;
@@ -253,7 +272,32 @@ button:hover {
     border-radius: 4px;
     margin-top: 10px;
 }
+.font-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 2px;
+    min-height: 30px;
+}
 
+.font-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    padding-right: 8px;
+}
+
+.font-preview-img {
+    width: 80px;
+    height: 20px;
+    object-fit: contain;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    background: white;
+}
 .pen-crosshair {
     position: absolute;
     width: 20px;
@@ -403,6 +447,72 @@ button:hover {
 .hidden {
     display: none !important;
 }
+
+.custom-select-container {
+    position: relative;
+    width: 100%;
+}
+
+.custom-select {
+    display: none;
+}
+
+.select-styled {
+    background: #444;
+    color: white;
+    padding: 8px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 40px;
+}
+
+.select-styled:after {
+    content: '▼';
+    font-size: 12px;
+}
+
+.select-options {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #444;
+    border: 1px solid #555;
+    border-radius: 4px;
+    z-index: 1000;
+    max-height: 300px;
+    overflow-y: auto;
+    display: none;
+}
+
+.select-option {
+    padding: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background 0.2s;
+}
+
+.select-option:hover {
+    background: #555;
+}
+
+.select-option.selected {
+    background: #2c5282;
+}
+
+.font-preview-in-list {
+    width: 100px;
+    height: 25px;
+    object-fit: contain;
+    border: 1px solid #666;
+    background: white;
+}
 </style>
 </head>
 <body>
@@ -460,17 +570,23 @@ button:hover {
                             <input style="display: none;" type="file" id="fontUpload" accept=".svg" multiple>
                             <button id="loadFontsBtn">Загрузить SVG</button>
                         </div>
-                        <label for="fontSelect">Шрифт:</label>
-                        <select id="fontSelect">
-                            <option value="">-- Выберите шрифт --</option>
-                        </select>
+<label for="fontSelect">Шрифт:</label>
+<div class="custom-select-container">
+    <select id="fontSelect" class="custom-select">
+        <option value="">-- Выберите шрифт --</option>
+    </select>
+    <div class="select-styled" id="fontSelectStyled">
+        <span class="selected-text">-- Выберите шрифт --</span>
+    </div>
+    <div class="select-options" id="fontSelectOptions"></div>
+</div>
                         <label for="fontSize">Размер шрифта (мм):</label>
                         <input type="number" id="fontSize" value="10" min="1" max="100">
                     </div>
                 </div>
                 
                 <div class="control-group  collapsible">
-                    <h3>Текстовые элементы</h3>
+                    <h3>Текстовые элементы <button class="add-btn" data-type="text">+</button></h3>
                     <div class="content">
                         <div class="text-elements-list" id="textElementsList">
                             <!-- Список текстовых элементов будет заполнен динамически -->
@@ -479,7 +595,7 @@ button:hover {
                     </div>
                 </div>
                 <div class="control-group  collapsible">
-					<h3>SVG элементы</h3>
+					<h3>SVG элементы </h3>
 					<div class="content">
 						<div class="svg-elements-list" id="svgElementsList">
 							<!-- Список SVG элементов будет заполнен динамически -->
@@ -649,7 +765,8 @@ let isSelectingSVGPart = false;
 let selectionStart = { x: 0, y: 0 };
 let selectionCurrent = { x: 0, y: 0 };
 let isDrawingSelection = false;
-		
+let fontPreviewCache = new Map();
+let clickTimeout = null;
 
 // Класс для SVG элементов (рисунков)
 class SVGElement {
@@ -1426,8 +1543,67 @@ function enableSVGPartSelection() {
                     parent.classList.toggle('collapsed');
                 });
             });
+			document.querySelectorAll('.add-btn').forEach(btn => {
+				btn.addEventListener('click', function(e) {
+					e.stopPropagation(); // Предотвращаем сворачивание/разворачивание раздела
+					const type = this.dataset.type;
+					addTextElementAtCenter();
+
+				});
+			});
         }
+async function addTextElementAtCenter() {
+    if (fonts.length === 0) {
+        updateStatus('Сначала загрузите шрифты', 'error');
+        return;
+    }
+
+    const fontPath = fontSelect.value;
+    const fontSize = parseFloat(fontSizeInput.value);
+    
+    const selectedFont = fonts.find(f => f.path === fontPath);
+    if (!selectedFont) {
+        updateStatus('Выберите шрифт', 'error');
+        return;
+    }
+    
+    showLoading(true);
+    try {
+        const newElement = new TextElement(
+            Date.now(),
+            "Новый текст",
+            selectedFont.instance,
+            fontSize,
+            sheetWidth / 2,
+            sheetHeight / 2
+        );
         
+        await newElement.generatePaths();
+        
+        textElements.push(newElement);
+        selectedElementIndex = textElements.length - 1;
+        isSVGSelected = false;
+        selectedSVGIndex = -1;
+        
+        updateTextElementsList();
+        updateSVGElementsList();
+        updateElementProperties();
+        drawScene();
+        
+        // Открываем редактирование текста
+        setTimeout(() => {
+            startTextEdit(newElement, selectedElementIndex);
+        }, 100);
+        
+        updateStatus('Текстовый элемент добавлен в центр', 'success');
+    } catch (error) {
+        console.error('Ошибка создания текстового элемента:', error);
+        updateStatus('Ошибка создания текста', 'error');
+    } finally {
+        showLoading(false);
+    }
+}
+
         function updateCanvasSize() {
             const containerWidth = canvasContainer.clientWidth;
             const containerHeight = canvasContainer.clientHeight;
@@ -1467,29 +1643,58 @@ async function loadFiles(files) {
                         const font = new GOSTSVGFont(svgContent, fontName);
                         
                         if (font.glyphs.size > 0) {
+                            // Создаем предпросмотр шрифта как изображение
+                            const previewImage = await createFontPreviewImage(font, fontName);
+                            
                             fonts.push({
                                 name: fontName,
                                 path: file.name,
-                                instance: font
+                                instance: font,
+                                previewImage: previewImage // Сохраняем data URL
                             });
 
+                            // Создаем option с предпросмотром
                             const option = document.createElement('option');
                             option.value = file.name;
+                            option.title = fontName;
+                            
+                            // Контейнер с названием и предпросмотром
+                            const optionContent = document.createElement('div');
+                            optionContent.className = 'font-option';
+                            
+                            // Название шрифта
+                            const nameSpan = document.createElement('span');
+                            nameSpan.className = 'font-name';
+                            nameSpan.textContent = fontName;
+                            
+                            // Изображение предпросмотра
+                            const previewImg = document.createElement('img');
+                            previewImg.className = 'font-preview-img';
+                            previewImg.src = previewImage;
+                            previewImg.alt = `Предпросмотр: ${fontName}`;
+                            
+                            optionContent.appendChild(nameSpan);
+                            optionContent.appendChild(previewImg);
+                            
+                            // Для старых браузеров добавляем текст
                             option.textContent = fontName;
+                            option.appendChild(optionContent);
+                            
                             fontSelect.appendChild(option);
                             fontsLoaded++;
                         } else {
+                            console.warn(`Шрифт ${fontName} не содержит глифов`);
                             errors++;
                         }
                     } else {
-                        // Это обычный SVG рисунок
+                        // Это обычный SVG рисунок (остальной код без изменений)
                         const svgElement = new SVGElement(
                             Date.now(),
                             svgContent,
-                            sheetWidth / 2 - 25, // Центр листа
+                            sheetWidth / 2 - 25,
                             sheetHeight / 2 - 25,
-                            50, // Начальная ширина
-                            50  // Начальная высота
+                            50,
+                            50
                         );
                         
                         await svgElement.parseSVG(svgContent);
@@ -1506,12 +1711,25 @@ async function loadFiles(files) {
             }
         }
 
-        if (fonts.length > 0 && fontsLoaded > 0) {
-            fontSelect.value = fonts[0].path;
-            localStorage.setItem('lastFonts', JSON.stringify(
-                files.filter(f => f.name.endsWith('.svg')).map(f => f.name)
-            ));
+if (fonts.length > 0 && fontsLoaded > 0) {
+    // Выбираем первый шрифт по умолчанию в ОСНОВНОМ select
+    fontSelect.value = fonts[0].path;
+    
+    // Обновляем предпросмотр в панели свойств
+    updateFontSelectPreviews();
+    
+    // ВЫЗЫВАЕМ ИНИЦИАЛИЗАЦИЮ КАСТОМНОГО SELECT С ВЫБРАННЫМ ШРИФТОМ
+    setTimeout(() => {
+        if (typeof initCustomFontSelect === 'function') {
+            initCustomFontSelect();
         }
+        updateStatus(`Выбран шрифт: ${fonts[0].name}`, 'success');
+    }, 100);
+    
+    localStorage.setItem('lastFonts', JSON.stringify(
+        files.filter(f => f.name.endsWith('.svg')).map(f => f.name)
+    ));
+}
 
         let statusMessage = '';
         if (fontsLoaded > 0) statusMessage += `Шрифтов: ${fontsLoaded}. `;
@@ -1530,6 +1748,368 @@ async function loadFiles(files) {
     } finally {
         showLoading(false);
     }
+}
+
+async function createFontPreviewImage(font, fontName) {
+    return new Promise((resolve) => {
+        try {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Размеры для предпросмотра
+            const width = 180;
+            const height = 40;
+            canvas.width = width;
+            canvas.height = height;
+            
+            // Белый фон
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, width, height);
+            ctx.strokeStyle = '#e0e0e0';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
+            
+            // Создаем временный текстовый элемент для получения путей
+            const tempText = "Пример Demo";
+            const fontSize = 35;
+            
+            const tempTextElement = {
+                text: tempText,
+                font: font,
+                fontSize: fontSize,
+                x: 0,
+                y: 0,
+                paths: []
+            };
+            
+            // Используем логику из TextElement для генерации путей
+            const scale = fontSize / 1000;
+            const lineHeight = fontSize * 1.2;
+            const lines = tempText.split('\n');
+            
+            // Генерируем пути как в TextElement.generatePaths()
+            const paths = [];
+            
+            // Обратный порядок строк (от нижней к верхней)
+            for (let lineIndex = lines.length - 1; lineIndex >= 0; lineIndex--) {
+                const line = lines[lineIndex];
+                let currentX = 0;
+                
+                for (let char of line) {
+                    const glyphPath = font.getGlyphPath(char);
+                    if (glyphPath) {
+                        try {
+                            const coordinates = font.parsePathToCoordinates(glyphPath, scale);
+                            if (coordinates.length > 0) {
+                                // Смещение по Y для текущей строки
+                                const offsetY = (lines.length - 1 - lineIndex) * lineHeight - fontSize;
+                                
+                                // Преобразуем координаты в пути
+                                let currentPath = [];
+                                
+                                for (const coord of coordinates) {
+                                    const point = {
+                                        x: coord.x + currentX,
+                                        y: coord.y + offsetY
+                                    };
+                                    
+                                    if (coord.move) {
+                                        if (currentPath.length > 0) {
+                                            paths.push([...currentPath]);
+                                        }
+                                        currentPath = [point];
+                                    } else {
+                                        if (currentPath.length === 0) {
+                                            currentPath = [point];
+                                        } else {
+                                            currentPath.push(point);
+                                        }
+                                    }
+                                }
+                                
+                                if (currentPath.length > 0) {
+                                    paths.push(currentPath);
+                                }
+                            }
+                        } catch (error) {
+                            console.warn(`Ошибка парсинга символа '${char}':`, error);
+                        }
+                    }
+                    
+                    currentX += font.getGlyphWidth(char) * scale;
+                }
+            }
+            
+            // Фильтруем пустые пути
+            const validPaths = paths.filter(path => path.length > 1);
+            
+            if (validPaths.length === 0) {
+                // Если нет путей, показываем сообщение
+                ctx.fillStyle = '#999999';
+                ctx.font = '14px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('Нет данных шрифта', width / 2, height / 2);
+                
+                const dataUrl = canvas.toDataURL('image/png');
+                resolve(dataUrl);
+                return;
+            }
+            
+            // Вычисляем границы всех путей для центрирования
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
+            
+            for (const path of validPaths) {
+                for (const point of path) {
+                    minX = Math.min(minX, point.x);
+                    maxX = Math.max(maxX, point.x);
+                    minY = Math.min(minY, point.y);
+                    maxY = Math.max(maxY, point.y);
+                }
+            }
+            
+            const textWidth = maxX - minX;
+            const textHeight = maxY - minY;
+            
+            // Масштаб для вписывания в область предпросмотра
+            const padding = 5;
+            const availableWidth = width - padding * 2;
+            const availableHeight = height - padding * 2;
+            
+            const scaleX = availableWidth / textWidth;
+            const scaleY = availableHeight / textHeight;
+            const finalScale = Math.min(scaleX, scaleY, 1.5) * 0.99; // Ограничиваем максимальный масштаб
+            
+            // Смещение для центрирования
+            const offsetX = (width - textWidth * finalScale) / 2 - minX * finalScale;
+            const offsetY = (height - textHeight * finalScale) / 2 - minY * finalScale;
+            
+            // Рисуем пути
+            ctx.strokeStyle = '#000000';
+            ctx.fillStyle = '#000000';
+            ctx.lineWidth = 1.2;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            
+			for (const path of validPaths) {
+				if (path.length < 2) continue;
+				
+				ctx.beginPath();
+				
+				// Первая точка с ОТРАЖЕНИЕМ по Y: y = height - y
+				const firstPoint = path[0];
+				ctx.moveTo(
+					firstPoint.x * finalScale + offsetX,
+					height - (firstPoint.y * finalScale + offsetY)
+				);
+				
+				// Остальные точки тоже с инверсией
+				for (let i = 1; i < path.length; i++) {
+					const point = path[i];
+					ctx.lineTo(
+						point.x * finalScale + offsetX,
+						height - (point.y * finalScale + offsetY)
+					);
+				}
+				
+				ctx.stroke();
+			}
+            
+
+            
+            // Конвертируем в data URL
+            const dataUrl = canvas.toDataURL('image/png');
+            
+            // Очищаем ресурсы
+            canvas.width = 0;
+            canvas.height = 0;
+            
+            resolve(dataUrl);
+            
+        } catch (error) {
+            console.error('Ошибка создания предпросмотра шрифта:', error);
+            
+            // Простая заглушка при ошибке
+            const fallbackCanvas = document.createElement('canvas');
+            fallbackCanvas.width = 180;
+            fallbackCanvas.height = 40;
+            const fallbackCtx = fallbackCanvas.getContext('2d');
+            
+            fallbackCtx.fillStyle = '#f8f8f8';
+            fallbackCtx.fillRect(0, 0, 180, 40);
+            fallbackCtx.strokeStyle = '#dddddd';
+            fallbackCtx.lineWidth = 1;
+            fallbackCtx.strokeRect(0.5, 0.5, 179, 39);
+            
+            fallbackCtx.fillStyle = '#666666';
+            fallbackCtx.font = '12px Arial';
+            fallbackCtx.textAlign = 'center';
+            fallbackCtx.textBaseline = 'middle';
+            fallbackCtx.fillText('Шрифт: ' + fontName.substring(0, 15), 90, 20);
+            
+            const fallbackUrl = fallbackCanvas.toDataURL('image/png');
+            fallbackCanvas.width = 0;
+            fallbackCanvas.height = 0;
+            
+            resolve(fallbackUrl);
+        }
+    });
+}
+
+function updateFontSelectPreviews() {
+    // Обновляем основной select шрифтов
+    updateSelectWithPreviews(fontSelect);
+    
+    // Обновляем select шрифтов в панели свойств
+    if (elementFontSelect) {
+        updateSelectWithPreviews(elementFontSelect);
+    }
+    
+    // ВОССТАНАВЛИВАЕМ КАСТОМНЫЙ SELECT ПОСЛЕ КАЖДОГО ОБНОВЛЕНИЯ
+    initCustomFontSelect();
+}
+
+function initCustomFontSelect() {
+    // Удаляем старые обработчики если они есть
+    const oldStyled = document.getElementById('fontSelectStyled');
+    const oldOptions = document.getElementById('fontSelectOptions');
+    
+    if (oldStyled) {
+        oldStyled.remove();
+    }
+    if (oldOptions) {
+        oldOptions.remove();
+    }
+    
+    // Получаем основной select
+    const fontSelect = document.getElementById('fontSelect');
+    const container = fontSelect.parentElement;
+    
+    // Создаем новые кастомные элементы
+    const fontSelectStyled = document.createElement('div');
+    fontSelectStyled.className = 'select-styled';
+    fontSelectStyled.id = 'fontSelectStyled';
+    
+    const selectedText = document.createElement('span');
+    selectedText.className = 'selected-text';
+    selectedText.textContent = '-- Выберите шрифт --';
+    fontSelectStyled.appendChild(selectedText);
+    
+    const fontSelectOptions = document.createElement('div');
+    fontSelectOptions.className = 'select-options';
+    fontSelectOptions.id = 'fontSelectOptions';
+    
+    // Добавляем в контейнер
+    container.appendChild(fontSelectStyled);
+    container.appendChild(fontSelectOptions);
+    
+    // Обновляем отображение
+    updateCustomSelectDisplay();
+    
+    // Вешаем обработчики
+    fontSelectStyled.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fontSelectOptions.style.display = fontSelectOptions.style.display === 'block' ? 'none' : 'block';
+    });
+    
+    document.addEventListener('click', () => {
+        fontSelectOptions.style.display = 'none';
+    });
+    
+    fontSelectOptions.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+    
+    // При изменении основного select
+    fontSelect.addEventListener('change', updateCustomSelectDisplay);
+    
+    function updateCustomSelectDisplay() {
+        const selectedOption = fontSelect.options[fontSelect.selectedIndex];
+    if (!selectedOption && fonts.length > 0 && fontSelect.options.length > 1) {
+        fontSelect.value = fonts[0].path;
+        selectedText.textContent = fonts[0].name;
+    } else if (selectedOption) {
+        selectedText.textContent = selectedOption.textContent;
+    }
+        
+        // Заполняем опции
+        fontSelectOptions.innerHTML = '';
+        
+        Array.from(fontSelect.options).forEach((option, index) => {
+            if (option.value === '') return;
+            
+            const optionDiv = document.createElement('div');
+            optionDiv.className = `select-option ${option.selected ? 'selected' : ''}`;
+            optionDiv.dataset.value = option.value;
+            
+            // Название
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'font-name';
+            nameSpan.textContent = option.textContent;
+            nameSpan.style.flex = '1';
+            
+            optionDiv.appendChild(nameSpan);
+            
+            // Предпросмотр если есть
+            if (option.dataset.preview) {
+                const previewImg = document.createElement('img');
+                previewImg.className = 'font-preview-in-list';
+                previewImg.src = option.dataset.preview;
+                previewImg.alt = `Предпросмотр: ${option.textContent}`;
+                previewImg.style.width = '80px';
+                previewImg.style.height = '20px';
+                optionDiv.appendChild(previewImg);
+            }
+            
+            optionDiv.addEventListener('click', () => {
+                fontSelect.value = option.value;
+                selectedText.textContent = option.textContent;
+                fontSelectOptions.style.display = 'none';
+                fontSelect.dispatchEvent(new Event('change'));
+            });
+            
+            fontSelectOptions.appendChild(optionDiv);
+        });
+    }
+    
+    // Инициализация
+    updateCustomSelectDisplay();
+	setTimeout(() => {
+    // Если ничего не выбрано, выбираем первый шрифт
+    if (!fontSelect.value && fonts.length > 0) {
+        fontSelect.value = fonts[0].path;
+        if (selectedText) {
+            selectedText.textContent = fonts[0].name;
+        }
+        fontSelect.dispatchEvent(new Event('change'));
+    }
+}, 50);
+}
+
+
+function updateSelectWithPreviews(selectElement) {
+    // Очищаем все опции кроме первой
+    while (selectElement.options.length > 1) {
+        selectElement.remove(1);
+    }
+    
+    // Добавляем шрифты с предпросмотрами
+    fonts.forEach(font => {
+        const option = document.createElement('option');
+        option.value = font.path;
+        option.title = font.name;
+        
+        // ТОЛЬКО текст - без вложенных элементов
+        option.textContent = font.name;
+        
+        // Сохраняем data URL в dataset для возможного использования
+        if (font.previewImage) {
+            option.dataset.preview = font.previewImage;
+        }
+        
+        selectElement.appendChild(option);
+    });
 }
 
         function loadLastFont() {
@@ -1603,6 +2183,14 @@ removeBackgroundBtn.addEventListener('click', () => {
     backgroundImageControls.style.display = 'none';
     drawScene();
     updateStatus('Изображение удалено', 'success');
+});
+
+fontSelect.addEventListener('change', function() {
+    // Можно добавить дополнительный предпросмотр в панели управления
+    const selectedFont = fonts.find(f => f.path === this.value);
+    if (selectedFont && selectedFont.previewImage) {
+        updateStatus(`Выбран шрифт: ${selectedFont.name}`, 'success');
+    }
 });
             
             stretchImageCheckbox.addEventListener('change', function() {
@@ -2390,61 +2978,100 @@ function moveSelectedElement(deltaX, deltaY) {
 function handleCanvasClick(event) {
     if (isAddingText) return;
     
-    const rect = mainCanvas.getBoundingClientRect();
-    const x = (event.clientX - rect.left) / scaleFactor;
-    const y = sheetHeight - (event.clientY - rect.top) / scaleFactor;
-    
-    // Сначала проверяем SVG элементы
-    let svgClicked = false;
-    for (let i = svgElements.length - 1; i >= 0; i--) {
-        const element = svgElements[i];
-        
-        if (isPointInSVGElement(x, y, element)) {
-            selectedSVGIndex = i;
-            isSVGSelected = true;
-            selectedElementIndex = -1;
-            
-            // ДОБАВЛЕНО: Обновляем списки чтобы выделился в списке
-            updateTextElementsList();
-            updateSVGElementsList();
-            updateElementProperties();
-			updateDeleteButtonsVisibility();
-            drawScene();
-            svgClicked = true;
-            updateStatus(`SVG элемент выбран`, 'success');
-            break;
-        }
+    // Дебаунс кликов
+    if (clickTimeout) {
+        clearTimeout(clickTimeout);
     }
     
-    if (!svgClicked) {
-        isSVGSelected = false;
-        selectedSVGIndex = -1; // ДОБАВЛЕНО: сбрасываем индекс SVG
+    clickTimeout = setTimeout(() => {
+        const rect = mainCanvas.getBoundingClientRect();
+        const x = (event.clientX - rect.left) / scaleFactor;
+        const y = sheetHeight - (event.clientY - rect.top) / scaleFactor;
         
-        // Проверяем текстовые элементы
-        let elementClicked = false;
-        for (let i = textElements.length - 1; i >= 0; i--) {
-            const element = textElements[i];
-            
-            if (isPointInTextElement(x, y, element)) {
-                selectedElementIndex = i;
-                selectedSVGIndex = -1;
-                isSVGSelected = false; // ДОБАВЛЕНО: явно сбрасываем флаг
-                updateTextElementsList();
-                updateSVGElementsList(); // ДОБАВЛЕНО: обновляем список SVG тоже
-                updateElementProperties();
-				updateDeleteButtonsVisibility();
-                drawScene();
-                elementClicked = true;
-                break;
+        // Проверяем, есть ли в месте клика уже выделенный элемент
+        let clickedOnSelectedElement = false;
+        
+        // Проверяем выделенный SVG элемент
+        if (isSVGSelected && selectedSVGIndex !== -1) {
+            const selectedElement = svgElements[selectedSVGIndex];
+            if (selectedElement && isPointInSVGElement(x, y, selectedElement)) {
+                clickedOnSelectedElement = true;
             }
         }
         
-        // Если не кликнули на существующий элемент, начинаем добавление нового текста
-        if (!elementClicked) {
-            startTextInput(x, y);
-			updateDeleteButtonsVisibility();
+        // Проверяем выделенный текстовый элемент
+        if (!clickedOnSelectedElement && selectedElementIndex !== -1) {
+            const selectedElement = textElements[selectedElementIndex];
+            if (selectedElement && isPointInTextElement(x, y, selectedElement)) {
+                clickedOnSelectedElement = true;
+            }
         }
-    }
+        
+        // Если кликнули на уже выделенный элемент - ничего не делаем
+        if (clickedOnSelectedElement) {
+            console.log('Кликнули на выделенный элемент - не меняем выбор');
+            clickTimeout = null;
+            return;
+        }
+        
+        // Если НЕ кликнули на выделенный элемент - ищем верхний элемент в этой точке
+        
+        // Сначала проверяем SVG элементы (сверху вниз)
+        for (let i = svgElements.length - 1; i >= 0; i--) {
+            const element = svgElements[i];
+            if (isPointInSVGElement(x, y, element)) {
+                // Нашли SVG элемент - выбираем его
+                selectedSVGIndex = i;
+                isSVGSelected = true;
+                selectedElementIndex = -1;
+                
+                updateTextElementsList();
+                updateSVGElementsList();
+                updateElementProperties();
+                updateDeleteButtonsVisibility();
+                drawScene();
+                updateStatus(`SVG элемент выбран`, 'success');
+                
+                clickTimeout = null;
+                return;
+            }
+        }
+        
+        // Проверяем текстовые элементы (сверху вниз)
+        for (let i = textElements.length - 1; i >= 0; i--) {
+            const element = textElements[i];
+            if (isPointInTextElement(x, y, element)) {
+                // Нашли текстовый элемент - выбираем его
+                selectedElementIndex = i;
+                isSVGSelected = false;
+                selectedSVGIndex = -1;
+                
+                updateTextElementsList();
+                updateSVGElementsList();
+                updateElementProperties();
+                updateDeleteButtonsVisibility();
+                drawScene();
+                
+                clickTimeout = null;
+                return;
+            }
+        }
+        
+        // Если не нашли ни одного элемента - снимаем выделение и начинаем ввод текста
+        selectedElementIndex = -1;
+        isSVGSelected = false;
+        selectedSVGIndex = -1;
+        updateTextElementsList();
+        updateSVGElementsList();
+        updateElementProperties();
+        updateDeleteButtonsVisibility();
+        drawScene();
+        
+        // И начинаем ввод нового текста
+        startTextInput(x, y);
+        
+        clickTimeout = null;
+    }, 50);
 }
 
         function startTextInput(x, y) {
@@ -2688,13 +3315,7 @@ function updateElementProperties() {
     
     // Заполнить список шрифтов если он пустой
     if (elementFontSelect.options.length <= 1) {
-        elementFontSelect.innerHTML = '<option value="">-- Выберите шрифт --</option>';
-        fonts.forEach(font => {
-            const option = document.createElement('option');
-            option.value = font.path;
-            option.textContent = font.name;
-            elementFontSelect.appendChild(option);
-        });
+        updateFontSelectPreviews(); 
     }
     
     if (isSVGSelected && selectedSVGIndex !== -1) {
@@ -2859,6 +3480,7 @@ function deleteSelectedElement() {
 }
 
 function handleMouseDown(event) {
+    event.preventDefault();
     if (isAddingText) return;
     
     const rect = mainCanvas.getBoundingClientRect();
@@ -2872,6 +3494,26 @@ function handleMouseDown(event) {
         selectionCurrent = { x: x, y: y };
         return;
     }
+    
+    // Проверяем, есть ли в месте клика уже выделенный элемент
+    let clickedOnSelectedElement = false;
+    
+    // Проверяем выделенный SVG элемент
+    if (isSVGSelected && selectedSVGIndex !== -1) {
+        const selectedElement = svgElements[selectedSVGIndex];
+        if (selectedElement && isPointInSVGElement(x, y, selectedElement)) {
+            clickedOnSelectedElement = true;
+        }
+    }
+    
+    // Проверяем выделенный текстовый элемент
+    if (!clickedOnSelectedElement && selectedElementIndex !== -1) {
+        const selectedElement = textElements[selectedElementIndex];
+        if (selectedElement && isPointInTextElement(x, y, selectedElement)) {
+            clickedOnSelectedElement = true;
+        }
+    }
+    
     // Проверка на перо
     const penX = parseFloat(penStartXInput.value) || 0;
     const penY = parseFloat(penStartYInput.value) || 0;
@@ -2884,7 +3526,21 @@ function handleMouseDown(event) {
         return;
     }
     
-    // Проверка на SVG элементы
+    // Если кликнули на уже выделенный элемент - начинаем перетаскивание
+    if (clickedOnSelectedElement) {
+        console.log('Начали перетаскивание выделенного элемента');
+        isDragging = true;
+        
+        if (isSVGSelected && selectedSVGIndex !== -1) {
+            dragOffsetX = x - svgElements[selectedSVGIndex].x;
+            dragOffsetY = y - svgElements[selectedSVGIndex].y;
+        } else if (selectedElementIndex !== -1) {
+            dragOffsetX = x - textElements[selectedElementIndex].x;
+            dragOffsetY = y - textElements[selectedElementIndex].y;
+        }
+        return;
+    }
+
     for (let i = svgElements.length - 1; i >= 0; i--) {
         const element = svgElements[i];
         
@@ -2893,7 +3549,7 @@ function handleMouseDown(event) {
             isSVGSelected = true;
             selectedElementIndex = -1;
             updateTextElementsList();
-            updateSVGElementsList(); // ДОБАВЛЕНО
+            updateSVGElementsList();
             updateElementProperties();
             
             isDragging = true;
@@ -2926,13 +3582,14 @@ function handleMouseDown(event) {
         }
     }
     
+    // Если не нашли элемент - снимаем выделение
     selectedElementIndex = -1;
     isSVGSelected = false;
     selectedSVGIndex = -1;
     updateTextElementsList();
-    updateSVGElementsList(); 
+    updateSVGElementsList();
     updateElementProperties();
-	updateDeleteButtonsVisibility();
+    updateDeleteButtonsVisibility();
     drawScene();
 }
 
@@ -2974,18 +3631,10 @@ function handleMouseMove(event) {
 }
         
 function handleMouseUp(event) {
-    if (isSelectingSVGPart && isDrawingSelection) {
-        isDrawingSelection = false;
-        
-        const rect = getSelectionRect();
-        if (rect.width > 1 && rect.height > 1) {
-            updateStatus(`Область выделена: ${rect.width.toFixed(1)}×${rect.height.toFixed(1)} мм`, 'success');
-        }
-    }
-    
+
     isDragging = false;
     isMovingPen = false;
-    drawScene();
+
 }
         
 		function isPointInTextElement(x, y, element) {
