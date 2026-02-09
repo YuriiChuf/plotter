@@ -222,6 +222,45 @@
 	
 }
 
+.undo-controls {
+    position: absolute;
+    bottom: 90px; /* Располагаем выше зума */
+    right: 20px;
+    background: rgba(0,0,0,0.7);
+    padding: 10px;
+    border-radius: 5px;
+    display: flex;
+    gap: 10px;
+    z-index: 1000;
+}
+
+.undo-btn, .redo-btn {
+    width: 40px;
+    height: 40px;
+    background: #444;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.undo-btn:hover {
+    background: #4dabf7;
+}
+
+.redo-btn:hover {
+    background: #ff6b6b;
+}
+
+.undo-btn:disabled, .redo-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
     </style>
 </head>
 <body>
@@ -349,6 +388,10 @@
                     <div class="zoom-level" id="zoomLevel">100%</div>
                     <button class="zoom-btn" id="zoomIn">+</button>
                 </div>
+				<div class="undo-controls">
+					<button class="undo-btn" id="undoBtn" title="Отменить (Ctrl+Z)">↶</button>
+					<button class="redo-btn" id="redoBtn" title="Вернуть (Ctrl+Shift+Z)">↷</button>
+				</div>
                 
                 <div class="coordinates" id="coordinates">X: 0, Y: 0</div>
             </div>
@@ -431,6 +474,14 @@
 				this.imageDataCache = null;
 				this.init();
 				this.setupCursorRestore();
+				this.history = {
+					snapshots: [],      // Снимки SVG
+					index: -1,          // Текущий индекс
+					max: 10             // Максимум 10 состояний
+				};
+				
+				this.setupSimpleUndoRedo();
+				this.lastSave = 0;
 			}
 			
 
@@ -487,31 +538,31 @@
 			this.svg.setAttribute('height', '100%');
 			this.svg.setAttribute('viewBox', '0 0 1000 1000');
 			this.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-document.getElementById('dpiInput').oninput = () => {
-	    this.updatePixelDisplay();
-    if (this.state.image) {
-        //this.updateLoadedImageSizeDisplay(this.state.image);
-    }
-};
-document.getElementById('mmWidth').addEventListener('input', (e) => {
-    this.updateSizeWithAspectRatio('width', e.target.value);
-});
+			document.getElementById('dpiInput').oninput = () => {
+					this.updatePixelDisplay();
+				if (this.state.image) {
+					//this.updateLoadedImageSizeDisplay(this.state.image);
+				}
+			};
+			document.getElementById('mmWidth').addEventListener('input', (e) => {
+				this.updateSizeWithAspectRatio('width', e.target.value);
+			});
 
-document.getElementById('mmHeight').addEventListener('input', (e) => {
-    this.updateSizeWithAspectRatio('height', e.target.value);
-});
-document.getElementById('aspectRatioDisplay').addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // Берем текущие значения из полей ввода
-    const currentWidth = parseFloat(document.getElementById('mmWidth').value) || 210;
-    const currentHeight = parseFloat(document.getElementById('mmHeight').value) || 297;
-    
-    // Просто обновляем отображение соотношения сторон
-    this.updateAspectRatioDisplay(currentWidth, currentHeight);
-    
-});
+			document.getElementById('mmHeight').addEventListener('input', (e) => {
+				this.updateSizeWithAspectRatio('height', e.target.value);
+			});
+			document.getElementById('aspectRatioDisplay').addEventListener('click', (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				
+				// Берем текущие значения из полей ввода
+				const currentWidth = parseFloat(document.getElementById('mmWidth').value) || 210;
+				const currentHeight = parseFloat(document.getElementById('mmHeight').value) || 297;
+				
+				// Просто обновляем отображение соотношения сторон
+				this.updateAspectRatioDisplay(currentWidth, currentHeight);
+				
+			});
 			// Загрузка SVG
 			document.getElementById('loadSvgBtn').onclick = () => {
 				document.getElementById('svgInput').click();
@@ -546,8 +597,311 @@ document.getElementById('aspectRatioDisplay').addEventListener('click', (e) => {
 			// Создание подложки по нажатию кнопки
 			document.getElementById('createBackgroundBtn').onclick = () => this.createBackgroundFromInput();
 			this.setupToolToggle();
+
+			setTimeout(() => {
+				this.initHistory();
+			}, 1000);
 			
 		}
+// Метод для сохранения состояния ВСЕХ элементов
+captureFullState() {
+    const state = {
+        timestamp: Date.now(),
+        // Сохраняем только outerHTML элементов
+        svgContent: this.svg.innerHTML,
+        // Сохраняем состояние Безье отдельно
+        bezierPoints: JSON.parse(JSON.stringify(this.state.bezierPoints)),
+        bezierVectors: JSON.parse(JSON.stringify(this.state.bezierVectors))
+    };
+    return state;
+}
+
+// Метод для получения ВСЕХ векторных элементов
+getAllVectorElements() {
+    return Array.from(this.svg.querySelectorAll('path, line, rect, circle, ellipse'))
+        .filter(el => {
+            // Исключаем временные элементы
+            if (el.id && (el.id.includes('indicator') || el.id.includes('background'))) {
+                return false;
+            }
+            if (el.classList && (
+                el.classList.contains('bezier-guide-line') ||
+                el.classList.contains('bezier-control-point') ||
+                el.classList.contains('bezier-point')
+            )) {
+                return false;
+            }
+            return true;
+        });
+}
+
+
+
+
+statesAreEqual(state1, state2) {
+    // Простая проверка по timestamp и содержимому SVG
+    return state1.svgContent === state2.svgContent;
+}
+
+setupSimpleUndoRedo() {
+    // Назначаем кнопки
+    document.getElementById('undoBtn').onclick = () => this.simpleUndo();
+    document.getElementById('redoBtn').onclick = () => this.simpleRedo();
+    
+    // Сохраняем начальное состояние (пустое)
+    setTimeout(() => this.saveSnapshot(), 100);
+    
+    // Сохраняем при ЛЮБОМ mouseup (отпускании мыши)
+    this.svg.addEventListener('mouseup', (e) => {
+        // Задержка для завершения операции
+        setTimeout(() => this.saveSnapshot(), 50);
+    });
+    
+    // Сохраняем при загрузке SVG
+    document.getElementById('svgInput').addEventListener('change', () => {
+        setTimeout(() => this.saveSnapshot(), 300);
+    });
+    
+    // Сохраняем при очистке
+    document.getElementById('clearBtn').addEventListener('click', () => {
+        setTimeout(() => this.saveSnapshot(), 300);
+    });
+    
+    // Сохраняем при изменении изображения
+    document.getElementById('imageInput').addEventListener('change', () => {
+        setTimeout(() => this.saveSnapshot(), 500);
+    });
+}
+
+// 1. Метод сохранения снимка
+saveSnapshot() {
+    // Дебаунсинг
+    const now = Date.now();
+    if (this.lastSave && (now - this.lastSave < 100)) {
+        return;
+    }
+    
+    try {
+        // Создаем копию SVG без временных элементов
+        const svgClone = this.svg.cloneNode(true);
+        
+        // Удаляем временные элементы
+        const tempIds = ['push-indicator', 'eraser-indicator'];
+        tempIds.forEach(id => {
+            const el = svgClone.querySelector(`#${id}`);
+            if (el) el.remove();
+        });
+        
+        // Берем HTML
+        const snapshot = svgClone.innerHTML;
+        
+        // Проверяем, отличается ли от последнего снимка
+        const lastSnapshot = this.history.snapshots[this.history.index];
+        if (lastSnapshot === snapshot) {
+            console.log('Снимок не изменился, пропускаем');
+            return;
+        }
+        
+        // Удаляем всё после текущего индекса
+        this.history.snapshots = this.history.snapshots.slice(0, this.history.index + 1);
+        
+        // Добавляем новый снимок
+        this.history.snapshots.push(snapshot);
+        this.history.index++;
+        
+        // Ограничиваем историю
+        if (this.history.snapshots.length > this.history.max) {
+            this.history.snapshots.shift();
+            this.history.index--;
+        }
+        
+        // Обновляем кнопки
+        this.updateUndoRedoButtons();
+        
+        this.lastSave = now;
+        console.log('✅ Сохранён снимок #' + this.history.index, 
+                   'можно отменить:', this.history.index > 0,
+                   'можно вернуть:', this.history.index < this.history.snapshots.length - 1);
+    } catch (error) {
+        console.error('Ошибка при сохранении снимка:', error);
+    }
+}
+
+
+// 2. Метод отмены
+simpleUndo() {
+    if (this.history.index > 0) {
+        this.history.index--;
+        this.restoreSnapshot();
+        console.log('Отмена к снимку #' + this.history.index);
+    }
+}
+
+// 3. Метод возврата
+simpleRedo() {
+    if (this.history.index < this.history.snapshots.length - 1) {
+        this.history.index++;
+        this.restoreSnapshot();
+        console.log('Возврат к снимку #' + this.history.index);
+    }
+}
+
+// 4. Восстановление снимка
+restoreSnapshot() {
+    const snapshot = this.history.snapshots[this.history.index];
+    if (!snapshot) {
+        console.error('Снимок не найден по индексу:', this.history.index);
+        return;
+    }
+    
+    console.log('Восстанавливаем снимок #' + this.history.index);
+    
+    try {
+        // Сохраняем текущее изображение
+        const currentImage = document.getElementById('background-image');
+        const imageHTML = currentImage ? currentImage.outerHTML : '';
+        
+        // Восстанавливаем SVG
+        this.svg.innerHTML = snapshot;
+        
+        // Добавляем изображение обратно, если оно было
+        if (imageHTML && !this.svg.querySelector('#background-image')) {
+            this.svg.insertAdjacentHTML('afterbegin', imageHTML);
+        }
+        
+        // Обновляем кнопки СРАЗУ
+        this.updateUndoRedoButtons();
+        
+        console.log('✅ Снимок восстановлен');
+    } catch (error) {
+        console.error('Ошибка при восстановлении снимка:', error);
+    }
+}
+
+// 5. Обновление кнопок
+updateUndoRedoButtons() {
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
+    
+    const canUndo = this.history.index > 0;
+    const canRedo = this.history.index < this.history.snapshots.length - 1;
+    
+    console.log('Обновление кнопок:', {
+        index: this.history.index,
+        total: this.history.snapshots.length,
+        canUndo,
+        canRedo
+    });
+    
+    undoBtn.disabled = !canUndo;
+    redoBtn.disabled = !canRedo;
+    
+    // Визуальные стили
+    undoBtn.style.opacity = canUndo ? '1' : '0.3';
+    redoBtn.style.opacity = canRedo ? '1' : '0.3';
+    
+    // Добавить title для информации
+    undoBtn.title = canUndo ? 'Отменить (Ctrl+Z)' : 'Нечего отменять';
+    redoBtn.title = canRedo ? 'Вернуть (Ctrl+Shift+Z)' : 'Нечего возвращать';
+}
+
+restoreState(index) {
+    if (!this.history.actions[index]) return;
+    
+    const state = this.history.actions[index];
+    
+    console.log('Восстанавливаем состояние:', index, state);
+    
+    // ВАЖНО: Восстанавливаем ВСЁ содержимое SVG
+    if (state.svgContent) {
+        // Сохраняем текущее изображение если оно есть
+        const currentImage = document.getElementById('background-image');
+        let imageHTML = '';
+        if (currentImage) {
+            imageHTML = currentImage.outerHTML;
+        }
+        
+        // Очищаем SVG
+        this.svg.innerHTML = '';
+        
+        // Восстанавливаем содержимое
+        this.svg.innerHTML = state.svgContent;
+        
+        // Убедимся, что изображение восстановлено (или добавим его)
+        if (imageHTML && !this.svg.querySelector('#background-image')) {
+            this.svg.insertAdjacentHTML('afterbegin', imageHTML);
+        }
+    }
+    
+    // Восстанавливаем состояние Безье
+    if (state.bezierPoints && state.bezierVectors) {
+        this.state.bezierPoints = JSON.parse(JSON.stringify(state.bezierPoints));
+        this.state.bezierVectors = JSON.parse(JSON.stringify(state.bezierVectors));
+        
+        // Перепривязываем элементы Безье
+        this.restoreBezierElements();
+    }
+    
+    // Обновляем кнопки
+    this.updateUndoRedoButtons();
+}
+
+restoreBezierElements() {
+    // Удаляем только старые элементы управления Безье (если есть)
+    const oldElements = this.svg.querySelectorAll('.bezier-guide-line, .bezier-control-point, .bezier-point');
+    oldElements.forEach(el => {
+        if (el.parentNode) el.parentNode.removeChild(el);
+    });
+    
+    // Восстанавливаем точки только если их нет
+    this.state.bezierPoints.forEach(point => {
+        if (point.x !== undefined && point.y !== undefined) {
+            // Проверяем, существует ли уже такая точка
+            const existingPoint = this.svg.querySelector(`.bezier-point[data-index="${point.index}"]`);
+            if (!existingPoint) {
+                point.element = this.createBezierPointElement(point);
+                this.svg.appendChild(point.element);
+            } else {
+                point.element = existingPoint;
+            }
+        }
+    });
+    
+    // Восстанавливаем векторы только если их нет
+    this.state.bezierVectors.forEach(vector => {
+        const fromPoint = this.state.bezierPoints[vector.from];
+        const toPoint = this.state.bezierPoints[vector.to];
+        
+        if (fromPoint && toPoint) {
+            // Проверяем, существует ли уже такой путь
+            const existingPath = this.svg.querySelector(`.bezier-vector[data-vector-id="${vector.from}-${vector.to}"]`);
+            if (!existingPath) {
+                // Создаем путь
+                vector.path = this.createBezierPath(
+                    fromPoint.x, fromPoint.y,
+                    vector.control1.x, vector.control1.y,
+                    vector.control2.x, vector.control2.y,
+                    toPoint.x, toPoint.y
+                );
+                vector.path.setAttribute('data-vector-id', `${vector.from}-${vector.to}`);
+                this.svg.appendChild(vector.path);
+                
+                // Создаем направляющие
+                this.createVectorGuides(vector, fromPoint, toPoint);
+            } else {
+                vector.path = existingPath;
+            }
+        }
+    });
+}
+
+updateUndoRedoButtons() {
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
+    
+    undoBtn.disabled = this.history.currentIndex <= 0;
+    redoBtn.disabled = this.history.currentIndex >= this.history.actions.length - 1;
+}
 
 setupHotkeys() {
     document.addEventListener('keydown', (e) => {
@@ -573,6 +927,16 @@ setupHotkeys() {
             this.setTool('select');
             return;
         }
+		
+		if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+			e.preventDefault();
+			if (e.shiftKey) {
+				this.simpleRedo();
+			} else {
+				this.simpleUndo();
+			}
+			return;
+		}
         
         // Горячие клавиши для инструментов
         switch(e.key.toLowerCase()) {
@@ -3379,6 +3743,7 @@ eraseVectorsAt(x, y) {
     
     // Показываем индикатор обратно
     this.showEraserIndicator(x, y, radius);
+	    this.saveSnapshot();
 }
 
 pointToRectDistance(px, py, rect) {
@@ -3728,7 +4093,7 @@ createNewBezierVector(x, y) {
     
     // Выделяем новую точку
     this.selectBezierPoint(toPoint.index);
-    
+        setTimeout(() => this.saveSnapshot(), 100);
     return newVector;
 }
   
@@ -3774,23 +4139,23 @@ createBezierVector(fromPoint, toPoint, previousVector = null) {
     return vector;
 }
  
-    createBezierPath(x1, y1, cx1, cy1, cx2, cy2, x2, y2) {
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        const d = `M ${x1} ${y1} C ${cx1} ${cy1} ${cx2} ${cy2} ${x2} ${y2}`;
-        
-        path.setAttribute('d', d);
-        path.setAttribute('stroke', this.state.strokeColor);
-        path.setAttribute('stroke-width', this.state.strokeWidth);
-        path.setAttribute('fill', 'none');
-        path.setAttribute('stroke-linecap', 'round');
-        path.classList.add('bezier-vector');
-        
-        return path;
-    }
+createBezierPath(x1, y1, cx1, cy1, cx2, cy2, x2, y2) {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const d = `M ${x1} ${y1} C ${cx1} ${cy1} ${cx2} ${cy2} ${x2} ${y2}`;
+    
+    path.setAttribute('d', d);
+    path.setAttribute('stroke', this.state.strokeColor);
+    path.setAttribute('stroke-width', this.state.strokeWidth);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke-linecap', 'round');
+    path.classList.add('bezier-vector');
+    
+    return path;
+}
     
 createVectorGuides(vector, fromPoint, toPoint) {
     const vectorIndex = this.state.bezierVectors.length - 1;
-    
+    vector.path.setAttribute('data-vector-id', `${vector.from}-${vector.to}`);
     // ЛИНИЯ 1: от точки "from" к ЕЁ контрольной точке (control1)
     vector.guideElements.line1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     vector.guideElements.line1.setAttribute('class', 'bezier-guide-line');
@@ -4318,6 +4683,7 @@ updateControlPointsForMovedPoint(movedPointIndex, dx, dy) {
         if (this.state.bezierSelectedPoint === pointIndex) {
             this.deselectAllPoints();
         }
+		    setTimeout(() => this.saveSnapshot(), 100);
     }
     
     deleteVectorsForPoint(pointIndex) {
