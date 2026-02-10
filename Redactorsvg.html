@@ -744,6 +744,7 @@
 #underlay-preview::before {
     background: rgba(166, 227, 161, 0.3);
 }
+
 		
     </style>
 </head>
@@ -969,6 +970,9 @@
     <button id="add-vector-tool">
         <i class="fas fa-cut"></i> Удалить
     </button>
+	<button id="toggle-bezier-mode" class="secondary" title="Использовать кривые Безье (Alt+B)">
+        <i class="fas fa-bezier-curve"></i> Кривые
+    </button>
     
 </div>
 
@@ -1076,7 +1080,8 @@
                     underlayFont: null,
 					selectedSegment: null,
 					isCreatingTemplate: false, // Флаг создания шаблона
-					fileDialogOpen: false // Флаг открытого диалога
+					fileDialogOpen: false, // Флаг открытого диалога
+					useBezierMode: true
                 };
                 
                 // Топология пути
@@ -1156,69 +1161,69 @@
             
             // Инициализация SVG канваса
             initSVGCanvas() {
-    // Создаем обе кнопки один раз
-    const toggleCloseBtn = document.createElement('button');
-    toggleCloseBtn.id = 'toggle-close';
-    toggleCloseBtn.className = 'secondary';
-    toggleCloseBtn.innerHTML = '<i class="fas fa-link"></i> Замкнуть';
-    toggleCloseBtn.title = 'Замкнуть или разомкнуть текущий контур';
-    toggleCloseBtn.style.display = 'none';
-    
-    const deleteSegmentBtn = document.createElement('button');
-    deleteSegmentBtn.id = 'delete-segment-btn';
-    deleteSegmentBtn.className = 'secondary';
-    deleteSegmentBtn.innerHTML = '<i class="fas fa-trash"></i> Удалить вектор';
-    deleteSegmentBtn.title = 'Удалить выделенный вектор';
-    deleteSegmentBtn.style.display = 'none';
-    
-    const toolsDiv = document.querySelector('.floating-tools');
-    toolsDiv.appendChild(toggleCloseBtn);
-    toolsDiv.appendChild(deleteSegmentBtn);
+				// Создаем обе кнопки один раз
+				const toggleCloseBtn = document.createElement('button');
+				toggleCloseBtn.id = 'toggle-close';
+				toggleCloseBtn.className = 'secondary';
+				toggleCloseBtn.innerHTML = '<i class="fas fa-link"></i> Замкнуть';
+				toggleCloseBtn.title = 'Замкнуть или разомкнуть текущий контур';
+				toggleCloseBtn.style.display = 'none';
+				
+				const deleteSegmentBtn = document.createElement('button');
+				deleteSegmentBtn.id = 'delete-segment-btn';
+				deleteSegmentBtn.className = 'secondary';
+				deleteSegmentBtn.innerHTML = '<i class="fas fa-trash"></i> Удалить вектор';
+				deleteSegmentBtn.title = 'Удалить выделенный вектор';
+				deleteSegmentBtn.style.display = 'none';
+				
+				const toolsDiv = document.querySelector('.floating-tools');
+				toolsDiv.appendChild(toggleCloseBtn);
+				toolsDiv.appendChild(deleteSegmentBtn);
 
-    // Обработчики для кнопок
-    deleteSegmentBtn.addEventListener('click', () => {
-        if (this.state.selectedSegment) {
-            this.deleteSelectedSegment();
-        }
-    });
-toggleCloseBtn.addEventListener('click', () => {
-    // Проверяем ВЫДЕЛЕНА ЛИ ТОЧКА ИЛИ ВЕКТОР (сегмент)
-    if (this.state.selectedPoint || this.state.selectedSegment) {
-        // Получаем индекс контура
-        const contourIndex = this.state.selectedPoint ? 
-            this.state.selectedPoint.contourIndex : 
-            this.state.selectedSegment.contourIndex;
-        
-        const contour = this.pathTopology.contours[contourIndex];
-        
-        if (contour) {
-            // Сохраняем состояние перед изменением
-            const previousState = {
-                fontData: JSON.parse(JSON.stringify(this.fontData)),
-                pathTopology: JSON.parse(JSON.stringify(this.pathTopology)),
-                currentGlyphUnicode: this.currentGlyph.unicode
-            };
-            
-            // Переключаем флаг
-            contour.isClosed = !contour.isClosed;
-            
-            // Сохраняем в историю
-            setTimeout(() => {
-                const action = contour.isClosed ? 'close_contour' : 'open_contour';
-                const description = contour.isClosed ? 'Замыкание контура' : 'Размыкание контура';
-                this.saveToHistoryWithPreviousState(action, description, previousState);
-            }, 10);
-            
-            // Обновляем кнопку
-            toggleCloseBtn.innerHTML = contour.isClosed ? 
-                '<i class="fas fa-unlink"></i> Разомкнуть' : 
-                '<i class="fas fa-link"></i> Замкнуть';
-            
-            // Обновляем путь (Z добавится/удалится)
-            this.updatePathFromTopology();
-        }
-    }
-});
+				// Обработчики для кнопок
+				deleteSegmentBtn.addEventListener('click', () => {
+					if (this.state.selectedSegment) {
+						this.deleteSelectedSegment();
+					}
+				});
+				toggleCloseBtn.addEventListener('click', () => {
+					// Проверяем ВЫДЕЛЕНА ЛИ ТОЧКА ИЛИ ВЕКТОР (сегмент)
+					if (this.state.selectedPoint || this.state.selectedSegment) {
+						// Получаем индекс контура
+						const contourIndex = this.state.selectedPoint ? 
+							this.state.selectedPoint.contourIndex : 
+							this.state.selectedSegment.contourIndex;
+						
+						const contour = this.pathTopology.contours[contourIndex];
+						
+						if (contour) {
+							// Сохраняем состояние перед изменением
+							const previousState = {
+								fontData: JSON.parse(JSON.stringify(this.fontData)),
+								pathTopology: JSON.parse(JSON.stringify(this.pathTopology)),
+								currentGlyphUnicode: this.currentGlyph.unicode
+							};
+							
+							// Переключаем флаг
+							contour.isClosed = !contour.isClosed;
+							
+							// Сохраняем в историю
+							setTimeout(() => {
+								const action = contour.isClosed ? 'close_contour' : 'open_contour';
+								const description = contour.isClosed ? 'Замыкание контура' : 'Размыкание контура';
+								this.saveToHistoryWithPreviousState(action, description, previousState);
+							}, 10);
+							
+							// Обновляем кнопку
+							toggleCloseBtn.innerHTML = contour.isClosed ? 
+								'<i class="fas fa-unlink"></i> Разомкнуть' : 
+								'<i class="fas fa-link"></i> Замкнуть';
+							
+							// Обновляем путь (Z добавится/удалится)
+							this.updatePathFromTopology();
+						}
+					}
+				});
 
                 const svgCanvas = document.getElementById('svg-canvas');
                 svgCanvas.innerHTML = '';
@@ -1237,6 +1242,7 @@ toggleCloseBtn.addEventListener('click', () => {
                 svgCanvas.addEventListener('mouseup', (e) => this.handleCanvasMouseUp(e));
                 svgCanvas.addEventListener('click', (e) => this.handleCanvasClick(e));
                 svgCanvas.addEventListener('dragstart', (e) => e.preventDefault());
+				
             }
             
             // Инициализация обработчиков событий
@@ -1249,10 +1255,10 @@ toggleCloseBtn.addEventListener('click', () => {
                 document.getElementById('import-underlay').addEventListener('click', () => this.showFontModal());
                 document.getElementById('reset-view').addEventListener('click', () => this.resetView());
                 document.getElementById('guideline-tool').addEventListener('click', () => this.setTool(TOOLS.GUIDELINE));
- document.getElementById('zoom-scale').addEventListener('input', () => this.setupViewport());
- document.getElementById('debug-tool').addEventListener('click', () => {
-    this.showDebugModal();
-});
+				 document.getElementById('zoom-scale').addEventListener('input', () => this.setupViewport());
+				 document.getElementById('debug-tool').addEventListener('click', () => {
+					this.showDebugModal();
+				});
  
 				// Инструменты в плавающей панели
 				document.getElementById('select-tool').addEventListener('click', () => this.setTool(TOOLS.SELECT));
@@ -1268,6 +1274,17 @@ toggleCloseBtn.addEventListener('click', () => {
 						reverseBtn.disabled = true;
 					}
 				}, 100);
+				
+				document.getElementById('toggle-bezier-mode').addEventListener('click', () => {
+					this.toggleBezierMode();
+				});
+
+				document.addEventListener('keydown', (e) => {
+					if (e.altKey && e.key.toLowerCase() === 'b') {
+						e.preventDefault();
+						this.toggleBezierMode();
+					}
+				});
 
 				// Кнопка "Удалить вектор"
 				const deleteSegmentBtn = document.getElementById('delete-segment-btn');
@@ -1346,68 +1363,97 @@ toggleCloseBtn.addEventListener('click', () => {
                 // Горячие клавиши
                 document.addEventListener('keydown', (e) => this.handleKeyPress(e));
 				
-    // SVG шрифт
-    document.getElementById('svg-font-input').addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            try {
-                this.parseSVGFont(event.target.result);
-                this.showNotification(`Шрифт "${this.fontData.name}" загружен успешно!`, 'success');
-            } catch (error) {
-                alert('Ошибка загрузки шрифта: ' + error.message);
-            }
-        };
-        reader.readAsText(file);
-    });
-				
-document.getElementById('underlay-font-input').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    const fontName = file.name.replace(/\.[^/.]+$/, "");
-    
-    // Читаем метрики из файла
-    const metrics = await this.readFontMetrics(file);
-    
-    const reader = new FileReader();
-    reader.onload = (event) => {
-        try {
-            const fontDataUrl = event.target.result;
-            const fontFace = new FontFace(fontName, `url(${fontDataUrl})`);
-            
-			fontFace.load().then(loadedFont => {
-				document.fonts.add(loadedFont);
-				this.state.underlayFont = fontName;
-				
-				// ПОКАЗЫВАЕМ ТОТ ЖЕ ДИАЛОГ ДЛЯ ФАЙЛА
-				if (this.state.underlayMetrics) {
-					this.showMetricsDialog(this.state.underlayMetrics, fontName);
-				} else {
-					document.getElementById('font-modal').style.display = 'none';
-					this.updateUnderlay();
-				}
-				
-				this.showNotification(
-					`Шрифт "${fontName}" загружен из файла`,
-					'success'
-				);
-			}).catch(error => {
-                console.error('Ошибка загрузки шрифта:', error);
-                alert('Не удалось загрузить шрифт из файла.');
-            });
-        } catch (error) {
-            console.error('Ошибка обработки файла:', error);
-            alert('Ошибка при чтении файла шрифта.');
-        }
-    };
-    
-    reader.readAsDataURL(file);
-});
+				// SVG шрифт
+				document.getElementById('svg-font-input').addEventListener('change', (e) => {
+					const file = e.target.files[0];
+					if (!file) return;
+					
+					const reader = new FileReader();
+					reader.onload = (event) => {
+						try {
+							this.parseSVGFont(event.target.result);
+							this.showNotification(`Шрифт "${this.fontData.name}" загружен успешно!`, 'success');
+						} catch (error) {
+							alert('Ошибка загрузки шрифта: ' + error.message);
+						}
+					};
+					reader.readAsText(file);
+				});
+							
+				document.getElementById('underlay-font-input').addEventListener('change', async (e) => {
+					const file = e.target.files[0];
+					if (!file) return;
+					
+					const fontName = file.name.replace(/\.[^/.]+$/, "");
+					
+					// Читаем метрики из файла
+					const metrics = await this.readFontMetrics(file);
+					
+					const reader = new FileReader();
+					reader.onload = (event) => {
+						try {
+							const fontDataUrl = event.target.result;
+							const fontFace = new FontFace(fontName, `url(${fontDataUrl})`);
+							
+							fontFace.load().then(loadedFont => {
+								document.fonts.add(loadedFont);
+								this.state.underlayFont = fontName;
+								
+								// ПОКАЗЫВАЕМ ТОТ ЖЕ ДИАЛОГ ДЛЯ ФАЙЛА
+								if (this.state.underlayMetrics) {
+									this.showMetricsDialog(this.state.underlayMetrics, fontName);
+								} else {
+									document.getElementById('font-modal').style.display = 'none';
+									this.updateUnderlay();
+								}
+								
+								this.showNotification(
+									`Шрифт "${fontName}" загружен из файла`,
+									'success'
+								);
+							}).catch(error => {
+								console.error('Ошибка загрузки шрифта:', error);
+								alert('Не удалось загрузить шрифт из файла.');
+							});
+						} catch (error) {
+							console.error('Ошибка обработки файла:', error);
+							alert('Ошибка при чтении файла шрифта.');
+						}
+					};
+					
+					reader.readAsDataURL(file);
+				});
+				document.addEventListener('contextmenu', (e) => {
+					if (e.target.closest('#svg-canvas')) {
+						e.preventDefault();
+					}
+				});
            }
-            
+
+toggleBezierMode() {
+    this.state.useBezierMode = !this.state.useBezierMode;
+    
+    const btn = document.getElementById('toggle-bezier-mode');
+    if (btn) {
+
+        // Меняем иконку и текст
+        if (this.state.useBezierMode) {
+            btn.innerHTML = '<i class="fas fa-bezier-curve"></i> Кривые';
+            btn.title = 'Использовать кривые Безье (Alt+B) - ВКЛ';
+        } else {
+            btn.innerHTML = '<i class="fas fa-slash"></i> Линии';
+            btn.title = 'Использовать линии (Alt+B) - ВЫКЛ';
+        }
+    }
+    
+    this.showNotification(
+        this.state.useBezierMode ? 
+        'Режим: Кривые Безье' : 
+        'Режим: Прямые линии',
+        'info'
+    );
+}
+
             // ===========================
     // НОВЫЙ МЕТОД: Сохранение состояния в историю
 saveToHistory(action, description) {
@@ -3535,6 +3581,17 @@ deletePoint(pointElement) {
             // ОБРАБОТЧИКИ СОБЫТИЙ
 
             handleCanvasMouseDown(e) {
+			    if (e.button === 2) {
+					e.preventDefault();
+					e.stopPropagation();
+					
+					if (this.state.currentTool === TOOLS.SELECT) {
+						this.setTool(TOOLS.ADD_POINT);
+					} else {
+						this.setTool(TOOLS.SELECT);
+					}
+					return;
+				}
                 const target = e.target;
                 const svgCanvas = document.getElementById('svg-canvas');
                 const cursorPt = this.getSVGCoordinates(e, svgCanvas);
@@ -6339,6 +6396,7 @@ removeControlPointsForSegment(contourIndex, segmentIndex) {
 
 			// Исправленная функция продолжения контура от выделенной точки
 continueContourFromSelectedPoint(x, y, controlGroup) {
+    console.log("continueContourFromSelectedPoint called");
     
     const selected = this.state.selectedPoint;
     if (!selected || !selected.element) return;
@@ -6350,7 +6408,7 @@ continueContourFromSelectedPoint(x, y, controlGroup) {
     
     // Если это средняя точка (middle) - создаем новую изолированную
     if (pointType === 'middle') {
-        this.createNewContourFromPoint(selected.x, selected.y, controlGroup);
+        this.createNewContourFromPoint(x, y, controlGroup);
         return;
     }
     
@@ -6383,7 +6441,7 @@ continueContourFromSelectedPoint(x, y, controlGroup) {
     }
     
     // 3. Определяем тип нового сегмента
-    let newSegmentType = 'line';
+    let newSegmentType = this.state.useBezierMode ? 'bezier' : 'line';
     
     // НАХОДИМ ПРАВИЛЬНЫЙ СЕГМЕНТ ДЛЯ ПРОДОЛЖЕНИЯ
     let segmentToContinue = null;
@@ -6396,6 +6454,7 @@ continueContourFromSelectedPoint(x, y, controlGroup) {
         segmentToContinue = connectedSegments.find(s => s.isStart);
     }
     
+    // Если нашли связанный сегмент и он кривая Безье, используем его тип
     if (segmentToContinue && segmentToContinue.segment.type === 'bezier') {
         newSegmentType = 'bezier';
     }
@@ -6407,6 +6466,7 @@ continueContourFromSelectedPoint(x, y, controlGroup) {
     let newPoint;
     let newSegment;
     let oldPointIndexForSmoothing = selected.pointIndex;
+    
     // 5. Если добавляем в НАЧАЛО цепочки
     if (!isAddingToEnd) {
         // Сдвигаем все индексы на +1
@@ -6454,7 +6514,6 @@ continueContourFromSelectedPoint(x, y, controlGroup) {
     } 
     // 6. Если добавляем в КОНЕЦ цепочки
     else {
-        
         newPointIndex = contour.points.length;
         
         newPoint = {
@@ -6534,7 +6593,7 @@ continueContourFromSelectedPoint(x, y, controlGroup) {
         pointType: 'end'
     };
     
-    // 12. АВТОМАТИЧЕСКОЕ ВЫРАВНИВАНИЕ БЕЗЬЕ
+    // 12. АВТОМАТИЧЕСКОЕ ВЫРАВНИВАНИЕ БЕЗЬЕ (только если это кривая Безье и это средняя точка)
     if (newSegmentType === 'bezier') {
         setTimeout(() => {
             // Находим ВСЕ сегменты, связанные со СТАРОЙ точкой
@@ -6628,7 +6687,11 @@ addPointAtPosition(x, y) {
         
         // Сохраняем в историю ПОСЛЕ добавления
         setTimeout(() => {
-            this.saveToHistoryWithPreviousState('add_point', 'Добавление точки', previousState);
+            this.saveToHistoryWithPreviousState(
+                this.state.useBezierMode ? 'add_bezier_point' : 'add_line_point',
+                this.state.useBezierMode ? 'Добавление точки (Безье)' : 'Добавление точки (Линия)',
+                previousState
+            );
         }, 10);
         
         return;
