@@ -3,8 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="Инструменты для преобразования рисунков и текстов в векторы и создания G-code для плоттера SO-1">
-<meta name="keywords" content="G-code, plotter, swg, sovol 3D">
     <title>Инструменты для векторной графики и плоттера</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -112,7 +110,7 @@
             margin-bottom: 25px;
         }
 
-        .tool-features li {
+        .tool-features li, linh{
             padding: 5px 0;
             padding-left: 25px;
             position: relative;
@@ -124,6 +122,14 @@
             position: absolute;
             left: 0;
             color: #a6e3a1;
+            font-weight: bold;
+        }
+		
+		.tool-features linh:before {
+            content: "Х";
+            position: absolute;
+            left: 0;
+            color: #FF8080;
             font-weight: bold;
         }
 
@@ -253,20 +259,21 @@
         </header>
 
         <div class="tools-grid">
-            <!-- Инструмент 4: Конвертер в G-код -->
+            <!-- Инструмент 1: Конвертер в G-код -->
             <div class="tool-card">
                 <div class="tool-icon">
                     <i class="fas fa-code"></i>
                 </div>
                 <h3 class="tool-title">Конвертер в G-код</h3>
                 <p class="tool-description">
-                    Конвертер изображений в G-код для плоттера Sovol SO-1 с расширенными настройками трассировки.
+                    Конвертер изображений в G-код для плоттера Sovol SO-1 с расширенными настройками автоматической трассировки.
                 </p>
                 <ul class="tool-features">
                     <li>Поддержка JPEG, PNG, SVG</li>
                     <li>Настройки трассировки изображений</li>
                     <li>Оптимизация путей для плоттера</li>
                     <li>Предпросмотр векторов</li>
+					<li>Экспорт в SVG формат</li>
                     <li>Генерация G-кода для Sovol SO-1</li>
                 </ul>
                 <a href="gui_gkode.html" class="btn">
@@ -274,60 +281,62 @@
                 </a>
             </div>
 			
-<!-- Инструмент 3: Редактор текста для плоттера -->
-<div class="tool-card">
-    <div class="tool-icon">
-        <i class="fas fa-text-height"></i>
-    </div>
-    <h3 class="tool-title">Редактор текста для плоттера</h3>
-    <p class="tool-description">
-        Инструмент для компоновки текста и векторных элементов перед отправкой на плоттер.
-        <br><br>
-    </p>
-    <ul class="tool-features">
-        <li>Работа с текстом и SVG элементами</li>
-        <li>Загрузка SVG шрифтов</li>
-        <li>Настройка размеров листа</li>
-        <li>Фоновая подложка для точности</li>
-        <li>Экспорт в SVG и G-код</li>
-    </ul>
-    
-    <!-- Ссылка на папку со шрифтами на GitHub -->
-    <a href="https://github.com/YuriiChuf/plotter/tree/main/fonts" 
-       target="_blank" 
-       class="btn btn-secondary" 
-       style="margin-bottom: 10px;">
-        <i class="fab fa-github"></i> Все SVG шрифты доступны в папке репозитория GitHub.
-    </a>
-    
-    <!-- Основная кнопка открытия редактора -->
-    <a href="TextTOplot.html" class="btn">
-        <i class="fas fa-external-link-alt"></i> Открыть редактор текста
-    </a>
-</div>
-		
-            <!-- Инструмент 1: Векторный редактор -->
+            <!-- Инструмент 2: Векторный редактор -->
             <div class="tool-card">
                 <div class="tool-icon">
                     <i class="fas fa-draw-polygon"></i>
                 </div>
                 <h3 class="tool-title">Векторный редактор</h3>
                 <p class="tool-description">
-                    Простой векторный редактор для создания и редактирования векторных изображений с поддержкой кривых Безье.
+                    Простой векторный редактор для создания и редактирования векторных изображений с поддержкой кривых Безье.<br>Простое рисование.
                 </p>
                 <ul class="tool-features">
                     <li>Рисование линий, прямоугольников, кругов</li>
                     <li>Инструмент "Перо" для кривых Безье</li>
                     <li>Загрузка фото как подложки</li>
                     <li>Инструменты "Ластик" и "Выталкивание"</li>
+					<li>Быстрый переход пкм между последними действиями</li>
                     <li>Экспорт в SVG формат</li>
+					<linh>Без генерации G-кода</linh>
                 </ul>
                 <a href="VectorImageTracer.html" class="btn">
                     <i class="fas fa-external-link-alt"></i> Открыть редактор
                 </a>
             </div>
+			
+			<!-- Инструмент 3: Редактор текста для плоттера -->
+			<div class="tool-card">
+				<div class="tool-icon">
+					<i class="fas fa-text-height"></i>
+				</div>
+				<h3 class="tool-title">Редактор текста для плоттера</h3>
+				<p class="tool-description">
+					Инструмент для компоновки текста и векторных элементов перед отправкой на плоттер.
+					<br><br>
+				</p>
+				<ul class="tool-features">
+					<li>Работа с текстом и SVG элементами</li>
+					<li>Загрузка SVG шрифтов</li>
+					<li>Настройка размеров листа</li>
+					<li>Фоновая подложка для точности</li>
+					<li>Экспорт в SVG и G-код</li>
+				</ul>
+				
+				<!-- Ссылка на папку со шрифтами на GitHub -->
+				<a href="https://github.com/YuriiChuf/plotter/tree/main/fonts" 
+				   target="_blank" 
+				   class="btn btn-secondary" 
+				   style="margin-bottom: 10px;">
+					<i class="fab fa-github"></i> Все SVG шрифты доступны в папке репозитория GitHub.
+				</a>
+				
+				<!-- Основная кнопка открытия редактора -->
+				<a href="TextTOplot.html" class="btn">
+					<i class="fas fa-external-link-alt"></i> Открыть редактор текста
+				</a>
+			</div>
 
-            <!-- Инструмент 2: Редактор SVG шрифтов -->
+            <!-- Инструмент 4: Редактор SVG шрифтов -->
             <div class="tool-card">
                 <div class="tool-icon">
                     <i class="fas fa-font"></i>
@@ -407,5 +416,4 @@
         });
     </script>
 </body>
-
 </html>
