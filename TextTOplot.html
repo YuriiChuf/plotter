@@ -765,7 +765,8 @@ button:hover {
         const pauseTimeInput = document.getElementById('pauseTime');
         const travelSpeedInput = document.getElementById('travelSpeed');
         const drawSpeedInput = document.getElementById('drawSpeed');
-        
+        const MAX_POINTS_PER_MM = 6; // Максимум 6 точек на миллиметр
+		
         // Переменные
         let sheetWidth = parseInt(sheetWidthInput.value);
         let sheetHeight = parseInt(sheetHeightInput.value);
@@ -1126,7 +1127,7 @@ parsePathData(pathData) {
                     }
                     
                     // Аппроксимируем кривую Безье
-                    const steps = 20;
+                    const steps = 40;
                     for (let s = 1; s <= steps; s++) {
                         const t = s / steps;
                         const mt = 1 - t;
@@ -5645,6 +5646,47 @@ async function exportToGcode() {
     }
 }
 
+function simplifyPath(path, minDistance = 0.15) {
+    if (path.length < 3) return path;
+    
+    const result = [path[0]];
+    let lastPoint = path[0];
+    
+    for (let i = 1; i < path.length - 1; i++) {
+        const point = path[i];
+        const nextPoint = path[i + 1];
+        
+        const distToLast = Math.sqrt(
+            Math.pow(point.x - lastPoint.x, 2) + 
+            Math.pow(point.y - lastPoint.y, 2)
+        );
+        
+        if (distToLast < minDistance) {
+            const area = Math.abs(
+                (lastPoint.x - point.x) * (nextPoint.y - point.y) - 
+                (lastPoint.y - point.y) * (nextPoint.x - point.x)
+            );
+            const baseDist = Math.sqrt(
+                Math.pow(nextPoint.x - lastPoint.x, 2) + 
+                Math.pow(nextPoint.y - lastPoint.y, 2)
+            );
+            
+            if (baseDist > 0 && area / baseDist < 0.05) {
+                continue;
+            }
+        }
+        
+        result.push(point);
+        lastPoint = point;
+    }
+    
+    if (path.length > 1) {
+        result.push(path[path.length - 1]);
+    }
+    
+    return result;
+}
+
 function generateGCode(textElements, svgElements, qrElements, penStartX, penStartY, pauseTime, travelSpeed, drawSpeed) {
     let gcode = [];
     
@@ -5655,28 +5697,35 @@ function generateGCode(textElements, svgElements, qrElements, penStartX, penStar
     gcode.push('G4 P' + pauseTime);
     gcode.push('');
 
-    // Собираем все пути
-    let allPaths = [];
-    
-    // Текстовые элементы
-    textElements.forEach(element => {
-        const elementPaths = element.getGcodePaths();
+// Собираем все пути с упрощением
+let allPaths = [];
+const MIN_DISTANCE = 1 / MAX_POINTS_PER_MM; // ~0.16 мм
+
+// Текстовые элементы
+textElements.forEach(element => {
+    let elementPaths = element.getGcodePaths();
+    elementPaths = elementPaths.map(path => simplifyPath(path, MIN_DISTANCE));
+    allPaths = allPaths.concat(elementPaths);
+});
+
+// SVG элементы
+svgElements.forEach(element => {
+    if (element.getGcodePaths) {
+        let elementPaths = element.getGcodePaths();
+        elementPaths = elementPaths.map(path => simplifyPath(path, MIN_DISTANCE));
         allPaths = allPaths.concat(elementPaths);
-    });
-    
-    // SVG элементы
-    svgElements.forEach(element => {
-        if (element.getGcodePaths) {
-            const elementPaths = element.getGcodePaths();
-            allPaths = allPaths.concat(elementPaths);
-        }
-    });
-    
-    // ДОБАВЛЕНО: QR элементы
-    qrElements.forEach(element => {
-        const elementPaths = element.getGcodePaths();
-        allPaths = allPaths.concat(elementPaths);
-    });
+    }
+});
+
+// QR элементы
+qrElements.forEach(element => {
+    let elementPaths = element.getGcodePaths();
+    elementPaths = elementPaths.map(path => simplifyPath(path, MIN_DISTANCE));
+    allPaths = allPaths.concat(elementPaths);
+});
+
+// Удаляем пустые пути
+allPaths = allPaths.filter(path => path.length >= 2);
     
     if (allPaths.length === 0) {
         gcode.push('M280 P0 S30.00');
