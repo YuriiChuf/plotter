@@ -635,7 +635,7 @@ button:hover {
                             <input type="number" id="penStartY" value="0" min="0" max="500" step="0.1">
                             
                             <label for="pauseTime">Время паузы (мс):</label>
-                            <input type="number" id="pauseTime" value="100" min="10" max="1000">
+                            <input type="number" id="pauseTime" value="50" min="10" max="1000">
                             
                             <label for="travelSpeed">Скорость перемещения:</label>
                             <input type="number" id="travelSpeed" value="3000" min="100" max="10000">
@@ -698,7 +698,7 @@ button:hover {
         </select>
         
         <label for="elementFontSize">Размер (мм):</label>
-        <input type="number" id="elementFontSize" min="1" max="100" step="0.1">
+        <input type="number" id="elementFontSize" min="1" step="0.1">
         
         <label for="elementRotation">Поворот (°):</label>
         <input type="number" id="elementRotation" min="-180" max="180" step="1">
@@ -868,8 +868,6 @@ class SVGElement {
 
     // Упрощенный парсер SVG путей
 parseSVGPaths(doc, svgWidth, svgHeight) {
-    const pathElements = doc.querySelectorAll('path');
-    
     // Получаем размеры из viewBox
     const svgElement = doc.querySelector('svg');
     let docMinX = 0, docMinY = 0, docWidth = 100, docHeight = 100;
@@ -877,7 +875,7 @@ parseSVGPaths(doc, svgWidth, svgHeight) {
     if (svgElement) {
         const viewBox = svgElement.getAttribute('viewBox');
         if (viewBox) {
-            const parts = viewBox.split(' ').map(Number);
+            const parts = viewBox.split(/[\s,]+/).map(Number);
             if (parts.length >= 4) {
                 docMinX = parts[0]; 
                 docMinY = parts[1];  
@@ -885,7 +883,6 @@ parseSVGPaths(doc, svgWidth, svgHeight) {
                 docHeight = parts[3];
             }
         }
-        // Пробуем получить размеры из атрибутов width/height
         const widthAttr = svgElement.getAttribute('width');
         const heightAttr = svgElement.getAttribute('height');
         if (widthAttr && heightAttr) {
@@ -898,44 +895,103 @@ parseSVGPaths(doc, svgWidth, svgHeight) {
         }
     }
     
-    // Устанавливаем реальные размеры картинки
     this.originalWidth = docWidth;
     this.originalHeight = docHeight;
     
-    // Целевой размер для отображения
-    const percentOfSheet = 1; // 20% от ширины листа
+    const percentOfSheet = 0.2;
     const targetWidth = sheetWidth * percentOfSheet;
-    
-    // Масштабируем пропорционально
     const scale = targetWidth / docWidth;
     const targetHeight = docHeight * scale;
     
-    // Масштабированные размеры для отображения
     this.width = targetWidth;
     this.height = targetHeight;
-    this.baseScale = scale; // Сохраняем базовый масштаб
+    this.baseScale = scale;
     
-    // ВЫЧИСЛЯЕМ ПОЗИЦИЮ ДЛЯ ЦЕНТРИРОВАНИЯ
-    this.x = (sheetWidth - this.width) / 2;  // Центр по горизонтали
-    this.y = (sheetHeight - this.height) / 2; // Центр по вертикали
+    this.x = (sheetWidth - this.width) / 2;
+    this.y = (sheetHeight - this.height) / 2;
     
-    // Парсим пути
+    // Парсим все графические элементы
     this.vectorPaths = [];
-    pathElements.forEach(path => {
-        const d = path.getAttribute('d');
-        if (d && d.trim() !== '') {
-            const points = this.parsePathData(d);
+    const elements = doc.querySelectorAll('path, circle, rect, line, polyline, polygon, ellipse');
+    
+    elements.forEach(el => {
+        const tagName = el.tagName.toLowerCase();
+        let pathData = '';
+        
+        if (tagName === 'path') {
+            pathData = el.getAttribute('d') || '';
+		} else if (tagName === 'circle') {
+			const cx = parseFloat(el.getAttribute('cx')) || 0;
+			const cy = parseFloat(el.getAttribute('cy')) || 0;
+			const r = parseFloat(el.getAttribute('r')) || 0;
+			// Аппроксимируем круг ломаной линией (16 сегментов)
+			const segments = 24;
+			const points = [];
+			for (let i = 0; i <= segments; i++) {
+				const angle = (i / segments) * 2 * Math.PI;
+				const px = cx + r * Math.cos(angle);
+				const py = cy + r * Math.sin(angle);
+				points.push(`${px},${py}`);
+			}
+			pathData = `M ${points[0]} L ${points.slice(1).join(' L ')} Z`;
+		} else if (tagName === 'ellipse') {
+			const cx = parseFloat(el.getAttribute('cx')) || 0;
+			const cy = parseFloat(el.getAttribute('cy')) || 0;
+			const rx = parseFloat(el.getAttribute('rx')) || 0;
+			const ry = parseFloat(el.getAttribute('ry')) || 0;
+			const segments = 24;
+			const points = [];
+			for (let i = 0; i <= segments; i++) {
+				const angle = (i / segments) * 2 * Math.PI;
+				const px = cx + rx * Math.cos(angle);
+				const py = cy + ry * Math.sin(angle);
+				points.push(`${px},${py}`);
+			}
+			pathData = `M ${points[0]} L ${points.slice(1).join(' L ')} Z`;
+        } else if (tagName === 'rect') {
+            const x = parseFloat(el.getAttribute('x')) || 0;
+            const y = parseFloat(el.getAttribute('y')) || 0;
+            const w = parseFloat(el.getAttribute('width')) || 0;
+            const h = parseFloat(el.getAttribute('height')) || 0;
+            const rx = parseFloat(el.getAttribute('rx')) || 0;
+            const ry = parseFloat(el.getAttribute('ry')) || rx;
+            
+            if (rx > 0 || ry > 0) {
+                // Прямоугольник со скругленными углами
+                const rxx = Math.min(rx, w / 2);
+                const ryy = Math.min(ry, h / 2);
+                pathData = `M ${x + rxx} ${y} L ${x + w - rxx} ${y} A ${rxx} ${ryy} 0 0 1 ${x + w} ${y + ryy} L ${x + w} ${y + h - ryy} A ${rxx} ${ryy} 0 0 1 ${x + w - rxx} ${y + h} L ${x + rxx} ${y + h} A ${rxx} ${ryy} 0 0 1 ${x} ${y + h - ryy} L ${x} ${y + ryy} A ${rxx} ${ryy} 0 0 1 ${x + rxx} ${y} Z`;
+            } else {
+                pathData = `M ${x} ${y} L ${x + w} ${y} L ${x + w} ${y + h} L ${x} ${y + h} Z`;
+            }
+        } else if (tagName === 'line') {
+            const x1 = parseFloat(el.getAttribute('x1')) || 0;
+            const y1 = parseFloat(el.getAttribute('y1')) || 0;
+            const x2 = parseFloat(el.getAttribute('x2')) || 0;
+            const y2 = parseFloat(el.getAttribute('y2')) || 0;
+            pathData = `M ${x1} ${y1} L ${x2} ${y2}`;
+        } else if (tagName === 'polyline' || tagName === 'polygon') {
+            const points = el.getAttribute('points') || '';
+            if (points) {
+                const coords = points.trim().split(/[\s,]+/).map(Number);
+                if (coords.length >= 4) {
+                    pathData = `M ${coords[0]} ${coords[1]}`;
+                    for (let i = 2; i < coords.length; i += 2) {
+                        pathData += ` L ${coords[i]} ${coords[i + 1]}`;
+                    }
+                    if (tagName === 'polygon') pathData += ' Z';
+                }
+            }
+        }
+        
+        if (pathData.trim() !== '') {
+            const points = this.parsePathData(pathData);
             const vectorPath = [];
             
             for (let i = 0; i < points.length; i++) {
                 const point = points[i];
-                
-                const originalX = point.x;
-                const originalY = point.y;
-                
-                // Масштабируем к нашему целевому размеру
-                const scaledX = originalX * scale;
-                const scaledY = originalY * scale;
+                const scaledX = point.x * scale;
+                const scaledY = point.y * scale;
                 
                 vectorPath.push({
                     x: scaledX,
@@ -950,80 +1006,200 @@ parseSVGPaths(doc, svgWidth, svgHeight) {
         }
     });
     
-    // Если не нашли пути, создаем пустой
     if (this.vectorPaths.length === 0) {
         console.warn('В SVG нет векторных путей');
     }
 }
 
-    // Простейший парсер пути SVG (только M, L, Z команды)
-    parsePathData(pathData) {
-        const points = [];
-        
-        // Упрощаем: ищем команды M/m и L/l
-        const commands = pathData.match(/[MmLlZz]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g) || [];
-        
-        let i = 0;
-        let currentX = 0, currentY = 0;
-        let startX = 0, startY = 0;
-        
-        while (i < commands.length) {
-            const token = commands[i];
-            
-            if (token.match(/[MmLlZz]/)) {
-                const command = token;
-                
-                switch(command.toLowerCase()) {
-                    case 'm':
-                        i++;
-                        const mx = parseFloat(commands[i++]);
-                        const my = parseFloat(commands[i++]);
-                        
-                        if (command === 'm') {
-                            currentX += mx;
-                            currentY += my;
-                        } else {
-                            currentX = mx;
-                            currentY = my;
-                        }
-                        
-                        startX = currentX;
-                        startY = currentY;
-                        points.push({x: currentX, y: currentY, move: true});
-                        break;
-                        
-                    case 'l':
-                        i++;
-                        const lx = parseFloat(commands[i++]);
-                        const ly = parseFloat(commands[i++]);
-                        
-                        if (command === 'l') {
-                            currentX += lx;
-                            currentY += ly;
-                        } else {
-                            currentX = lx;
-                            currentY = ly;
-                        }
-                        
-                        points.push({x: currentX, y: currentY, move: false});
-                        break;
-                        
-                    case 'z':
-                        i++;
-                        points.push({x: startX, y: startY, move: false});
-                        break;
-                        
-                    default:
-                        i++; // Пропускаем неизвестные команды
-                        break;
-                }
-            } else {
-                i++; // Пропускаем числа
-            }
+parsePathData(pathData) {
+    const points = [];
+    
+    // Нормализуем пробелы и запятые
+    const normalized = pathData
+        .replace(/([MmLlHhVvCcSsQqTtAaZz])/g, ' $1 ')
+        .replace(/,/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    
+    const commands = normalized.split(' ');
+    
+    let i = 0;
+    let currentX = 0, currentY = 0;
+    let startX = 0, startY = 0;
+    let lastCommand = '';
+    
+    while (i < commands.length) {
+        let token = commands[i];
+        if (!token) {
+            i++;
+            continue;
         }
         
-        return points;
+        const isCommand = token.match(/^[MmLlHhVvCcSsQqTtAaZz]$/);
+        
+        if (isCommand) {
+            lastCommand = token;
+            i++;
+            
+            switch (token) {
+                case 'M':
+                case 'm':
+                    if (i + 1 >= commands.length) break;
+                    const mx = parseFloat(commands[i++]);
+                    const my = parseFloat(commands[i++]);
+                    if (token === 'm') {
+                        currentX += mx;
+                        currentY += my;
+                    } else {
+                        currentX = mx;
+                        currentY = my;
+                    }
+                    startX = currentX;
+                    startY = currentY;
+                    points.push({x: currentX, y: currentY, move: true});
+                    lastCommand = token.toLowerCase();
+                    break;
+                    
+                case 'L':
+                case 'l':
+                    if (i + 1 >= commands.length) break;
+                    const lx = parseFloat(commands[i++]);
+                    const ly = parseFloat(commands[i++]);
+                    if (token === 'l') {
+                        currentX += lx;
+                        currentY += ly;
+                    } else {
+                        currentX = lx;
+                        currentY = ly;
+                    }
+                    points.push({x: currentX, y: currentY, move: false});
+                    lastCommand = token.toLowerCase();
+                    break;
+                    
+                case 'H':
+                case 'h':
+                    if (i >= commands.length) break;
+                    const hx = parseFloat(commands[i++]);
+                    if (token === 'h') {
+                        currentX += hx;
+                    } else {
+                        currentX = hx;
+                    }
+                    points.push({x: currentX, y: currentY, move: false});
+                    lastCommand = token.toLowerCase();
+                    break;
+                    
+                case 'V':
+                case 'v':
+                    if (i >= commands.length) break;
+                    const vy = parseFloat(commands[i++]);
+                    if (token === 'v') {
+                        currentY += vy;
+                    } else {
+                        currentY = vy;
+                    }
+                    points.push({x: currentX, y: currentY, move: false});
+                    lastCommand = token.toLowerCase();
+                    break;
+                    
+                case 'C':
+                case 'c':
+                    if (i + 5 >= commands.length) break;
+                    const cx1 = parseFloat(commands[i++]);
+                    const cy1 = parseFloat(commands[i++]);
+                    const cx2 = parseFloat(commands[i++]);
+                    const cy2 = parseFloat(commands[i++]);
+                    const cx = parseFloat(commands[i++]);
+                    const cy = parseFloat(commands[i++]);
+                    
+                    let x0 = currentX, y0 = currentY;
+                    let x1, y1, x2, y2, x3, y3;
+                    
+                    if (token === 'c') {
+                        x1 = x0 + cx1; y1 = y0 + cy1;
+                        x2 = x0 + cx2; y2 = y0 + cy2;
+                        x3 = x0 + cx; y3 = y0 + cy;
+                    } else {
+                        x1 = cx1; y1 = cy1;
+                        x2 = cx2; y2 = cy2;
+                        x3 = cx; y3 = cy;
+                    }
+                    
+                    // Аппроксимируем кривую Безье
+                    const steps = 20;
+                    for (let s = 1; s <= steps; s++) {
+                        const t = s / steps;
+                        const mt = 1 - t;
+                        const x = mt * mt * mt * x0 + 3 * mt * mt * t * x1 + 3 * mt * t * t * x2 + t * t * t * x3;
+                        const y = mt * mt * mt * y0 + 3 * mt * mt * t * y1 + 3 * mt * t * t * y2 + t * t * t * y3;
+                        points.push({x: x, y: y, move: false});
+                    }
+                    
+                    currentX = x3;
+                    currentY = y3;
+                    lastCommand = token.toLowerCase();
+                    break;
+                    
+                case 'A':
+                case 'a':
+                    if (i + 6 >= commands.length) break;
+                    const rx = parseFloat(commands[i++]);
+                    const ry = parseFloat(commands[i++]);
+                    const xAxisRotation = parseFloat(commands[i++]);
+                    const largeArcFlag = parseFloat(commands[i++]);
+                    const sweepFlag = parseFloat(commands[i++]);
+                    const ax = parseFloat(commands[i++]);
+                    const ay = parseFloat(commands[i++]);
+                    
+                    let endX, endY;
+                    if (token === 'a') {
+                        endX = currentX + ax;
+                        endY = currentY + ay;
+                    } else {
+                        endX = ax;
+                        endY = ay;
+                    }
+                    
+                    // Упрощенная аппроксимация дуги
+                    const arcSteps = 20;
+                    const startAngle = Math.atan2(currentY - (currentY + endY) / 2, currentX - (currentX + endX) / 2);
+                    const endAngle = Math.atan2(endY - (currentY + endY) / 2, endX - (currentX + endX) / 2);
+                    
+                    for (let s = 1; s <= arcSteps; s++) {
+                        const t = s / arcSteps;
+                        const angle = startAngle + (endAngle - startAngle) * t;
+                        const x = (currentX + endX) / 2 + Math.abs(rx) * Math.cos(angle);
+                        const y = (currentY + endY) / 2 + Math.abs(ry) * Math.sin(angle);
+                        points.push({x: x, y: y, move: false});
+                    }
+                    
+                    currentX = endX;
+                    currentY = endY;
+                    lastCommand = token.toLowerCase();
+                    break;
+                    
+                case 'Z':
+                case 'z':
+                    points.push({x: startX, y: startY, move: false});
+                    currentX = startX;
+                    currentY = startY;
+                    break;
+            }
+        } else {
+            // Если это не команда, значит продолжаем предыдущую команду
+            if (lastCommand === 'm') lastCommand = 'l';
+            else if (lastCommand === 'M') lastCommand = 'L';
+            
+            if (lastCommand) {
+                commands.splice(i, 0, lastCommand);
+            } else {
+                i++;
+            }
+        }
     }
+    
+    return points;
+}
 
     getDisplayPaths() {
         return this.getGcodePaths();
@@ -5506,6 +5682,7 @@ function generateGCode(textElements, svgElements, qrElements, penStartX, penStar
         gcode.push('M280 P0 S30.00');
         gcode.push('G4 P' + pauseTime);
         gcode.push('G1 X' + penStartX.toFixed(2) + ' Y' + penStartY.toFixed(2) + ' F' + travelSpeed);
+		gcode.push('G4 P' + pauseTime);
         gcode.push('M2');
         return gcode.join('\n');
     }
