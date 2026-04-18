@@ -269,7 +269,6 @@
 <div class="panel">
     <h3>Изображение</h3>
     
-    <!-- Поля для ввода размеров в мм -->
     <div style="margin: 10px 0;">
         <div style="display: flex; gap: 10px; margin-bottom: 10px;">
             <div style="flex: 1;">
@@ -292,23 +291,38 @@
         210/<br>297
     </span>
     </div>
-        <!-- Отображение в пикселях -->
+
         <div style="font-size: 11px; color: #888; text-align: center; margin-bottom: 5px; margin-top: 3px;">
             В px: <span id="pixelSizeDisplay">794×1123</span>
         </div>
         
-        <!-- Кнопка создания подложки -->
-        <button id="createBackgroundBtn" style="width: 100%; margin-bottom: 10px;">Создать подложку</button>
+        <button id="createBackgroundBtn" style="width: 100%; margin-bottom: 10px;">Обновить лист</button>
     </div>
     
-    <!-- Кнопка загрузки фото -->
     <button id="loadImageBtn">Загрузить фото</button>
 	<div id="imageControls" style="display: none;">
 <div id="loadedImageInfo" style="font-size: 11px; text-align: center; margin: 5px 0;">	
     <div style="color: #4dabf7;">Фото: <span id="loadedImageSizeDisplay">-</span></div>
     <div id="loadedImageDpiInfo" style="color: #888; font-size: 10px; margin-top: 2px;"></div>
 </div>
-    
+    <div style="margin: 10px 0; padding: 10px; background: #2a2a2a; border-radius: 5px;">
+        
+        
+        <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+		<label style="flex: 1;display: block; margin-bottom: 5px; color: #4dabf7;">Размер фото:</label>
+            <input type="number" id="photoSizePercent" value="90" min="10" max="500" step="1" 
+                   style="width: 100%;flex: 1; padding: 5px; border-radius: 3px; border: 1px solid #444; background: #222; color: white;">
+            <span style="color: white; line-height: 30px;">%</span>
+        </div>
+        
+        <input type="range" id="photoSizeSlider" min="10" max="500" value="90" step="1"
+               style="width: 100%; margin: 5px 0;">
+        
+        <div style="display: flex; gap: 5px; margin-top: 10px;">
+            <button id="fitPhotoToCanvas" style="flex: 1; padding: 5px; font-size: 12px;">По ширине листа</button>
+        </div>
+        
+    </div>
         <button id="removeImageBtn" style="background: #dc3545;">Удалить фото</button>
         <label style="display: block; margin: 10px 0;">Прозрачность: <span id="opacityValue">50%</span></label>
         <input type="range" id="opacitySlider" min="1" max="100" value="50">
@@ -377,11 +391,7 @@
             <div class="canvas-container" id="canvasContainer">
                 <svg id="svg-canvas"></svg>
                 
-                <div id="noImage" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
-                    <div style="font-size: 48px; margin-bottom: 20px;">🖼️</div>
-                    <h3>Загрузите изображение</h3>
-                    <p>Начните с загрузки фотографии как подложки</p>
-                </div>
+
                 
                 <div class="zoom-controls">
                     <button class="zoom-btn" id="zoomOut">-</button>
@@ -402,89 +412,92 @@
     
     <script>
         class VectorEditor {
-    constructor() {
-        // Состояние редактора
-        this.state = {
-            currentTool: 'select',
-            isDrawing: false,
-            currentElement: null,
-            startPoint: {x: 0, y: 0},
-            image: null,
-            imageUrl: null,
-            zoom: 1,
-            viewBox: {x: 0, y: 0, width: 1000, height: 1000},
-            strokeColor: '#4dabf7',
-            strokeWidth: 3,
-            smoothing: 5,
-            penPoints: [],
-            pushRadius: 20,
-			pushStrength: 0.5,
-			pushSmooth: true,
-			imageForDisplay: null, 
-			pushPoints: [], // Точки, которые сдвигаем
-			originalPoints: [], // Исходные позиции точек
-			pushStart: {x: 0, y: 0}, // Начальная позиция мыши при сдвиге
-			eraserSize: 20,
-            isMoving: false,
-            moveStart: {x: 0, y: 0},
-            viewBoxStart: {x: 0, y: 0, width: 0, height: 0},
-			eraserPoints: [],
-			bezierSelectedPoint: null, // Выделенная точка Безье
-            bezierPoints: [],
-            bezierVectors: [],
-			originalImageRatio: 1,
-            
-            // Флаги для перетаскивания
-            isDraggingPoint: false,
-            draggingPointIndex: null,
-            draggingPointStartX: 0,
-            draggingPointStartY: 0,
-            draggingPointOriginalX: 0,
-            draggingPointOriginalY: 0,
-            
-            isDraggingControl: false,
-            draggingControlVectorIndex: null,
-            draggingControlType: null,
-            draggingControlStartX: 0,
-            draggingControlStartY: 0,
-            draggingControlOriginalX: 0,
-            draggingControlOriginalY: 0,
-			lastBezierDirection: null, // Последнее направление касательной
-			lastBezierLength: null    // Последняя длина касательной
-        };
-		this.snapSettings = {
-			enabled: true,
-			snapDistance: 10,
-			blackThreshold: 50,
-			searchRadius: 15,
-			continueVector: true 
-		};
-
-		this.lastTool = null;
-		
-		this.setupHotkeys();
-		this.pushData = null;
-				this.pushUpdateQueue = [];
-				this.isPushUpdatePending = false;
-				this.pathCache = new Map();
-				this.lastPushUpdate = 0;
-				this.lastEraseTime = null; 
-				this.lastErasePoint = null; 
-				this.imageCanvasCache = null;
-				this.imageDataCache = null;
-				this.init();
-				this.setupCursorRestore();
-				this.history = {
-					snapshots: [],      // Снимки SVG
-					index: -1,          // Текущий индекс
-					max: 10             // Максимум 10 состояний
-				};
-				
-				this.setupSimpleUndoRedo();
-				this.lastSave = 0;
-			}
-			
-
+constructor() {
+    // Состояние редактора
+    this.state = {
+        currentTool: 'select',
+        isDrawing: false,
+        currentElement: null,
+        startPoint: {x: 0, y: 0},
+        image: null,
+        imageUrl: null,
+        zoom: 1,
+        viewBox: {x: 0, y: 0, width: 1000, height: 1000},
+        strokeColor: '#4dabf7',
+        strokeWidth: 3,
+        smoothing: 5,
+        penPoints: [],
+        pushRadius: 20,
+        pushStrength: 0.5,
+        pushSmooth: true,
+        imageForDisplay: null,
+        eraserSize: 20,
+        isMoving: false,
+        moveStart: {x: 0, y: 0},
+        viewBoxStart: {x: 0, y: 0, width: 0, height: 0},
+        bezierSelectedPoint: null,
+        bezierPoints: [],
+        bezierVectors: [],
+        originalImageRatio: 1,
+        photoScale: 1,
+        originalPhotoWidth: 0,
+        originalPhotoHeight: 0,
+        isDraggingPhoto: false,
+        draggingPhotoElement: null,
+        photoDragStartX: 0,
+        photoDragStartY: 0,
+        photoStartX: 0,
+        photoStartY: 0,
+        worksheetImage: null,
+        worksheetUrl: null,
+        isDraggingPoint: false,
+        draggingPointIndex: null,
+        draggingPointStartX: 0,
+        draggingPointStartY: 0,
+        draggingPointOriginalX: 0,
+        draggingPointOriginalY: 0,
+        lastBezierDirection: null,
+        lastBezierLength: null,
+        isDraggingElement: false,
+        draggingElement: null,
+        draggingStartMouseX: 0,
+        draggingStartMouseY: 0,
+        draggingStartElementX: 0,
+        draggingStartElementY: 0
+    };
+    
+    this.snapSettings = {
+        enabled: true,
+        snapDistance: 10,
+        whiteThreshold: 200,
+        searchRadius: 15,
+        continueVector: true
+    };
+    
+    this.worksheetLayer = null;
+    this.photoLayer = null;
+    this.vectorLayer = null;
+    this.helperLayer = null;
+    this.lastTool = null;
+    this.pushData = null;
+    this.pathCache = new Map();
+    this.lastEraseTime = null;
+    this.lastErasePoint = null;
+    this.imageCanvasCache = null;
+    this.imageDataCache = null;
+    
+    this.history = {
+        snapshots: [],
+        index: -1,
+        max: 10
+    };
+    
+    this.lastSave = 0;
+    
+    this.setupHotkeys();
+    this.init();
+    this.setupSimpleUndoRedo();
+}			
 		// ВИЗУАЛЬНЫЙ ИНДИКАТОР ЛАСТИКА
 		showEraserIndicator(x, y, radius) {
 			let indicator = document.getElementById('eraser-indicator');
@@ -510,11 +523,7 @@
 			indicator.setAttribute('cy', y);
 			indicator.setAttribute('r', radius);
 			indicator.style.display = 'block';
-			
-			// УБИРАЕМ анимацию пульсации, которая может вызывать остатки
 			indicator.style.animation = 'none';
-			
-			// Устанавливаем z-index для гарантии, что индикатор будет поверх
 			indicator.style.zIndex = '9999';
 		}
 
@@ -522,22 +531,40 @@
 		hideEraserIndicator() {
 			const indicator = document.getElementById('eraser-indicator');
 			if (indicator) {
-				// Полностью скрываем индикатор
 				indicator.style.display = 'none';
-				
-				// Очищаем координаты чтобы точно не было остатков
 				indicator.setAttribute('cx', '-100');
 				indicator.setAttribute('cy', '-100');
 			}
 		}
 				 
 		init() {
-			// Инициализация SVG
-			this.svg = document.getElementById('svg-canvas');
-			this.svg.setAttribute('width', '100%');
-			this.svg.setAttribute('height', '100%');
-			this.svg.setAttribute('viewBox', '0 0 1000 1000');
-			this.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    // Инициализация SVG
+    this.svg = document.getElementById('svg-canvas');
+    this.svg.setAttribute('width', '100%');
+    this.svg.setAttribute('height', '100%');
+    this.svg.setAttribute('viewBox', '0 0 1000 1000');
+    this.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
+    // 1. Слой подложки (рабочий лист)
+    this.worksheetLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    this.worksheetLayer.id = 'worksheet-layer';
+    this.svg.appendChild(this.worksheetLayer);
+    
+    // 2. Слой фото
+    this.photoLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    this.photoLayer.id = 'photo-layer';
+    this.photoLayer.style.pointerEvents = 'visible'; // ВАЖНО: слой реагирует на события
+    this.svg.appendChild(this.photoLayer);
+    
+    // 3. Слой векторов (сюда будут добавляться все линии, пути и т.д.)
+    this.vectorLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    this.vectorLayer.id = 'vector-layer';
+    this.svg.appendChild(this.vectorLayer);
+    
+    // 4. Слой для вспомогательных элементов (точки Безье, направляющие)
+    this.helperLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    this.helperLayer.id = 'helper-layer';
+    this.svg.appendChild(this.helperLayer);
 			document.getElementById('dpiInput').oninput = () => {
 					this.updatePixelDisplay();
 				if (this.state.image) {
@@ -598,50 +625,8 @@
 			document.getElementById('createBackgroundBtn').onclick = () => this.createBackgroundFromInput();
 			this.setupToolToggle();
 
-			setTimeout(() => {
-				this.initHistory();
-			}, 1000);
 			
 		}
-// Метод для сохранения состояния ВСЕХ элементов
-captureFullState() {
-    const state = {
-        timestamp: Date.now(),
-        // Сохраняем только outerHTML элементов
-        svgContent: this.svg.innerHTML,
-        // Сохраняем состояние Безье отдельно
-        bezierPoints: JSON.parse(JSON.stringify(this.state.bezierPoints)),
-        bezierVectors: JSON.parse(JSON.stringify(this.state.bezierVectors))
-    };
-    return state;
-}
-
-// Метод для получения ВСЕХ векторных элементов
-getAllVectorElements() {
-    return Array.from(this.svg.querySelectorAll('path, line, rect, circle, ellipse'))
-        .filter(el => {
-            // Исключаем временные элементы
-            if (el.id && (el.id.includes('indicator') || el.id.includes('background'))) {
-                return false;
-            }
-            if (el.classList && (
-                el.classList.contains('bezier-guide-line') ||
-                el.classList.contains('bezier-control-point') ||
-                el.classList.contains('bezier-point')
-            )) {
-                return false;
-            }
-            return true;
-        });
-}
-
-
-
-
-statesAreEqual(state1, state2) {
-    // Простая проверка по timestamp и содержимому SVG
-    return state1.svgContent === state2.svgContent;
-}
 
 setupSimpleUndoRedo() {
     // Назначаем кнопки
@@ -757,21 +742,13 @@ restoreSnapshot() {
     console.log('Восстанавливаем снимок #' + this.history.index);
     
     try {
-        // Сохраняем текущее изображение
         const currentImage = document.getElementById('background-image');
         const imageHTML = currentImage ? currentImage.outerHTML : '';
-        
-        // Восстанавливаем SVG
         this.svg.innerHTML = snapshot;
-        
-        // Добавляем изображение обратно, если оно было
         if (imageHTML && !this.svg.querySelector('#background-image')) {
             this.svg.insertAdjacentHTML('afterbegin', imageHTML);
         }
-        
-        // Обновляем кнопки СРАЗУ
-        this.updateUndoRedoButtons();
-        
+        this.updateUndoRedoButtons();  
         console.log('✅ Снимок восстановлен');
     } catch (error) {
         console.error('Ошибка при восстановлении снимка:', error);
@@ -780,6 +757,7 @@ restoreSnapshot() {
 
 // 5. Обновление кнопок
 updateUndoRedoButtons() {
+
     const undoBtn = document.getElementById('undoBtn');
     const redoBtn = document.getElementById('redoBtn');
     
@@ -795,112 +773,12 @@ updateUndoRedoButtons() {
     
     undoBtn.disabled = !canUndo;
     redoBtn.disabled = !canRedo;
-    
-    // Визуальные стили
+
     undoBtn.style.opacity = canUndo ? '1' : '0.3';
     redoBtn.style.opacity = canRedo ? '1' : '0.3';
-    
-    // Добавить title для информации
+
     undoBtn.title = canUndo ? 'Отменить (Ctrl+Z)' : 'Нечего отменять';
     redoBtn.title = canRedo ? 'Вернуть (Ctrl+Shift+Z)' : 'Нечего возвращать';
-}
-
-restoreState(index) {
-    if (!this.history.actions[index]) return;
-    
-    const state = this.history.actions[index];
-    
-    console.log('Восстанавливаем состояние:', index, state);
-    
-    // ВАЖНО: Восстанавливаем ВСЁ содержимое SVG
-    if (state.svgContent) {
-        // Сохраняем текущее изображение если оно есть
-        const currentImage = document.getElementById('background-image');
-        let imageHTML = '';
-        if (currentImage) {
-            imageHTML = currentImage.outerHTML;
-        }
-        
-        // Очищаем SVG
-        this.svg.innerHTML = '';
-        
-        // Восстанавливаем содержимое
-        this.svg.innerHTML = state.svgContent;
-        
-        // Убедимся, что изображение восстановлено (или добавим его)
-        if (imageHTML && !this.svg.querySelector('#background-image')) {
-            this.svg.insertAdjacentHTML('afterbegin', imageHTML);
-        }
-    }
-    
-    // Восстанавливаем состояние Безье
-    if (state.bezierPoints && state.bezierVectors) {
-        this.state.bezierPoints = JSON.parse(JSON.stringify(state.bezierPoints));
-        this.state.bezierVectors = JSON.parse(JSON.stringify(state.bezierVectors));
-        
-        // Перепривязываем элементы Безье
-        this.restoreBezierElements();
-    }
-    
-    // Обновляем кнопки
-    this.updateUndoRedoButtons();
-}
-
-restoreBezierElements() {
-    // Удаляем только старые элементы управления Безье (если есть)
-    const oldElements = this.svg.querySelectorAll('.bezier-guide-line, .bezier-control-point, .bezier-point');
-    oldElements.forEach(el => {
-        if (el.parentNode) el.parentNode.removeChild(el);
-    });
-    
-    // Восстанавливаем точки только если их нет
-    this.state.bezierPoints.forEach(point => {
-        if (point.x !== undefined && point.y !== undefined) {
-            // Проверяем, существует ли уже такая точка
-            const existingPoint = this.svg.querySelector(`.bezier-point[data-index="${point.index}"]`);
-            if (!existingPoint) {
-                point.element = this.createBezierPointElement(point);
-                this.svg.appendChild(point.element);
-            } else {
-                point.element = existingPoint;
-            }
-        }
-    });
-    
-    // Восстанавливаем векторы только если их нет
-    this.state.bezierVectors.forEach(vector => {
-        const fromPoint = this.state.bezierPoints[vector.from];
-        const toPoint = this.state.bezierPoints[vector.to];
-        
-        if (fromPoint && toPoint) {
-            // Проверяем, существует ли уже такой путь
-            const existingPath = this.svg.querySelector(`.bezier-vector[data-vector-id="${vector.from}-${vector.to}"]`);
-            if (!existingPath) {
-                // Создаем путь
-                vector.path = this.createBezierPath(
-                    fromPoint.x, fromPoint.y,
-                    vector.control1.x, vector.control1.y,
-                    vector.control2.x, vector.control2.y,
-                    toPoint.x, toPoint.y
-                );
-                vector.path.setAttribute('data-vector-id', `${vector.from}-${vector.to}`);
-                this.svg.appendChild(vector.path);
-                
-                // Создаем направляющие
-                this.createVectorGuides(vector, fromPoint, toPoint);
-            } else {
-                vector.path = existingPath;
-            }
-        }
-    });
-}
-
-updateUndoRedoButtons() {
-    const undoBtn = document.getElementById('undoBtn');
-    const redoBtn = document.getElementById('redoBtn');
-    
-    undoBtn.disabled = this.history.currentIndex <= 0;
-    redoBtn.disabled = this.history.currentIndex >= this.history.actions.length - 1;
 }
 
 setupHotkeys() {
@@ -1008,10 +886,7 @@ updateAspectRatioDisplay(width, height) {
     if (!ratioDisplay) return;
 	
     this.state.originalImageRatio = width / height;
-    // Упрощаем соотношение
     const simplified = this.simplifyRatio(width, height);
-    
-    // Обновляем отображение
     ratioDisplay.innerHTML = `${simplified.replace(':', '/<br>')}`;
     ratioDisplay.title = `Соотношение сторон: ${(width/height).toFixed(3)}`;
     
@@ -1019,7 +894,6 @@ updateAspectRatioDisplay(width, height) {
 
 updateSizeWithAspectRatio(changedField, value) {
     if (!this.state.image || !this.state.originalImageRatio) {
-        // Если нет фото, просто обновляем отображение
         this.updatePixelDisplay();
         return;
     }
@@ -1029,7 +903,6 @@ updateSizeWithAspectRatio(changedField, value) {
     const heightInput = document.getElementById('mmHeight');
     
     if (!keepRatio) {
-        // Если не сохранять пропорции - просто обновляем
         this.updatePixelDisplay();
         return;
     }
@@ -1039,19 +912,15 @@ updateSizeWithAspectRatio(changedField, value) {
         if (isNaN(newValue) || newValue <= 0) return;
         
         if (changedField === 'width') {
-            // Изменили ширину - пересчитываем высоту
             const newHeight = Math.round(newValue / this.state.originalImageRatio);
             heightInput.value = newHeight;
         } else {
-            // Изменили высоту - пересчитываем ширину
             const newWidth = Math.round(newValue * this.state.originalImageRatio);
             widthInput.value = newWidth;
         }
-        
-        // Обновляем отображение пикселей
+
         this.updatePixelDisplay();
-        
-        // Если есть подложка - обновляем её
+
         this.updateBackgroundSize();
         
     } catch (error) {
@@ -1090,20 +959,45 @@ updateSizeWithAspectRatio(changedField, value) {
 		}
 
            setupEventListeners() {
-				document.getElementById('keepAspectRatio').addEventListener('change', (e) => {
-					if (e.target.checked && this.state.image && this.state.originalImageRatio) {
-						// Если включили сохранение пропорций - пересчитываем размеры
-						const widthInput = document.getElementById('mmWidth');
-						const currentWidth = parseFloat(widthInput.value) || 210;
+				    // Управление размером фото
+    const photoSizeSlider = document.getElementById('photoSizeSlider');
+    const photoSizePercent = document.getElementById('photoSizePercent');
+    
+    if (photoSizeSlider) {
+        photoSizeSlider.oninput = (e) => {
+            const value = parseInt(e.target.value);
+            if (photoSizePercent) photoSizePercent.value = value;
+            this.scalePhotoByWidthPercent(value);
+        };
+    }
+    
+    if (photoSizePercent) {
+        photoSizePercent.oninput = (e) => {
+            let value = parseInt(e.target.value);
+            value = Math.min(500, Math.max(10, value));
+            if (photoSizeSlider) photoSizeSlider.value = value;
+            this.scalePhotoByWidthPercent(value);
+        };
+    }
+    
+    document.getElementById('fitPhotoToCanvas')?.addEventListener('click', () => {
+        this.fitPhotoToCanvas();
+    });
+    
+				this.svg.addEventListener('wheel', (e) => {
+					if (e.ctrlKey && this.state.image) {
+						e.preventDefault();
 						
-						// Пересчитываем высоту на основе текущей ширины
-						const newHeight = Math.round(currentWidth / this.state.originalImageRatio);
-						document.getElementById('mmHeight').value = newHeight;
-						
-						this.updatePixelDisplay();
-						this.updateBackgroundSize();
+						const delta = e.deltaY > 0 ? 0.95 : 1.05;
+						const newScale = this.state.photoScale * delta;
+
+						if (newScale >= 0.1 && newScale <= 5.0) {
+							this.scalePhoto(newScale);
+						}
 					}
-				});
+				}, { passive: false });
+				// Кнопки управления фото
+
                 // Загрузка изображения
                 document.getElementById('loadImageBtn').onclick = () => {
                     document.getElementById('imageInput').click();
@@ -1135,10 +1029,10 @@ updateSizeWithAspectRatio(changedField, value) {
                     this.state.strokeWidth = parseInt(e.target.value);
                     document.getElementById('widthValue').textContent = e.target.value;
                 };
-document.getElementById('eraserSizeSlider').oninput = (e) => {
-    this.state.eraserSize = parseInt(e.target.value);
-    document.getElementById('eraserSizeValue').textContent = e.target.value;
-};
+				document.getElementById('eraserSizeSlider').oninput = (e) => {
+					this.state.eraserSize = parseInt(e.target.value);
+					document.getElementById('eraserSizeValue').textContent = e.target.value;
+				};
 
                 // Сглаживание пера
                 document.getElementById('smoothSlider').oninput = (e) => {
@@ -1147,13 +1041,13 @@ document.getElementById('eraserSizeSlider').oninput = (e) => {
                 };
                 
                 // Прозрачность изображения
-                document.getElementById('opacitySlider').oninput = (e) => {
-                    const imageElement = document.getElementById('background-image');
-                    if (imageElement) {
-                        imageElement.style.opacity = e.target.value / 100;
-                        document.getElementById('opacityValue').textContent = e.target.value + '%';
-                    }
-                };
+				document.getElementById('opacitySlider').oninput = (e) => {
+					const photoElement = document.getElementById('photo-overlay');
+					if (photoElement) {
+						photoElement.style.opacity = e.target.value / 100;
+						document.getElementById('opacityValue').textContent = e.target.value + '%';
+					}
+				};
                 
                 // Зум
                 document.getElementById('zoomIn').onclick = () => this.zoomIn();
@@ -1169,9 +1063,15 @@ document.getElementById('eraserSizeSlider').oninput = (e) => {
                     this.onMouseMove(e);
                     this.updateCoordinates(e);
                 };
-                this.svg.onmouseup = () => this.onMouseUp();
-                this.svg.onmouseleave = () => this.onMouseLeave();
-                
+                this.svg.onmouseup = (e) => this.onMouseUp();
+                this.svg.onmouseleave = (e) => this.onMouseLeave();
+				document.addEventListener('mouseup', (e) => {
+					// Проверяем, не обработано ли уже событие в onMouseUp
+					if (this.state.isDraggingPhoto || this.state.isDraggingElement || this.state.isMoving) {
+						console.log('Глобальный mouseup - дублируем завершение');
+						this.onMouseUp();
+					}
+				});
                 // Зум колесиком
 				document.getElementById('canvasContainer').onwheel = (e) => {
 					e.preventDefault(); // Предотвращаем стандартную прокрутку
@@ -1188,9 +1088,9 @@ document.getElementById('eraserSizeSlider').oninput = (e) => {
 				sidebar.insertBefore(snapPanel, propertiesPanel.nextSibling);
 				
 				// Обработчики для новых элементов
-document.getElementById('continueVectorToggle').onchange = (e) => {
-    this.snapSettings.continueVector = e.target.checked;
-};
+				document.getElementById('continueVectorToggle').onchange = (e) => {
+					this.snapSettings.continueVector = e.target.checked;
+				};
 				
 				document.getElementById('blackSnapToggle').onchange = (e) => {
 					this.snapSettings.enabled = e.target.checked;
@@ -1218,6 +1118,131 @@ document.getElementById('continueVectorToggle').onchange = (e) => {
 							
             }
 
+scalePhoto(scale) {
+    const photoElement = document.getElementById('photo-overlay');
+    if (!photoElement || !this.state.image) return;
+    this.state.photoScale = scale;
+
+    const originalWidth = this.state.originalPhotoWidth || this.state.image.width;
+    const originalHeight = this.state.originalPhotoHeight || this.state.image.height;
+    const newWidth = originalWidth * scale;
+    const newHeight = originalHeight * scale;
+    const currentX = parseFloat(photoElement.getAttribute('x')) || 0;
+    const currentY = parseFloat(photoElement.getAttribute('y')) || 0;
+    const currentWidth = parseFloat(photoElement.getAttribute('width')) || newWidth;
+    const currentHeight = parseFloat(photoElement.getAttribute('height')) || newHeight;
+    const centerX = currentX + currentWidth / 2;
+    const centerY = currentY + currentHeight / 2;
+    const newX = centerX - newWidth / 2;
+    const newY = centerY - newHeight / 2;
+    photoElement.setAttribute('width', newWidth);
+    photoElement.setAttribute('height', newHeight);
+    photoElement.setAttribute('x', newX);
+    photoElement.setAttribute('y', newY);
+    
+    this.updatePhotoScaleDisplay();
+    
+    console.log('Фото масштабировано:', scale * 100 + '%', 'Размер:', newWidth, 'x', newHeight);
+}
+
+scalePhotoByWidthPercent(percent) {
+    const photoElement = document.getElementById('photo-overlay');
+    if (!photoElement || !this.state.image) return;
+
+    const worksheetElement = document.getElementById('worksheet-background');
+    const worksheetWidth = worksheetElement ? 
+        parseFloat(worksheetElement.getAttribute('width')) : 1000;
+
+    const targetWidth = worksheetWidth * (percent / 100);
+
+    const originalWidth = this.state.originalPhotoWidth || this.state.image.width;
+    const originalHeight = this.state.originalPhotoHeight || this.state.image.height;
+    
+    const scale = targetWidth / originalWidth;
+    this.state.photoScale = scale;
+
+    const newWidth = originalWidth * scale;
+    const newHeight = originalHeight * scale;
+
+    const currentX = parseFloat(photoElement.getAttribute('x')) || 0;
+    const currentY = parseFloat(photoElement.getAttribute('y')) || 0;
+    const currentWidth = parseFloat(photoElement.getAttribute('width')) || newWidth;
+    const currentHeight = parseFloat(photoElement.getAttribute('height')) || newHeight;
+    
+    const centerX = currentX + currentWidth / 2;
+    const centerY = currentY + currentHeight / 2;
+
+    const newX = centerX - newWidth / 2;
+    const newY = centerY - newHeight / 2;
+
+    photoElement.setAttribute('width', newWidth);
+    photoElement.setAttribute('height', newHeight);
+    photoElement.setAttribute('x', newX);
+    photoElement.setAttribute('y', newY);
+
+    this.updatePhotoSizeDisplay();
+}
+
+fitPhotoToCanvas() {
+    const photoElement = document.getElementById('photo-overlay');
+    if (!photoElement || !this.state.image) return;
+
+    const worksheetElement = document.getElementById('worksheet-background');
+    const worksheetWidth = worksheetElement ? 
+        parseFloat(worksheetElement.getAttribute('width')) : 1000;
+    
+    const img = this.state.image;
+
+    const scale = worksheetWidth / img.width;
+    this.state.photoScale = scale;
+    
+    const newWidth = img.width * scale;
+    const newHeight = img.height * scale;
+
+    const viewBoxSize = 1000;
+    const newX = (viewBoxSize - newWidth) / 2;
+    const newY = (viewBoxSize - newHeight) / 2;
+    
+    photoElement.setAttribute('width', newWidth);
+    photoElement.setAttribute('height', newHeight);
+    photoElement.setAttribute('x', newX);
+    photoElement.setAttribute('y', newY);
+
+    const percent = Math.round((newWidth / worksheetWidth) * 100);
+    this.updatePhotoSizeDisplay(percent);
+}
+
+updatePhotoSizeDisplay(percent = null) {
+    if (percent === null) {
+
+        const photoElement = document.getElementById('photo-overlay');
+        const worksheetElement = document.getElementById('worksheet-background');
+        
+        if (photoElement && worksheetElement) {
+            const photoWidth = parseFloat(photoElement.getAttribute('width')) || 0;
+            const worksheetWidth = parseFloat(worksheetElement.getAttribute('width')) || 1000;
+            percent = Math.round((photoWidth / worksheetWidth) * 100);
+        } else {
+            percent = 90;
+        }
+    }
+    
+    const slider = document.getElementById('photoSizeSlider');
+    const input = document.getElementById('photoSizePercent');
+    
+    if (slider) slider.value = percent;
+    if (input) input.value = percent;
+}
+
+updatePhotoScaleDisplay() {
+    const percent = Math.round(this.state.photoScale * 100);
+    
+    const slider = document.getElementById('photoScaleSlider');
+    const input = document.getElementById('photoScalePercent');
+    
+    if (slider) slider.value = percent;
+    if (input) input.value = percent;
+}
 setupCursorRestore() {
     // При движении мыши по всему документу
     document.addEventListener('mousemove', (e) => {
@@ -1444,12 +1469,10 @@ startPanning(e) {
     
 doPanning(e) {
     if (!this.state.isMoving) return;
-    
-    // Простой расчет смещения
+
     const dx = e.clientX - this.state.moveStart.x;
     const dy = e.clientY - this.state.moveStart.y;
-    
-    // Масштабируем смещение относительно размера viewBox
+
     const scaleX = this.state.viewBox.width / this.svg.clientWidth;
     const scaleY = this.state.viewBox.height / this.svg.clientHeight;
     
@@ -1460,34 +1483,190 @@ doPanning(e) {
         `${this.state.viewBox.x} ${this.state.viewBox.y} ${this.state.viewBox.width} ${this.state.viewBox.height}`
     );
 }
+
+startElementDrag(e, element) {
+    const coords = this.getSVGCoordinates(e);
     
-stopPanning() {
-    this.state.isMoving = false;
-    // Возвращаем курсор в зависимости от инструмента
+    this.state.isDraggingElement = true;
+    this.state.draggingElement = element;
+    this.state.draggingStartMouseX = coords.x;
+    this.state.draggingStartMouseY = coords.y;
+    
+    const tag = element.tagName.toLowerCase();
+    
+    if (tag === 'image') {
+        const x = parseFloat(element.getAttribute('x'));
+        const y = parseFloat(element.getAttribute('y'));
+        
+        // Если x или y не заданы (NaN), устанавливаем 0
+        this.state.draggingStartElementX = isNaN(x) ? 0 : x;
+        this.state.draggingStartElementY = isNaN(y) ? 0 : y;
+        
+        console.log('Фото: начальная позиция', this.state.draggingStartElementX, this.state.draggingStartElementY);
+    } else if (tag === 'line') {
+        this.state.draggingStartElementX = parseFloat(element.getAttribute('x1')) || 0;
+        this.state.draggingStartElementY = parseFloat(element.getAttribute('y1')) || 0;
+    } else {
+        this.state.draggingStartElementX = parseFloat(element.getAttribute('x')) || 
+                                           parseFloat(element.getAttribute('cx')) || 0;
+        this.state.draggingStartElementY = parseFloat(element.getAttribute('y')) || 
+                                           parseFloat(element.getAttribute('cy')) || 0;
+    }
+    
+    this.svg.style.cursor = 'grabbing';
+}
+
+doElementDrag(e) {
+    if (!this.state.isDraggingElement || !this.state.draggingElement) return;
+    
+    const coords = this.getSVGCoordinates(e);
+    const dx = coords.x - this.state.draggingStartMouseX;
+    const dy = coords.y - this.state.draggingStartMouseY;
+    
+    const element = this.state.draggingElement;
+    const tag = element.tagName.toLowerCase();
+    
+    if (tag === 'image') {
+
+        const newX = this.state.draggingStartElementX + dx;
+        const newY = this.state.draggingStartElementY + dy;
+
+        element.setAttribute('x', newX);
+        element.setAttribute('y', newY);
+        
+        console.log('Фото перемещено в:', newX, newY);
+
+    } else {
+        const newX = this.state.draggingStartElementX + dx;
+        const newY = this.state.draggingStartElementY + dy;
+        
+        switch(tag) {
+            case 'line':
+                const x1 = parseFloat(element.getAttribute('x1')) || 0;
+                const y1 = parseFloat(element.getAttribute('y1')) || 0;
+                const x2 = parseFloat(element.getAttribute('x2')) || 0;
+                const y2 = parseFloat(element.getAttribute('y2')) || 0;
+                
+                element.setAttribute('x1', x1 + dx);
+                element.setAttribute('y1', y1 + dy);
+                element.setAttribute('x2', x2 + dx);
+                element.setAttribute('y2', y2 + dy);
+                
+                this.state.draggingStartElementX = parseFloat(element.getAttribute('x1')) || 0;
+                this.state.draggingStartElementY = parseFloat(element.getAttribute('y1')) || 0;
+                break;
+                
+            case 'rect':
+                element.setAttribute('x', newX);
+                element.setAttribute('y', newY);
+                this.state.draggingStartElementX = newX;
+                this.state.draggingStartElementY = newY;
+                break;
+                
+            case 'circle':
+            case 'ellipse':
+                element.setAttribute('cx', newX);
+                element.setAttribute('cy', newY);
+                this.state.draggingStartElementX = newX;
+                this.state.draggingStartElementY = newY;
+                break;
+                
+            case 'path':
+                const d = element.getAttribute('d');
+                if (d) {
+                    const newD = this.translatePath(d, dx, dy);
+                    element.setAttribute('d', newD);
+                }
+                break;
+        }
+    }
+    
+    this.state.draggingStartMouseX = coords.x;
+    this.state.draggingStartMouseY = coords.y;
+}
+
+stopPhotoDrag() {
+    if (!this.state.isDraggingPhoto) return;
+    
+    console.log('Остановка перетаскивания фото');
+    
+    if (this.state.draggingPhotoElement) {
+        this.state.draggingPhotoElement.style.outline = '';
+        this.state.draggingPhotoElement.style.outlineOffset = '';
+    }
+
+    this.state.isDraggingPhoto = false;
+    this.state.draggingPhotoElement = null;
+
     if (this.state.currentTool === 'select') {
         this.svg.style.cursor = 'move';
     } else {
         this.svg.style.cursor = 'crosshair';
     }
 }
-    
-            // ИЗОБРАЖЕНИЕ
 
+stopElementDrag() {
+    if (!this.state.isDraggingElement) return;
+    
+    console.log('Остановка перетаскивания элемента');
+    
+    this.state.isDraggingElement = false;
+    this.state.draggingElement = null;
+    
+    if (this.state.currentTool === 'select') {
+        this.svg.style.cursor = 'move';
+    } else {
+        this.svg.style.cursor = 'crosshair';
+    }
+}
+
+// Вспомогательный метод для сдвига пути
+translatePath(d, dx, dy) {
+    const commands = d.match(/[a-df-zA-DF-Z][^a-df-zA-DF-Z]*/g) || [];
+    let newPath = '';
+    
+    commands.forEach(cmd => {
+        const command = cmd[0];
+        const numbers = cmd.substring(1).trim().split(/[\s,]+/).map(Number);
+        let newCmd = command;
+        
+        if (command === 'Z' || command === 'z') {
+            newPath += command + ' ';
+            return;
+        }
+        
+        for (let i = 0; i < numbers.length; i += 2) {
+            if (i + 1 < numbers.length) {
+                const x = numbers[i] + dx;
+                const y = numbers[i + 1] + dy;
+                newCmd += ` ${x} ${y}`;
+            }
+        }
+        newPath += newCmd + ' ';
+    });
+    
+    return newPath.trim();
+}
+
+
+stopPanning() {
+    this.state.isMoving = false;
+    if (this.state.currentTool === 'select') {
+        this.svg.style.cursor = 'move';
+    } else {
+        this.svg.style.cursor = 'crosshair';
+    }
+}
+            // ИЗОБРАЖЕНИЕ
 addWhiteBackgroundToPNG(img) {
     return new Promise((resolve) => {
         const canvas = document.createElement('canvas');
         canvas.width = img.width;
         canvas.height = img.height;
         const ctx = canvas.getContext('2d');
-        
-        // 1. Заливаем белым фоном
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        // 2. Рисуем оригинальное изображение поверх (сохраняя прозрачность)
         ctx.drawImage(img, 0, 0);
-        
-        // 3. Создаем новое изображение с белым фоном
         const imgWithBackground = new Image();
         imgWithBackground.onload = () => {
             resolve(imgWithBackground);
@@ -1495,6 +1674,7 @@ addWhiteBackgroundToPNG(img) {
         imgWithBackground.src = canvas.toDataURL();
     });
 }
+
 loadSVG(file) {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -1553,25 +1733,21 @@ loadSVG(file) {
 
 // Новый метод для загрузки векторов с преобразованием координат
 loadVectorsToCurrentCanvas(sourceSvg, scaleX, scaleY, offsetX, offsetY) {
-    // Находим все векторные элементы в загруженном SVG
+
     const vectors = sourceSvg.querySelectorAll('path, line, rect, circle, ellipse');
     
     vectors.forEach(vector => {
         const clonedVector = vector.cloneNode(true);
         const tag = clonedVector.tagName.toLowerCase();
-        
-        // Пропускаем кривые Безье - они будут обработаны отдельно
+
         if (tag === 'path') {
             const d = clonedVector.getAttribute('d') || '';
-            // Если это кривая Безье (команда C), пропускаем обычную обработку
             if (d.includes(' C ') || d.includes(' c ') || d.startsWith('C') || d.startsWith('c')) {
-                // Обработаем кривую Безье отдельно
                 this.processBezierFromSVG(clonedVector, scaleX, scaleY, offsetX, offsetY);
                 return;
             }
         }
         
-        // Преобразуем координаты в зависимости от типа элемента
         switch(tag) {
             case 'path':
                 const d = clonedVector.getAttribute('d');
@@ -1632,7 +1808,6 @@ loadVectorsToCurrentCanvas(sourceSvg, scaleX, scaleY, offsetX, offsetY) {
                 break;
         }
         
-        // Добавляем стили если их нет
         if (!clonedVector.getAttribute('stroke')) {
             clonedVector.setAttribute('stroke', '#4dabf7');
         }
@@ -1642,39 +1817,30 @@ loadVectorsToCurrentCanvas(sourceSvg, scaleX, scaleY, offsetX, offsetY) {
         if (!clonedVector.getAttribute('fill')) {
             clonedVector.setAttribute('fill', 'none');
         }
-        
-        // Добавляем на холст
         this.svg.appendChild(clonedVector);
     });
 }
 
 parseBezierFromSVG(pathElement, scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0) {
-    // Получаем данные пути
     const d = pathElement.getAttribute('d');
     if (!d) return null;
-    
-    // Парсим команды кривой Безье
     const commands = d.split(/(?=[MCL])/);
     
     if (commands.length < 2) return null;
-    
-    // Проверяем, что это кривая Безье (команда C)
+
     const firstCmd = commands[0].trim();
     const secondCmd = commands[1].trim();
     
     if (!firstCmd.startsWith('M') || !secondCmd.startsWith('C')) {
-        return null; // Это не кривая Безье
+        return null; 
     }
-    
-    // Парсим первую точку
+
     const moveCoords = firstCmd.substring(1).trim().split(/[\s,]+/).map(Number);
     if (moveCoords.length < 2) return null;
-    
-    // Парсим кривую Безье
+
     const curveCoords = secondCmd.substring(1).trim().split(/[\s,]+/).map(Number);
     if (curveCoords.length < 6) return null;
     
-    // Применяем трансформации
     const applyTransform = (x, y) => ({
         x: x * scaleX + offsetX,
         y: y * scaleY + offsetY
@@ -1690,17 +1856,15 @@ parseBezierFromSVG(pathElement, scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0
 }
 
 processBezierFromSVG(pathElement, scaleX, scaleY, offsetX, offsetY) {
-    // Парсим кривую Безье
+
     const bezierData = this.parseBezierFromSVG(pathElement, scaleX, scaleY, offsetX, offsetY);
     if (!bezierData) {
-        // Если не удалось распарсить как кривую Безье, добавляем как обычный путь
         this.svg.appendChild(pathElement);
         return;
     }
     
     const { startPoint, control1, control2, endPoint } = bezierData;
     
-    // Создаем точки Безье
     const point1 = {
         x: startPoint.x,
         y: startPoint.y,
@@ -1714,8 +1878,6 @@ processBezierFromSVG(pathElement, scaleX, scaleY, offsetX, offsetY) {
         element: null,
         index: this.state.bezierPoints.length + 1
     };
-    
-    // Создаем визуальные элементы точек (но скрываем их до включения режима Безье)
     point1.element = this.createBezierPointElement(point1);
     point2.element = this.createBezierPointElement(point2);
     point1.element.style.display = 'none';
@@ -1724,10 +1886,8 @@ processBezierFromSVG(pathElement, scaleX, scaleY, offsetX, offsetY) {
     this.svg.appendChild(point1.element);
     this.svg.appendChild(point2.element);
     
-    // Добавляем точки в массив
     this.state.bezierPoints.push(point1, point2);
     
-    // Создаем вектор Безье
     const vector = {
         from: point1.index,
         to: point2.index,
@@ -1745,12 +1905,10 @@ processBezierFromSVG(pathElement, scaleX, scaleY, offsetX, offsetY) {
         guideElements: {}
     };
     
-    // Обновляем путь
     pathElement.setAttribute('d', 
         `M ${startPoint.x} ${startPoint.y} C ${control1.x} ${control1.y} ${control2.x} ${control2.y} ${endPoint.x} ${endPoint.y}`
     );
     
-    // Добавляем класс и стили
     pathElement.classList.add('bezier-vector');
     if (!pathElement.getAttribute('stroke')) {
         pathElement.setAttribute('stroke', this.state.strokeColor);
@@ -1763,25 +1921,20 @@ processBezierFromSVG(pathElement, scaleX, scaleY, offsetX, offsetY) {
     }
     pathElement.setAttribute('stroke-linecap', 'round');
     
-    // Добавляем на холст
     this.svg.appendChild(pathElement);
     
-    // Создаем направляющие элементы (но скрываем их)
     this.createVectorGuides(vector, point1, point2);
     
-    // Скрываем направляющие до включения режима Безье
     if (vector.guideElements.line1) vector.guideElements.line1.style.display = 'none';
     if (vector.guideElements.control1) vector.guideElements.control1.style.display = 'none';
     if (vector.guideElements.line2) vector.guideElements.line2.style.display = 'none';
     if (vector.guideElements.control2) vector.guideElements.control2.style.display = 'none';
     
-    // Добавляем вектор в массив
     this.state.bezierVectors.push(vector);
 }
 
 // Метод для преобразования координат в пути (d атрибут)
 transformPathCoordinates(d, scaleX, scaleY, offsetX, offsetY) {
-    // Парсим команды пути
     const commands = d.match(/[MLCQZmlcqz][^MLCQZmlcqz]*/g) || [];
     
     let transformedPath = '';
@@ -1795,11 +1948,9 @@ transformPathCoordinates(d, scaleX, scaleY, offsetX, offsetY) {
             return;
         }
         
-        // Разбиваем числа
         const numArray = numbers.split(/[\s,]+/).map(Number);
         let transformedNumbers = '';
         
-        // Обрабатываем пары координат
         for (let i = 0; i < numArray.length; i += 2) {
             if (i + 1 < numArray.length) {
                 const x = numArray[i] * scaleX + offsetX;
@@ -1814,130 +1965,18 @@ transformPathCoordinates(d, scaleX, scaleY, offsetX, offsetY) {
     return transformedPath.trim();
 }
 
-		// Метод для добавления кривой Безье из SVG
-addBezierFromSVG(pathElement, scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0) {
-    // Получаем данные пути
-    const d = pathElement.getAttribute('d');
-    if (!d) return null;
-    
-    // Парсим команды кривой Безье (C или c команда)
-    const commands = d.match(/[MCQZLmcqzl][^MCQZLmcqzl]*/gi) || [];
-    
-    if (commands.length < 2) return null;
-    
-    // Находим первую команду M (начальная точка)
-    let moveCmd = null;
-    let curveCmd = null;
-    
-    for (const cmd of commands) {
-        const cmdType = cmd[0].toUpperCase();
-        if (cmdType === 'M' && !moveCmd) {
-            moveCmd = cmd;
-        } else if ((cmdType === 'C' || cmdType === 'Q') && moveCmd && !curveCmd) {
-            curveCmd = cmd;
-            break;
-        }
-    }
-    
-    if (!moveCmd || !curveCmd) return null;
-    
-    // Парсим координаты из команды M
-    const moveCoords = moveCmd.substring(1).trim().split(/[\s,]+/).map(Number);
-    if (moveCoords.length < 2) return null;
-    
-    // Парсим координаты из команды C (кубическая кривая Безье)
-    const curveCoords = curveCmd.substring(1).trim().split(/[\s,]+/).map(Number);
-    if (curveCoords.length < 6) return null;
-    
-    // Применяем трансформации (масштаб и смещение)
-    const applyTransform = (x, y) => ({
-        x: x * scaleX + offsetX,
-        y: y * scaleY + offsetY
-    });
-    
-    const startPoint = applyTransform(moveCoords[0], moveCoords[1]);
-    const control1 = applyTransform(curveCoords[0], curveCoords[1]);
-    const control2 = applyTransform(curveCoords[2], curveCoords[3]);
-    const endPoint = applyTransform(curveCoords[4], curveCoords[5]);
-    
-    // Создаем точки Безье
-    const point1 = {
-        x: startPoint.x,
-        y: startPoint.y,
-        element: null,
-        index: this.state.bezierPoints.length
-    };
-    
-    const point2 = {
-        x: endPoint.x,
-        y: endPoint.y,
-        element: null,
-        index: this.state.bezierPoints.length + 1
-    };
-    
-    // Создаем визуальные элементы точек
-    point1.element = this.createBezierPointElement(point1);
-    point2.element = this.createBezierPointElement(point2);
-    
-    this.svg.appendChild(point1.element);
-    this.svg.appendChild(point2.element);
-    
-    // Добавляем точки в массив
-    this.state.bezierPoints.push(point1, point2);
-    
-    // Создаем вектор Безье
-    const vector = {
-        from: point1.index,
-        to: point2.index,
-        control1: { 
-            x: control1.x, 
-            y: control1.y, 
-            belongsTo: point1.index 
-        },
-        control2: { 
-            x: control2.x, 
-            y: control2.y, 
-            belongsTo: point2.index 
-        },
-        path: pathElement,
-        guideElements: {}
-    };
-    
-    // Обновляем путь с учетом трансформаций
-    pathElement.setAttribute('d', 
-        `M ${startPoint.x} ${startPoint.y} C ${control1.x} ${control1.y} ${control2.x} ${control2.y} ${endPoint.x} ${endPoint.y}`
-    );
-    pathElement.classList.add('bezier-vector');
-    pathElement.setAttribute('stroke', this.state.strokeColor);
-    pathElement.setAttribute('stroke-width', this.state.strokeWidth);
-    pathElement.setAttribute('fill', 'none');
-    pathElement.setAttribute('stroke-linecap', 'round');
-    
-    // Создаем направляющие элементы
-    this.createVectorGuides(vector, point1, point2);
-    
-    // Добавляем вектор в массив
-    this.state.bezierVectors.push(vector);
-    
-    return vector;
-}
-
 // Метод для создания подложки A4
 createA4Background() {
-    const widthMm = 210;  // A4 ширина
-    const heightMm = 297; // A4 высота
+    const widthMm = 210;  
+    const heightMm = 297; 
 	this.state.originalImageRatio = widthMm / heightMm;
     
-    // Преобразуем мм в пиксели (96 DPI)
     const widthPx = Math.round(widthMm * 96 / 25.4);
     const heightPx = Math.round(heightMm * 96 / 25.4);
     
-    // Устанавливаем значения в поля ввода
     document.getElementById('mmWidth').value = widthMm;
     document.getElementById('mmHeight').value = heightMm;
     this.updatePixelDisplay();
-    
-    // Создаем подложку
     this.createBackground(widthPx, heightPx);
 }
 
@@ -1973,17 +2012,7 @@ createBackgroundFromInput() {
         alert('DPI должен быть от 10 до 600');
         return;
     }
-    const display = document.getElementById('loadedImageSizeDisplay');
-    const dpiInfo = document.getElementById('loadedImageDpiInfo');
-    
-    if (display) {
-        display.textContent = '-';
-    }
-    
-    if (dpiInfo) {
-        dpiInfo.textContent = '';
-    }
-    
+
     // Преобразуем мм в пиксели с учетом DPI
     const widthPx = Math.round(widthMm * dpi / 25.4);
     const heightPx = Math.round(heightMm * dpi / 25.4);
@@ -1992,162 +2021,188 @@ createBackgroundFromInput() {
 }
 
 createBackground(width, height) {
-    // Создаем canvas для генерации белого изображения
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     
     const ctx = canvas.getContext('2d');
     
-    // Заливаем белым цветом
     ctx.fillStyle = 'white';
     ctx.fillRect(0, 0, width, height);
     
-    // Добавляем тонкую серую рамку для визуализации границ
     ctx.strokeStyle = '#e0e0e0';
     ctx.lineWidth = 1;
     ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
     
-    // Создаем изображение из canvas
     const img = new Image();
     img.onload = () => {
-        // Удаляем старое изображение если есть
-        this.removeBackgroundImage();
+        const oldWorksheet = document.getElementById('worksheet-background');
+        if (oldWorksheet) oldWorksheet.remove();
         
-        // Сохраняем новое изображение
-        this.state.image = img;
-        this.state.imageUrl = canvas.toDataURL('image/png');
-        this.state.imageForDisplay = img;
+        this.state.worksheetImage = img;
+        this.state.worksheetUrl = canvas.toDataURL('image/png');
         
-        // Отображаем изображение
-        this.displayImage(img);
-        document.getElementById('noImage').style.display = 'none';
-        document.getElementById('imageControls').style.display = 'none'; // Скрываем контролы фото
+        this.displayWorksheet(img);
         
-        // Применяем прозрачность из слайдера (если нужно)
-        const opacitySlider = document.getElementById('opacitySlider');
-        const imageElement = document.getElementById('background-image');
-        if (opacitySlider && imageElement) {
-            imageElement.style.opacity = opacitySlider.value / 100;
+        if (!this.state.image) {
+            this.updateImageCache(img);
         }
-        
-        this.updateImageCache(img);
-        this.fitImageToCanvas();
         
         console.log(`Создана белая подложка ${width}x${height}px`);
     };
     img.src = canvas.toDataURL('image/png');
 }
 
-
-removeBackgroundImage() {
-    const imageElement = document.getElementById('background-image');
-    if (imageElement) {
-        // Проверяем, является ли это белой подложкой (по src)
-        if (imageElement.getAttribute('href') && imageElement.getAttribute('href').startsWith('data:image/png')) {
-            imageElement.remove();
-        }
+displayWorksheet(img) {
+    while (this.worksheetLayer.firstChild) {
+        this.worksheetLayer.removeChild(this.worksheetLayer.firstChild);
     }
+    
+    const worksheetElement = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+    worksheetElement.id = 'worksheet-background';
+    worksheetElement.setAttribute('href', img.src || this.state.worksheetUrl);
+    worksheetElement.style.opacity = '1.0';
+    worksheetElement.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    worksheetElement.style.pointerEvents = 'none'; 
+    
+    this.worksheetLayer.appendChild(worksheetElement);
+
+    this.centerWorksheet();
 }
-		loadImage(file) {
-			const reader = new FileReader();
-			reader.onload = async (e) => {
-				const img = new Image();
-				img.onload = async () => {
-					this.state.image = img;
-					this.state.imageUrl = e.target.result;
-					this.state.originalImageRatio = img.width / img.height;
-					this.updateSizeInputsFromImage(img);
-					this.updateLoadedImageSizeDisplay(img);
-					this.removeBackgroundImage();
-					
-					let imageForDisplay = img;
-					let imageForSnapping = img; // Для привязки - то же самое что видит пользователь
-					
-					// ПРОВЕРЯЕМ: если PNG
-					if (file.type === 'image/png' || file.name.toLowerCase().endsWith('.png')) {
-						try {
-							
-							imageForDisplay = await this.addWhiteBackgroundToPNG(img);
 
-							imageForSnapping = imageForDisplay;
-							
-							// Обновляем URL для отображения
-							this.state.imageUrl = imageForDisplay.src;
-							
-						} catch (error) {
-							console.warn('Не удалось обработать PNG:', error);
-							imageForDisplay = img;
-							imageForSnapping = img;
-						}
-					}
-					
-					this.state.imageForDisplay = imageForDisplay; 
+centerWorksheet() {
+    if (!this.state.worksheetImage) return;
+    
+    const img = this.state.worksheetImage;
+    const worksheetElement = document.getElementById('worksheet-background');
+    if (!worksheetElement) return;
+    
+    // Фиксированный viewBox 1000x1000
+    const viewBoxSize = 1000;
+    const scale = Math.min(viewBoxSize / img.width, viewBoxSize / img.height) * 0.9;
+    
+    worksheetElement.setAttribute('width', img.width * scale);
+    worksheetElement.setAttribute('height', img.height * scale);
+    
+    const x = (viewBoxSize - img.width * scale) / 2;
+    const y = (viewBoxSize - img.height * scale) / 2;
+    
+    worksheetElement.setAttribute('x', x);
+    worksheetElement.setAttribute('y', y);
+}
 
-					// Отображаем версию с белым фоном
-					this.displayImage(imageForDisplay);
-					document.getElementById('noImage').style.display = 'none';
-					document.getElementById('imageControls').style.display = 'block';
-					
-					// Применяем прозрачность из слайдера
-					const opacitySlider = document.getElementById('opacitySlider');
-					const imageElement = document.getElementById('background-image');
-					if (opacitySlider && imageElement) {
-						imageElement.style.opacity = opacitySlider.value / 100;
-					}
-					
-					this.updateImageCache(imageForSnapping);
-					
-					this.fitImageToCanvas();
-				};
-				img.src = e.target.result;
-			};
-			reader.readAsDataURL(file);
-		}
+loadImage(file) {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const img = new Image();
+        img.onload = async () => {
+            this.state.image = img;
+            this.state.imageUrl = e.target.result;
+            this.state.originalImageRatio = img.width / img.height;
+            this.updateAspectRatioDisplay(img.width, img.height);
+            const display = document.getElementById('loadedImageSizeDisplay');
+            if (display) {
+                this.updateLoadedImageSizeDisplay(img);
+            }
 
-// Автоматическое заполнение размеров при загрузке фото
-updateSizeInputsFromImage(img) {
-    if (!img || !img.width || !img.height) return;
+            this.removePhotoOnly();
+            
+            let imageForDisplay = img;
+            let imageForSnapping = img;
+            
+            if (file.type === 'image/png' || file.name.toLowerCase().endsWith('.png')) {
+                try {
+                    imageForDisplay = await this.addWhiteBackgroundToPNG(img);
+                    imageForSnapping = imageForDisplay;
+                    this.state.imageUrl = imageForDisplay.src;
+                } catch (error) {
+                    console.warn('Не удалось обработать PNG:', error);
+                    imageForDisplay = img;
+                    imageForSnapping = img;
+                }
+            }
+            
+            this.state.imageForDisplay = imageForDisplay;
+            this.displayPhoto(imageForDisplay);
+            const imageControls = document.getElementById('imageControls');
+            if (imageControls) imageControls.style.display = 'block';
+            this.updateImageCache(imageForSnapping);
+			this.setTool(this.state.currentTool);
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+displayPhoto(img) {
+    // Очищаем слой фото
+    while (this.photoLayer.firstChild) {
+        this.photoLayer.removeChild(this.photoLayer.firstChild);
+    }
     
-    const dpiInput = document.getElementById('dpiInput');
-    const currentDpi = parseInt(dpiInput.value) || 96;
+    // Сохраняем исходные размеры
+    this.state.originalPhotoWidth = img.width;
+    this.state.originalPhotoHeight = img.height;
     
-    const mmWidth = Math.round((img.width * 25.4) / currentDpi);
-    const mmHeight = Math.round((img.height * 25.4) / currentDpi);
+    // Создаем фото
+    const photoElement = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+    photoElement.id = 'photo-overlay';
+    photoElement.setAttribute('href', img.src || this.state.imageUrl);
     
-    // Заполняем поля ввода
-    document.getElementById('mmWidth').value = mmWidth;
-    document.getElementById('mmHeight').value = mmHeight;
+    const opacitySlider = document.getElementById('opacitySlider');
+    photoElement.style.opacity = (opacitySlider?.value || 50) / 100;
+    photoElement.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     
-    // Обновляем отображение пикселей
-    this.updatePixelDisplay();
+    photoElement.style.pointerEvents = 'none'; 
+    photoElement.style.cursor = 'default';
     
+    this.photoLayer.appendChild(photoElement);
+    
+    // Устанавливаем размер 90% от ширины листа
+    const worksheetElement = document.getElementById('worksheet-background');
+    const worksheetWidth = worksheetElement ? 
+        parseFloat(worksheetElement.getAttribute('width')) : 1000;
+    
+    const percent = 90;
+    const targetWidth = worksheetWidth * (percent / 100);
+    const scale = targetWidth / img.width;
+    this.state.photoScale = scale;
+    
+    const newWidth = img.width * scale;
+    const newHeight = img.height * scale;
+    
+    const viewBoxSize = 1000;
+    const newX = (viewBoxSize - newWidth) / 2;
+    const newY = (viewBoxSize - newHeight) / 2;
+    
+    photoElement.setAttribute('width', newWidth);
+    photoElement.setAttribute('height', newHeight);
+    photoElement.setAttribute('x', newX);
+    photoElement.setAttribute('y', newY);
+    
+    this.updatePhotoSizeDisplay(percent);
+}
+removePhotoOnly() {
+    const photoElement = document.getElementById('photo-overlay');
+    if (photoElement) {
+        console.log('Удаляем старое фото');
+        photoElement.remove();
+    }
 }
 
 // Обновление отображения размера загруженного фото
 updateLoadedImageSizeDisplay(img) {
     const display = document.getElementById('loadedImageSizeDisplay');
     const dpiInfo = document.getElementById('loadedImageDpiInfo');
-    const ratioDisplay = document.getElementById('aspectRatioDisplay');
     
     if (display && img) {
-        const currentDpi = parseInt(document.getElementById('dpiInput').value) || 96;
+        const currentDpi = parseInt(document.getElementById('dpiInput')?.value) || 96;
         const mmWidth = Math.round((img.width * 25.4) / currentDpi);
         const mmHeight = Math.round((img.height * 25.4) / currentDpi);
         
         display.textContent = `${img.width}×${img.height} px`;
         
         if (dpiInfo) {
-            // Информация о DPI на новой строке
             dpiInfo.textContent = `${mmWidth}×${mmHeight} мм (при ${currentDpi} DPI)`;
-        }
-        
-        if (ratioDisplay) {
-            // Отображение соотношения сторон
-            const ratio = img.width / img.height;
-            const simplifiedRatio = this.simplifyRatio(img.width, img.height);
-            ratioDisplay.textContent = `${simplifiedRatio}`;
-            ratioDisplay.title = `Соотношение сторон: ${ratio.toFixed(3)}`;
         }
     }
 }
@@ -2204,101 +2259,28 @@ simplifyRatio(width, height) {
 			
 			console.log('Кэш изображения обновлен (размер:', imageToCache.width, 'x', imageToCache.height, ')');
 		}
-				   
-		displayImage(img) {
-			// Удаляем старое изображение если есть
-			const oldImage = document.getElementById('background-image');
-			if (oldImage) oldImage.remove();
-			
-			// Создаем новое изображение
-			const imageElement = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-			imageElement.id = 'background-image';
-			
-			// Используем imageForDisplay если есть, иначе оригинал
-			const imageToShow = this.state.imageForDisplay || img;
-			imageElement.setAttribute('href', imageToShow.src || this.state.imageUrl);
-			
-			imageElement.style.opacity = '0.5';
-			imageElement.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-			
-			// Отключаем события мыши для изображения
-			imageElement.style.pointerEvents = 'none';
-			
-			// Добавляем первым элементом (фон)
-			this.svg.insertBefore(imageElement, this.svg.firstChild);
-			
-			// Центрируем
-			this.centerImage();
-		}
 
-		centerImage() {
-			if (!this.state.image) return;
-			
-			const img = this.state.image;
-			const imageElement = document.getElementById('background-image');
-			if (!imageElement) return;
-			
-			// Рассчитываем размеры для viewBox 1000x1000
-			const viewBoxSize = 1000;
-			const scale = Math.min(viewBoxSize / img.width, viewBoxSize / img.height) * 0.9;
-			
-			// Устанавливаем размеры и позицию
-			imageElement.setAttribute('width', img.width * scale);
-			imageElement.setAttribute('height', img.height * scale);
-			
-			const x = (viewBoxSize - img.width * scale) / 2;
-			const y = (viewBoxSize - img.height * scale) / 2;
-			
-			imageElement.setAttribute('x', x);
-			imageElement.setAttribute('y', y);
-		}
-
-		fitImageToCanvas() {
-			if (!this.state.image) return;
-			
-			const img = this.state.image;
-			const scale = Math.min(1000 / img.width, 1000 / img.height) * 0.9;
-
-			const imageElement = document.getElementById('background-image');
-			if (imageElement) {
-				// Убираем transform
-				imageElement.removeAttribute('transform');
-				
-				// Устанавливаем размеры изображения с учетом масштаба
-				imageElement.setAttribute('width', img.width * scale);
-				imageElement.setAttribute('height', img.height * scale);
-				
-				// Центрируем вручную
-				const x = (1000 - img.width * scale) / 2;
-				const y = (1000 - img.height * scale) / 2;
-				imageElement.setAttribute('x', x);
-				imageElement.setAttribute('y', y);
-			}
-			
-			// Сбрасываем зум чтобы видеть всё изображение
-			this.setZoom(1);
-		}
 					
 removeImage() {
-    const imageElement = document.getElementById('background-image');
-    if (imageElement) imageElement.remove();
+    const photoElement = document.getElementById('photo-overlay');
+    if (photoElement) photoElement.remove();
     
     this.state.image = null;
     this.state.imageUrl = null;
     this.state.imageForDisplay = null;
     
-    // Сброс отображения размера фото
     const display = document.getElementById('loadedImageSizeDisplay');
     const dpiInfo = document.getElementById('loadedImageDpiInfo');
-    const ratioDisplay = document.getElementById('aspectRatioDisplay');
-    
     if (display) display.textContent = '-';
     if (dpiInfo) dpiInfo.textContent = '';
+    
     this.imageCanvasCache = null;
     this.imageDataCache = null;
     
-    // После удаления фото создаем белую подложку
-    this.createBackgroundFromInput();
+    // Восстанавливаем кэш привязки к подложке (если она есть)
+    if (this.state.worksheetImage) {
+        this.updateImageCache(this.state.worksheetImage);
+    }
     
     document.getElementById('imageControls').style.display = 'none';
 }
@@ -2355,40 +2337,45 @@ setTool(tool) {
         this.endBezierControlDrag();
     }
     
-    // Всегда сбрасываем currentElement при переключении инструмента
     this.state.currentElement = null;
-
-    // Сохраняем предыдущий инструмент
     const previousTool = this.state.currentTool;
-
+    
     // Если ВХОДИМ в режим Безье
     if (tool === 'bezier-points') {
         this.state.lastBezierDirection = null;
         this.state.lastBezierLength = null;
-        
-        // Показываем все элементы Безье
         this.showBezierHelpers();
         this.toggleBezierPoints(true);
-        
     } else if (this.state.currentTool === 'bezier-points' && tool !== 'bezier-points') {
-        // Если ВЫХОДИМ из режима Безье
         this.deselectAllPoints();
         this.state.lastBezierDirection = null;
         this.state.lastBezierLength = null;
-        
-        // Скрываем вспомогательные элементы
         this.hideBezierHelpers();
         this.toggleBezierPoints(false);
     }
     
     this.state.currentTool = tool;
     
+    // === ВАЖНО: МЕНЯЕМ pointer-events ФОТО В ЗАВИСИМОСТИ ОТ ИНСТРУМЕНТА ===
+    const photoElement = document.getElementById('photo-overlay');
+    if (photoElement) {
+        if (tool === 'select') {
+            // В режиме выделения фото можно перетаскивать
+            photoElement.style.pointerEvents = 'all';
+            photoElement.style.cursor = 'move';
+        } else {
+            // В остальных режимах фото пропускает клики к инструментам рисования
+            photoElement.style.pointerEvents = 'none';
+            photoElement.style.cursor = 'default';
+        }
+    }
+    
     // Обновляем активные кнопки
     document.querySelectorAll('.tool-btn').forEach(btn => {
         btn.classList.remove('active');
     });
     document.querySelector(`[data-tool="${tool}"]`).classList.add('active');
-
+    
     // Показываем/скрываем настройки инструментов
     document.getElementById('penSettings').style.display = 
         tool === 'pen' ? 'block' : 'none';
@@ -2399,25 +2386,23 @@ setTool(tool) {
     document.getElementById('eraserSettings').style.display = 
         tool === 'eraser' ? 'block' : 'none';
     
-    // Опросить UI
     this.loadSettingsFromUI();
-    
-    // Обновляем курсор
     this.updateCursor();
     
-    // Скрываем индикаторы
     if (tool !== 'push') {
         this.hidePushIndicator();
     }
     if (tool !== 'eraser') {
         this.hideEraserIndicator();
     }
-
-    // После переключения обновляем lastTool
+    
     if (tool !== previousTool) {
         this.lastTool = previousTool;
     }
+    
+    console.log('Инструмент переключен на:', tool, 'pointer-events фото:', photoElement?.style.pointerEvents);
 }
+
 
 updateCursor() {
     if (!this.svg) return;
@@ -2783,10 +2768,19 @@ findVectorByControlPoint(controlType, belongsToPointIndex) {
 
             // МЫШЬ
 onMouseDown(e) {
-        const coords = this.getSVGCoordinates(e);
-        const target = e.target;
-        
-    // 1. Режим Безье точек
+    const coords = this.getSVGCoordinates(e);
+    const target = e.target;
+    
+    console.log('onMouseDown - target:', target.id, 'tool:', this.state.currentTool);
+    
+    if (target.id === 'photo-overlay' && this.state.currentTool === 'select') {
+        e.preventDefault();
+        console.log('✅ ПЕРЕТАСКИВАНИЕ ФОТО');
+        this.startPhotoDrag(e, target);
+        return;
+    }
+    
+    // Режим Безье точек
     if (this.state.currentTool === 'bezier-points') {
         if (e.button === 2) {
             return; 
@@ -2794,30 +2788,53 @@ onMouseDown(e) {
         e.preventDefault();
         e.stopPropagation();
         
-        // Если клик по уже существующей точке - она уже обработается в своем обработчике
         if (target.classList.contains('bezier-point')) {
-            // Обработчик на самой точке уже сделает всё необходимое
             return;
         }
         
-        // Если клик по пустому месту
-        if (target === this.svg || target.id === 'background-image') {
-            // Если ЕСТЬ выделенная точка - создаем вектор от неё
+        if (target === this.svg || target.id === 'worksheet-background' || target.id === 'photo-overlay') {
             if (this.state.bezierSelectedPoint !== null) {
                 this.createNewBezierVector(coords.x, coords.y);
-            } 
-            // Если НЕТ выделенной точки - создаем новую точку
-            else {
+            } else {
                 this.createSingleBezierPoint(coords.x, coords.y);
             }
             return;
         }
-        
         return;
     }
     
+    // Режим SELECT (для панорамирования и перетаскивания векторов)
     if (this.state.currentTool === 'select') {
         e.preventDefault();
+        
+        // Подложка - панорамирование
+        if (target.id === 'worksheet-background') {
+            console.log('Панорамирование холста');
+            this.startPanning(e);
+            return;
+        }
+        
+        // Векторные элементы - перетаскивание
+        const isVectorElement = target && target.tagName && 
+            (target.tagName.toLowerCase() === 'path' || 
+             target.tagName.toLowerCase() === 'line' || 
+             target.tagName.toLowerCase() === 'rect' || 
+             target.tagName.toLowerCase() === 'circle' || 
+             target.tagName.toLowerCase() === 'ellipse');
+        
+        const isHelper = target.classList && 
+            (target.classList.contains('bezier-point') || 
+             target.classList.contains('bezier-control-point') || 
+             target.classList.contains('bezier-guide-line'));
+        
+        if (isVectorElement && !isHelper) {
+            console.log('Перетаскивание вектора');
+            this.startElementDrag(e, target);
+            return;
+        }
+        
+        // Пустое место - панорамирование
+        console.log('Панорамирование (пустое место)');
         this.startPanning(e);
         return;
     }
@@ -3130,11 +3147,59 @@ if (this.state.currentTool === 'pen') {
             break;
     }
 }
- 
+
+startPhotoDrag(e, photoElement) {
+    const coords = this.getSVGCoordinates(e);
+    
+    let currentX = parseFloat(photoElement.getAttribute('x'));
+    let currentY = parseFloat(photoElement.getAttribute('y'));
+    
+    if (isNaN(currentX)) currentX = 0;
+    if (isNaN(currentY)) currentY = 0;
+    
+    console.log('Начало перетаскивания фото:', currentX, currentY);
+    
+    this.state.isDraggingPhoto = true;
+    this.state.draggingPhotoElement = photoElement;
+    this.state.photoDragStartX = coords.x;
+    this.state.photoDragStartY = coords.y;
+    this.state.photoStartX = currentX;
+    this.state.photoStartY = currentY;
+    
+    this.svg.style.cursor = 'grabbing';
+    
+    photoElement.style.outline = '2px solid #ff6b6b';
+    photoElement.style.outlineOffset = '2px';
+    
+    e.preventDefault();
+    e.stopPropagation();
+}
+
 onMouseMove(e) {
     this.updateCoordinates(e);
     const coords = this.getSVGCoordinates(e);
-    
+	
+    if (this.state.isDraggingPhoto && this.state.draggingPhotoElement) {
+        e.preventDefault();
+        
+        const dx = coords.x - this.state.photoDragStartX;
+        const dy = coords.y - this.state.photoDragStartY;
+        
+        const newX = this.state.photoStartX + dx;
+        const newY = this.state.photoStartY + dy;
+        
+        this.state.draggingPhotoElement.setAttribute('x', newX);
+        this.state.draggingPhotoElement.setAttribute('y', newY);
+        
+        console.log('Фото движется:', newX, newY);
+        return;
+    }
+	
+    if (this.state.isDraggingElement) {
+        e.preventDefault();
+        this.doElementDrag(e);
+        return;
+    }
     if (this.state.isMoving) {
         e.preventDefault();
         this.doPanning(e);
@@ -3764,22 +3829,41 @@ pointDistance(p1, p2) {
 }
 
 onMouseUp() {
+    console.log('onMouseUp вызван');
+    
+    // Завершаем перетаскивание фото
+    if (this.state.isDraggingPhoto) {
+        console.log('onMouseUp - завершаем перетаскивание фото');
+        this.stopPhotoDrag();
+    }
+    
+    // Завершаем перетаскивание вектора
+    if (this.state.isDraggingElement) {
+        console.log('onMouseUp - завершаем перетаскивание элемента');
+        this.stopElementDrag();
+    }
+    
+    // Завершаем панорамирование
     if (this.state.isMoving) {
+        console.log('onMouseUp - завершаем панорамирование');
         this.stopPanning();
     }
 
+    // Завершаем рисование ластиком
     if (this.state.isDrawing && this.state.currentTool === 'eraser') {
         this.state.isDrawing = false;
         this.state.lastErasePoint = null;
         this.lastEraseTime = null;
+        this.hideEraserIndicator();
     } 
     
+    // Завершаем рисование других инструментов
     if (this.state.isDrawing) {
         // Если рисуем карандашом
         if (this.state.currentTool === 'pen') {
-            // Применяем привязку к черной линии если нужно
+            // Применяем привязку к НЕ-белым линиям
             if (this.state.image && this.snapSettings.enabled) {
-                this.snapPathToBlackLine(this.state.currentElement);
+                this.snapPathToNonWhiteLine(this.state.currentElement);
             }
             
             // Если ВЫКЛЮЧЕНО продолжение вектора - сбрасываем currentElement
@@ -3787,7 +3871,7 @@ onMouseUp() {
                 this.state.currentElement = null;
             }
             
-            // Только сбрасываем флаги рисования
+            // Сбрасываем флаги рисования
             this.state.isDrawing = false;
             this.state.penPoints = [];
             
@@ -3800,15 +3884,25 @@ onMouseUp() {
         this.hidePushIndicator();
     }
     
+    // Завершаем push
     if (this.state.currentTool === 'push') {
         this.state.isDrawing = false;
-        this.pushData = null; // Сбрасываем выбранные точки
+        this.pushData = null;
+        this.hidePushIndicator();
     }
     
+    // Скрываем индикатор ластика
     this.hideEraserIndicator();
+    
+    // Сохраняем состояние
+    this.saveSnapshot();
 }
 
 onMouseLeave() {
+	if (this.state.isDraggingElement) {
+        this.stopElementDrag();
+    }
+	
     if (this.state.isMoving) {
         this.stopPanning();
     }
@@ -3886,51 +3980,46 @@ startPen(x, y) {
     this.state.currentElement.setAttribute('stroke-linecap', 'round');
     this.state.currentElement.setAttribute('stroke-linejoin', 'round');
     
-    this.svg.appendChild(this.state.currentElement);
+    this.vectorLayer.appendChild(this.state.currentElement);
 }
             
 drawPen(x, y) {
-    // 1. СНАЧАЛА проверяем возможность присоединения к существующему вектору
-    const snapVectorResult = this.findNearestVectorEndpoint(x, y);
-    
-    // 2. ЕСЛИ нет близкого вектора, проверяем притягивание к черной линии на изображении
     let snappedPoint = null;
     
-    if (snapVectorResult.point) {
+    // Привязка к не-белым линиям
+    if (this.state.image && this.snapSettings.enabled) {
+        snappedPoint = this.snapToNonWhiteLine(x, y);
+    }
+    
+    // Привязка к существующим векторам (если включено)
+    if (!snappedPoint && this.snapSettings.continueVector) {
+        const snapVectorResult = this.findNearestVectorEndpoint(x, y);
         snappedPoint = snapVectorResult.point;
-    } else if (this.state.image && this.snapSettings.enabled) {
-        snappedPoint = this.snapToBlackLine(x, y);
     }
     
     // Используем привязанную точку или оригинальную
     const finalPoint = snappedPoint || {x, y};
     
-    // Собираем точки для сглаживания (используем финальные координаты)
+    // Добавляем точку
     this.state.penPoints.push(finalPoint);
     
-    // Применяем сглаживание
-    const smoothing = this.state.smoothing;
-    const pointsToAverage = Math.min(smoothing, this.state.penPoints.length);
-    const startIdx = this.state.penPoints.length - pointsToAverage;
+    // Сглаживание
+    const smoothing = Math.min(this.state.smoothing, this.state.penPoints.length);
+    const startIdx = this.state.penPoints.length - smoothing;
     
-    let avgX = 0;
-    let avgY = 0;
-    
+    let avgX = 0, avgY = 0;
     for (let i = startIdx; i < this.state.penPoints.length; i++) {
         avgX += this.state.penPoints[i].x;
         avgY += this.state.penPoints[i].y;
     }
+    avgX /= smoothing;
+    avgY /= smoothing;
     
-    avgX /= pointsToAverage;
-    avgY /= pointsToAverage;
-    
-    // Добавляем сглаженную точку к пути
+    // Обновляем путь
     const currentPath = this.state.currentElement.getAttribute('d');
     this.state.currentElement.setAttribute('d', currentPath + ` L ${avgX} ${avgY}`);
-    
-    // УБРАНО: визуальная обратная связь для притягивания
 }
- 
+
     findNearestVectorEndpoint(x, y) {
         const snapDistance = this.snapSettings.vectorSnapDistance / this.state.zoom;
         
@@ -3998,43 +4087,37 @@ drawPen(x, y) {
         return {point: nearestPoint, element: nearestElement, distance: minDistance};
     }
    
-snapPathToBlackLine(pathElement) {
-    if (!pathElement || pathElement.tagName !== 'PATH' || !this.state.image) return;
+snapPathToNonWhiteLine(pathElement) {
+    if (!pathElement || !this.state.image || !this.snapSettings.enabled) return;
     
-    // Получаем путь и информацию о закрытости
     const d = pathElement.getAttribute('d');
     if (!d) return;
     
-    const { points, isClosed } = this.parsePathToPoints(d);
+    const { points } = this.parsePathToPoints(d);
     
-    // Привязываем каждую точку к черной линии
-    const snappedPoints = points.map(point => {
-        const snapped = this.snapToBlackLine(point.x, point.y);
-        return snapped || point;
-    });
-    
-    // Перестраиваем путь с привязанными точками
-    let newPath = `M ${snappedPoints[0].x} ${snappedPoints[0].y}`;
-    for (let i = 1; i < snappedPoints.length; i++) {
-        newPath += ` L ${snappedPoints[i].x} ${snappedPoints[i].y}`;
+    // Привязываем только каждую 3-ю точку для скорости
+    for (let i = 0; i < points.length; i += 3) {
+        const point = points[i];
+        const snapped = this.snapToNonWhiteLine(point.x, point.y);
+        
+        if (snapped) {
+            // Немного сдвигаем точку к привязанной позиции
+            points[i].x = point.x * 0.7 + snapped.x * 0.3;
+            points[i].y = point.y * 0.7 + snapped.y * 0.3;
+        }
     }
     
-    // Добавляем Z если путь был закрыт
-    if (isClosed && snappedPoints.length > 2) {
-        newPath += ' Z';
+    // Перестраиваем путь
+    let newPath = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 1; i < points.length; i++) {
+        newPath += ` L ${points[i].x} ${points[i].y}`;
     }
     
     pathElement.setAttribute('d', newPath);
 }
-// безье
-    // ============================================
-    // ОБРАБОТЧИКИ КЛИКОВ
-    // ============================================
 
-    // ============================================
-    // СОЗДАНИЕ ТОЧЕК И ВЕКТОРОВ
-    // ============================================
-    
+// безье
+
     createSingleBezierPoint(x, y) {
         const point = {
             x: x,
@@ -4742,31 +4825,31 @@ updateControlPointsForMovedPoint(movedPointIndex, dx, dy) {
       
 // конец безье
 // УПРОЩЕННАЯ функция привязки (оптимизированная)
-snapToBlackLine(x, y) {
-    // Используем ТО ЖЕ изображение что видит пользователь
-    const imageForAnalysis = this.state.imageForDisplay || this.state.image;
-    
-    if (!imageForAnalysis || !this.state.imageUrl) return null;
+snapToNonWhiteLine(x, y) {
+    if (!this.state.image || !this.snapSettings.enabled) return null;
     
     const imageElement = document.getElementById('background-image');
     if (!imageElement) return null;
     
-    // Получаем преобразования изображения
+    // Координаты и размеры изображения в SVG
     const imgX = parseFloat(imageElement.getAttribute('x')) || 0;
     const imgY = parseFloat(imageElement.getAttribute('y')) || 0;
     const imgWidth = parseFloat(imageElement.getAttribute('width'));
     const imgHeight = parseFloat(imageElement.getAttribute('height'));
     
-    // Преобразуем координаты SVG в координаты изображения
-    const imgCoordX = Math.round(((x - imgX) / imgWidth) * imageForAnalysis.width);
-    const imgCoordY = Math.round(((y - imgY) / imgHeight) * imageForAnalysis.height);
+    // Используем imageForDisplay (версия с белым фоном для PNG)
+    const imageForAnalysis = this.state.imageForDisplay || this.state.image;
+    
+    // Преобразуем SVG координаты в координаты изображения
+    const imgCoordX = ((x - imgX) / imgWidth) * imageForAnalysis.width;
+    const imgCoordY = ((y - imgY) / imgHeight) * imageForAnalysis.height;
     
     if (imgCoordX < 0 || imgCoordX >= imageForAnalysis.width || 
         imgCoordY < 0 || imgCoordY >= imageForAnalysis.height) {
         return null;
     }
     
-    // Используем кэшированный canvas для анализа
+    // Кэш изображения для быстрого доступа
     if (!this.imageCanvasCache) {
         this.imageCanvasCache = document.createElement('canvas');
         this.imageCanvasCache.width = imageForAnalysis.width;
@@ -4776,48 +4859,40 @@ snapToBlackLine(x, y) {
         this.imageDataCache = ctx.getImageData(0, 0, imageForAnalysis.width, imageForAnalysis.height);
     }
     
-    // Ищем ТЁМНЫЕ (черные) пиксели на обычном изображении
-    const radius = 8;
-    let darkestPoint = null;
-    let darkestValue = 256;
-    
     const data = this.imageDataCache.data;
     const width = imageForAnalysis.width;
+    const whiteThreshold = 200; // Фиксированный порог
+    const searchRadius = 8; // Уменьшил радиус для скорости
     
-    // Проверяем точки по кругу
-    for (let angle = 0; angle < 360; angle += 45) {
-        const rad = angle * Math.PI / 180;
-        const px = Math.round(imgCoordX + radius * Math.cos(rad));
-        const py = Math.round(imgCoordY + radius * Math.sin(rad));
+    // Простой поиск ближайшего не-белого пикселя
+    for (let r = 0; r <= searchRadius; r++) {
+        const points = r === 0 ? 1 : r * 6; // Количество точек на радиусе
         
-        if (px >= 0 && px < width && py >= 0 && py < imageForAnalysis.height) {
+        for (let i = 0; i < points; i++) {
+            const angle = (i / points) * Math.PI * 2;
+            const px = Math.round(imgCoordX + r * Math.cos(angle));
+            const py = Math.round(imgCoordY + r * Math.sin(angle));
+            
+            if (px < 0 || px >= width || py < 0 || py >= imageForAnalysis.height) {
+                continue;
+            }
+            
             const idx = (py * width + px) * 4;
             const brightness = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
             
-            // Ищем ТЁМНЫЕ пиксели (черные линии) - чем меньше значение, тем темнее
-            if (brightness < this.snapSettings.blackThreshold && brightness < darkestValue) {
-                darkestValue = brightness;
-                darkestPoint = {x: px, y: py};
+            // Если пиксель не белый (яркость < 200)
+            if (brightness < whiteThreshold) {
+                const snapX = (px / imageForAnalysis.width) * imgWidth + imgX;
+                const snapY = (py / imageForAnalysis.height) * imgHeight + imgY;
+                
+                // Проверяем расстояние привязки
+                const dist = Math.sqrt((x - snapX) ** 2 + (y - snapY) ** 2);
+                const maxDist = this.snapSettings.snapDistance / this.state.zoom;
+                
+                if (dist <= maxDist) {
+                    return {x: snapX, y: snapY};
+                }
             }
-        }
-    }
-    
-    // Проверяем центральную точку
-    const centerIdx = (imgCoordY * width + imgCoordX) * 4;
-    const centerBrightness = (data[centerIdx] + data[centerIdx + 1] + data[centerIdx + 2]) / 3;
-    
-    if (centerBrightness < this.snapSettings.blackThreshold && centerBrightness < darkestValue) {
-        darkestValue = centerBrightness;
-        darkestPoint = {x: imgCoordX, y: imgCoordY};
-    }
-    
-    if (darkestPoint) {
-        const snapX = (darkestPoint.x / imageForAnalysis.width) * imgWidth + imgX;
-        const snapY = (darkestPoint.y / imageForAnalysis.height) * imgHeight + imgY;
-        
-        const dist = Math.sqrt((x - snapX) ** 2 + (y - snapY) ** 2);
-        if (dist <= this.snapSettings.snapDistance / this.state.zoom) {
-            return {x: snapX, y: snapY};
         }
     }
     
@@ -4834,7 +4909,7 @@ snapToBlackLine(x, y) {
 				this.state.currentElement.setAttribute('stroke-width', this.state.strokeWidth);
                 this.state.currentElement.setAttribute('fill', 'none');
                 
-                this.svg.appendChild(this.state.currentElement);
+                this.vectorLayer.appendChild(this.state.currentElement);
             }
             
             updateLine(x, y) {
