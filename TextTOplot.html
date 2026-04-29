@@ -513,6 +513,10 @@ button:hover {
     border: 1px solid #666;
     background: white;
 }
+.tools button.active {
+    background: #FF6600;
+    box-shadow: 0 0 10px rgba(255, 102, 0, 0.5);
+}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 </head>
@@ -570,7 +574,12 @@ button:hover {
                         <div class="font-upload">
                             <input style="display: none;" type="file" id="fontUpload" accept=".svg" multiple>
                             <button id="loadFontsBtn">Загрузить SVG</button>
+							<input style="display: none;" type="file" id="gcodeUpload" accept=".gcode,.nc,.ngc,.txt">
+            <button id="loadGcodeBtn">Загрузить G-code как SVG</button>
                         </div>
+						       
+            
+        
 <label for="fontSelect">Шрифт:</label>
 <div class="custom-select-container">
     <select id="fontSelect" class="custom-select">
@@ -653,7 +662,7 @@ button:hover {
                         <button id="exportGcodeBtn">Экспорт в G-code</button>
                     </div>
                 </div>
-                
+
                 <div id="status" class="status"></div>
             </div>
             
@@ -798,10 +807,11 @@ button:hover {
 		let selectedQRIndex = -1;
 		let isQRSelected = false;
 		let isMovingElement = false;
+		let justFinishedSelection = false;
 
 // Класс для SVG элементов (рисунков)
 class SVGElement {
-    constructor(id, svgContent, x, y, width = 50, height = 50) {
+    constructor(id, svgContent, x, y, width = 50, height = 50, name = '') {
         this.id = id;
         this.x = x;
         this.y = y;
@@ -810,10 +820,15 @@ class SVGElement {
         this.rotation = 0;
         this.scale = 1;
         this.paths = [];
-        this.svgImage = null; // Для предпросмотра
-        this.vectorPaths = []; // Векторы для G-code
+        this.svgImage = null;
+        this.vectorPaths = [];
         this.svgContent = svgContent;
-		
+        this.name = name || 'SVG элемент';
+        this.sourceType = 'svg';
+        this.originalWidth = width;
+        this.originalHeight = height;
+        
+        // Парсим SVG
         this.parseSVG(svgContent);
     }
 
@@ -822,434 +837,481 @@ class SVGElement {
             const parser = new DOMParser();
             const doc = parser.parseFromString(svgContent, 'image/svg+xml');
             
-            // Проверяем на ошибки парсинга
             const parseError = doc.querySelector('parsererror');
             if (parseError) {
                 throw new Error('Ошибка парсинга SVG: ' + parseError.textContent);
             }
             
-            // Получаем размеры SVG
             const svgElement = doc.querySelector('svg');
+            let svgMinX = 0, svgMinY = 0;
             let svgWidth = 100, svgHeight = 100;
+            let unitMultiplier = 1.0; // 1 = мм
             
             if (svgElement) {
+                // Определяем единицы измерения
+                const widthAttr = svgElement.getAttribute('width') || '';
+                const heightAttr = svgElement.getAttribute('height') || '';
+                
+                // Проверяем единицы в width/height
+                if (widthAttr.includes('px') || heightAttr.includes('px')) {
+                    unitMultiplier = 1.0; // 1px = 1мм для плоттера
+                } else if (widthAttr.includes('mm') || heightAttr.includes('mm')) {
+                    unitMultiplier = 1.0; // уже в мм
+                } else if (widthAttr.includes('cm')) {
+                    unitMultiplier = 10.0; // см -> мм
+                } else if (widthAttr.includes('in')) {
+                    unitMultiplier = 25.4; // дюймы -> мм
+                }
+                
+                // Парсим viewBox
                 const viewBox = svgElement.getAttribute('viewBox');
                 if (viewBox) {
-                    const parts = viewBox.split(' ').map(Number);
+                    const parts = viewBox.split(/[\s,]+/).map(Number);
                     if (parts.length >= 4) {
-                        svgWidth = parts[2];
-                        svgHeight = parts[3];
+                        svgMinX = parts[0] || 0;
+                        svgMinY = parts[1] || 0;
+                        svgWidth = parts[2] || 100;
+                        svgHeight = parts[3] || 100;
+                    }
+                }
+                
+                // Парсим числовые значения width/height
+                const widthMatch = widthAttr.match(/^([\d.]+)/);
+                const heightMatch = heightAttr.match(/^([\d.]+)/);
+                
+                if (widthMatch && heightMatch) {
+                    const parsedWidth = parseFloat(widthMatch[1]) * unitMultiplier;
+                    const parsedHeight = parseFloat(heightMatch[1]) * unitMultiplier;
+                    
+                    if (!isNaN(parsedWidth) && !isNaN(parsedHeight) && parsedWidth > 0 && parsedHeight > 0) {
+                        // Если viewBox не задан, используем width/height как размеры
+                        if (!viewBox) {
+                            svgWidth = parsedWidth;
+                            svgHeight = parsedHeight;
+                        }
                     }
                 }
             }
             
-            // Простой парсер для SVG путей
-            this.parseSVGPaths(doc, svgWidth, svgHeight);
+            // Проверяем, есть ли трансформация scale(1, -1)
+            const hasFlipTransform = svgContent.includes('scale(1, -1)') || 
+                                     svgContent.includes('scale(1,-1)');
             
-            // Создаем изображение для предпросмотра
-            const svgBlob = new Blob([svgContent], { type: 'image/svg+xml' });
-            const url = URL.createObjectURL(svgBlob);
+            // Сохраняем оригинальные размеры (в мм)
+            this.originalWidth = svgWidth;
+            this.originalHeight = svgHeight;
             
-            this.svgImage = new Image();
+            // Устанавливаем размеры 1:1 (без масштабирования!)
+            this.width = svgWidth;
+            this.height = svgHeight;
+            this.baseScale = 1.0;
             
-            return new Promise((resolve, reject) => {
-                this.svgImage.onload = () => {
-                    URL.revokeObjectURL(url);
-                    resolve();
-                };
-                this.svgImage.onerror = reject;
-                this.svgImage.src = url;
+            // Центрируем на листе, если элемент не помещается
+            if (this.width > sheetWidth || this.height > sheetHeight) {
+                // Если больше листа - масштабируем чтобы поместился
+                const scaleX = (sheetWidth * 0.9) / this.width;
+                const scaleY = (sheetHeight * 0.9) / this.height;
+                const autoScale = Math.min(scaleX, scaleY);
+                
+                this.width = this.width * autoScale;
+                this.height = this.height * autoScale;
+                this.baseScale = autoScale;
+                this.scale = 1.0;
+                
+                updateStatus(`SVG "${this.name}" масштабирован до ${(autoScale*100).toFixed(0)}% чтобы поместиться на лист`, 'warning');
+            }
+            
+            // Центрируем на листе
+            this.x = (sheetWidth - this.width) / 2;
+            this.y = (sheetHeight - this.height) / 2;
+            
+            // Парсим все path элементы
+            this.vectorPaths = [];
+            const pathElements = doc.querySelectorAll('path');
+            
+            pathElements.forEach(pathEl => {
+                const pathData = pathEl.getAttribute('d');
+                if (!pathData) return;
+                
+                const points = this.parsePathData(pathData);
+                const vectorPath = [];
+                
+                for (let i = 0; i < points.length; i++) {
+                    const point = points[i];
+                    
+                    let correctedX = point.x;
+                    let correctedY = point.y;
+                    
+                    // Если был flip transform, инвертируем Y обратно
+                    if (hasFlipTransform) {
+                        correctedY = this.originalHeight - point.y + svgMinY * 2;
+                    }
+                    
+                    // Приводим к локальным координатам (от 0)
+                    const localX = correctedX - svgMinX;
+                    const localY = correctedY - svgMinY;
+                    
+                    // Масштабируем с учетом базового масштаба
+                    const scaledX = localX * this.baseScale;
+                    const scaledY = localY * this.baseScale;
+                    
+                    vectorPath.push({
+                        x: scaledX,
+                        y: scaledY,
+                        move: point.move || (i === 0)
+                    });
+                }
+                
+                if (vectorPath.length > 1) {
+                    this.vectorPaths.push(vectorPath);
+                }
             });
+            
+            // Парсим другие элементы
+            this.parseOtherElements(doc, svgMinX, svgMinY, hasFlipTransform);
+            
+            // Создаем превью
+            await this.createPreviewImage();
+            
             
         } catch (error) {
             console.error('Ошибка парсинга SVG:', error);
             throw error;
         }
     }
-
-    // Упрощенный парсер SVG путей
-parseSVGPaths(doc, svgWidth, svgHeight) {
-    // Получаем размеры из viewBox
-    const svgElement = doc.querySelector('svg');
-    let docMinX = 0, docMinY = 0, docWidth = 100, docHeight = 100;
     
-    if (svgElement) {
-        const viewBox = svgElement.getAttribute('viewBox');
-        if (viewBox) {
-            const parts = viewBox.split(/[\s,]+/).map(Number);
-            if (parts.length >= 4) {
-                docMinX = parts[0]; 
-                docMinY = parts[1];  
-                docWidth = parts[2];
-                docHeight = parts[3];
+    parseOtherElements(doc, minX, minY, hasFlipTransform) {
+        const elements = doc.querySelectorAll('line, circle, rect, polyline, polygon, ellipse');
+        
+        elements.forEach(el => {
+            const tagName = el.tagName.toLowerCase();
+            let pathData = '';
+            
+            if (tagName === 'line') {
+                const x1 = parseFloat(el.getAttribute('x1')) || 0;
+                const y1 = parseFloat(el.getAttribute('y1')) || 0;
+                const x2 = parseFloat(el.getAttribute('x2')) || 0;
+                const y2 = parseFloat(el.getAttribute('y2')) || 0;
+                pathData = `M ${x1} ${y1} L ${x2} ${y2}`;
+                
+            } else if (tagName === 'circle') {
+                const cx = parseFloat(el.getAttribute('cx')) || 0;
+                const cy = parseFloat(el.getAttribute('cy')) || 0;
+                const r = parseFloat(el.getAttribute('r')) || 0;
+                
+                const segments = 32;
+                const points = [];
+                for (let i = 0; i <= segments; i++) {
+                    const angle = (i / segments) * 2 * Math.PI;
+                    const px = cx + r * Math.cos(angle);
+                    const py = cy + r * Math.sin(angle);
+                    points.push(`${px},${py}`);
+                }
+                pathData = `M ${points[0]} L ${points.slice(1).join(' L ')} Z`;
+                
+            } else if (tagName === 'rect') {
+                const x = parseFloat(el.getAttribute('x')) || 0;
+                const y = parseFloat(el.getAttribute('y')) || 0;
+                const w = parseFloat(el.getAttribute('width')) || 0;
+                const h = parseFloat(el.getAttribute('height')) || 0;
+                pathData = `M ${x} ${y} L ${x + w} ${y} L ${x + w} ${y + h} L ${x} ${y + h} Z`;
+                
+            } else if (tagName === 'ellipse') {
+                const cx = parseFloat(el.getAttribute('cx')) || 0;
+                const cy = parseFloat(el.getAttribute('cy')) || 0;
+                const rx = parseFloat(el.getAttribute('rx')) || 0;
+                const ry = parseFloat(el.getAttribute('ry')) || 0;
+                
+                const segments = 32;
+                const points = [];
+                for (let i = 0; i <= segments; i++) {
+                    const angle = (i / segments) * 2 * Math.PI;
+                    const px = cx + rx * Math.cos(angle);
+                    const py = cy + ry * Math.sin(angle);
+                    points.push(`${px},${py}`);
+                }
+                pathData = `M ${points[0]} L ${points.slice(1).join(' L ')} Z`;
+                
+            } else if (tagName === 'polyline' || tagName === 'polygon') {
+                const pointsAttr = el.getAttribute('points') || '';
+                if (pointsAttr) {
+                    const coords = pointsAttr.trim().split(/[\s,]+/).map(Number);
+                    if (coords.length >= 4) {
+                        pathData = `M ${coords[0]} ${coords[1]}`;
+                        for (let i = 2; i < coords.length; i += 2) {
+                            pathData += ` L ${coords[i]} ${coords[i + 1]}`;
+                        }
+                        if (tagName === 'polygon') pathData += ' Z';
+                    }
+                }
             }
-        }
-        const widthAttr = svgElement.getAttribute('width');
-        const heightAttr = svgElement.getAttribute('height');
-        if (widthAttr && heightAttr) {
-            const widthNum = parseFloat(widthAttr);
-            const heightNum = parseFloat(heightAttr);
-            if (!isNaN(widthNum) && !isNaN(heightNum)) {
-                docWidth = widthNum;
-                docHeight = heightNum;
+            
+            if (pathData) {
+                const points = this.parsePathData(pathData);
+                const vectorPath = [];
+                
+                for (let i = 0; i < points.length; i++) {
+                    const point = points[i];
+                    
+                    let correctedX = point.x;
+                    let correctedY = point.y;
+                    
+                    if (hasFlipTransform) {
+                        correctedY = this.originalHeight - point.y + minY * 2;
+                    }
+                    
+                    const localX = correctedX - minX;
+                    const localY = correctedY - minY;
+                    
+                    vectorPath.push({
+                        x: localX * this.baseScale,
+                        y: localY * this.baseScale,
+                        move: point.move || (i === 0)
+                    });
+                }
+                
+                if (vectorPath.length > 1) {
+                    this.vectorPaths.push(vectorPath);
+                }
             }
-        }
+        });
+    }
+
+    translatePath(pathData, tx, ty) {
+        // Простая трансляция координат в path data
+        return pathData.replace(/[-\d.]+/g, (match) => {
+            const num = parseFloat(match);
+            // Определяем контекст - это X или Y координата
+            const prevChar = pathData.charAt(pathData.indexOf(match) - 1);
+            if (prevChar === ' ' || prevChar === ',' || prevChar === '') {
+                // Чередуем X и Y
+                this._translateCounter = (this._translateCounter || 0) + 1;
+                if (this._translateCounter % 2 === 1) {
+                    return (num + tx).toString();
+                } else {
+                    return (num + ty).toString();
+                }
+            }
+            return match;
+        });
     }
     
-    this.originalWidth = docWidth;
-    this.originalHeight = docHeight;
-    
-    const percentOfSheet = 0.2;
-    const targetWidth = sheetWidth * percentOfSheet;
-    const scale = targetWidth / docWidth;
-    const targetHeight = docHeight * scale;
-    
-    this.width = targetWidth;
-    this.height = targetHeight;
-    this.baseScale = scale;
-    
-    this.x = (sheetWidth - this.width) / 2;
-    this.y = (sheetHeight - this.height) / 2;
-    
-    // Парсим все графические элементы
-    this.vectorPaths = [];
-    const elements = doc.querySelectorAll('path, circle, rect, line, polyline, polygon, ellipse');
-    
-    elements.forEach(el => {
-        const tagName = el.tagName.toLowerCase();
-        let pathData = '';
+async createPreviewImage() {
+    return new Promise((resolve) => {
+        const canvas = document.createElement('canvas');
+        const maxSize = 200;
         
-        if (tagName === 'path') {
-            pathData = el.getAttribute('d') || '';
-		} else if (tagName === 'circle') {
-			const cx = parseFloat(el.getAttribute('cx')) || 0;
-			const cy = parseFloat(el.getAttribute('cy')) || 0;
-			const r = parseFloat(el.getAttribute('r')) || 0;
-			// Аппроксимируем круг ломаной линией (16 сегментов)
-			const segments = 24;
-			const points = [];
-			for (let i = 0; i <= segments; i++) {
-				const angle = (i / segments) * 2 * Math.PI;
-				const px = cx + r * Math.cos(angle);
-				const py = cy + r * Math.sin(angle);
-				points.push(`${px},${py}`);
-			}
-			pathData = `M ${points[0]} L ${points.slice(1).join(' L ')} Z`;
-		} else if (tagName === 'ellipse') {
-			const cx = parseFloat(el.getAttribute('cx')) || 0;
-			const cy = parseFloat(el.getAttribute('cy')) || 0;
-			const rx = parseFloat(el.getAttribute('rx')) || 0;
-			const ry = parseFloat(el.getAttribute('ry')) || 0;
-			const segments = 24;
-			const points = [];
-			for (let i = 0; i <= segments; i++) {
-				const angle = (i / segments) * 2 * Math.PI;
-				const px = cx + rx * Math.cos(angle);
-				const py = cy + ry * Math.sin(angle);
-				points.push(`${px},${py}`);
-			}
-			pathData = `M ${points[0]} L ${points.slice(1).join(' L ')} Z`;
-        } else if (tagName === 'rect') {
-            const x = parseFloat(el.getAttribute('x')) || 0;
-            const y = parseFloat(el.getAttribute('y')) || 0;
-            const w = parseFloat(el.getAttribute('width')) || 0;
-            const h = parseFloat(el.getAttribute('height')) || 0;
-            const rx = parseFloat(el.getAttribute('rx')) || 0;
-            const ry = parseFloat(el.getAttribute('ry')) || rx;
+        // Определяем размеры превью с сохранением пропорций
+        let previewWidth, previewHeight;
+        if (this.width > this.height) {
+            previewWidth = maxSize;
+            previewHeight = (this.height / this.width) * maxSize;
+        } else {
+            previewHeight = maxSize;
+            previewWidth = (this.width / this.height) * maxSize;
+        }
+        
+        canvas.width = Math.max(10, previewWidth);
+        canvas.height = Math.max(10, previewHeight);
+        
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1.5;
+        
+        // ВОТ ЗДЕСЬ ПРОБЛЕМА - используется min вместо сохранения пропорций
+        const scaleX = canvas.width / this.width;
+        const scaleY = canvas.height / this.height;
+        const scale = Math.min(scaleX, scaleY);  // ← ВПИСЫВАЕТ В КВАДРАТ
+        
+        const offsetX = (canvas.width - this.width * scale) / 2;
+        const offsetY = (canvas.height - this.height * scale) / 2;
             
-            if (rx > 0 || ry > 0) {
-                // Прямоугольник со скругленными углами
-                const rxx = Math.min(rx, w / 2);
-                const ryy = Math.min(ry, h / 2);
-                pathData = `M ${x + rxx} ${y} L ${x + w - rxx} ${y} A ${rxx} ${ryy} 0 0 1 ${x + w} ${y + ryy} L ${x + w} ${y + h - ryy} A ${rxx} ${ryy} 0 0 1 ${x + w - rxx} ${y + h} L ${x + rxx} ${y + h} A ${rxx} ${ryy} 0 0 1 ${x} ${y + h - ryy} L ${x} ${y + ryy} A ${rxx} ${ryy} 0 0 1 ${x + rxx} ${y} Z`;
-            } else {
-                pathData = `M ${x} ${y} L ${x + w} ${y} L ${x + w} ${y + h} L ${x} ${y + h} Z`;
+            for (const path of this.vectorPaths) {
+                if (path.length < 2) continue;
+                
+                ctx.beginPath();
+                
+                const firstPoint = path[0];
+                ctx.moveTo(
+                    firstPoint.x * scale + offsetX,
+                    canvas.height - (firstPoint.y * scale + offsetY)
+                );
+                
+                for (let i = 1; i < path.length; i++) {
+                    const point = path[i];
+                    ctx.lineTo(
+                        point.x * scale + offsetX,
+                        canvas.height - (point.y * scale + offsetY)
+                    );
+                }
+                
+                ctx.stroke();
             }
-        } else if (tagName === 'line') {
-            const x1 = parseFloat(el.getAttribute('x1')) || 0;
-            const y1 = parseFloat(el.getAttribute('y1')) || 0;
-            const x2 = parseFloat(el.getAttribute('x2')) || 0;
-            const y2 = parseFloat(el.getAttribute('y2')) || 0;
-            pathData = `M ${x1} ${y1} L ${x2} ${y2}`;
-        } else if (tagName === 'polyline' || tagName === 'polygon') {
-            const points = el.getAttribute('points') || '';
-            if (points) {
-                const coords = points.trim().split(/[\s,]+/).map(Number);
-                if (coords.length >= 4) {
-                    pathData = `M ${coords[0]} ${coords[1]}`;
-                    for (let i = 2; i < coords.length; i += 2) {
-                        pathData += ` L ${coords[i]} ${coords[i + 1]}`;
-                    }
-                    if (tagName === 'polygon') pathData += ' Z';
+            
+            this.svgImage = canvas;
+            resolve();
+        });
+    }
+
+    parsePathData(pathData) {
+        const points = [];
+        
+        // Нормализуем пробелы и запятые
+        const normalized = pathData
+            .replace(/([MmLlHhVvCcSsQqTtAaZz])/g, ' $1 ')
+            .replace(/,/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        
+        const commands = normalized.split(' ');
+        
+        let i = 0;
+        let currentX = 0, currentY = 0;
+        let startX = 0, startY = 0;
+        let lastCommand = '';
+        
+        while (i < commands.length) {
+            let token = commands[i];
+            if (!token) {
+                i++;
+                continue;
+            }
+            
+            const isCommand = token.match(/^[MmLlHhVvCcSsQqTtAaZz]$/);
+            
+            if (isCommand) {
+                lastCommand = token;
+                i++;
+                
+                switch (token) {
+                    case 'M':
+                    case 'm':
+                        if (i + 1 >= commands.length) break;
+                        const mx = parseFloat(commands[i++]);
+                        const my = parseFloat(commands[i++]);
+                        if (token === 'm') {
+                            currentX += mx;
+                            currentY += my;
+                        } else {
+                            currentX = mx;
+                            currentY = my;
+                        }
+                        startX = currentX;
+                        startY = currentY;
+                        points.push({x: currentX, y: currentY, move: true});
+                        lastCommand = token.toLowerCase();
+                        break;
+                        
+                    case 'L':
+                    case 'l':
+                        if (i + 1 >= commands.length) break;
+                        const lx = parseFloat(commands[i++]);
+                        const ly = parseFloat(commands[i++]);
+                        if (token === 'l') {
+                            currentX += lx;
+                            currentY += ly;
+                        } else {
+                            currentX = lx;
+                            currentY = ly;
+                        }
+                        points.push({x: currentX, y: currentY, move: false});
+                        lastCommand = token.toLowerCase();
+                        break;
+                        
+                    case 'H':
+                    case 'h':
+                        if (i >= commands.length) break;
+                        const hx = parseFloat(commands[i++]);
+                        if (token === 'h') {
+                            currentX += hx;
+                        } else {
+                            currentX = hx;
+                        }
+                        points.push({x: currentX, y: currentY, move: false});
+                        lastCommand = token.toLowerCase();
+                        break;
+                        
+                    case 'V':
+                    case 'v':
+                        if (i >= commands.length) break;
+                        const vy = parseFloat(commands[i++]);
+                        if (token === 'v') {
+                            currentY += vy;
+                        } else {
+                            currentY = vy;
+                        }
+                        points.push({x: currentX, y: currentY, move: false});
+                        lastCommand = token.toLowerCase();
+                        break;
+                        
+                    case 'C':
+                    case 'c':
+                        if (i + 5 >= commands.length) break;
+                        const cx1 = parseFloat(commands[i++]);
+                        const cy1 = parseFloat(commands[i++]);
+                        const cx2 = parseFloat(commands[i++]);
+                        const cy2 = parseFloat(commands[i++]);
+                        const cx = parseFloat(commands[i++]);
+                        const cy = parseFloat(commands[i++]);
+                        
+                        let x0 = currentX, y0 = currentY;
+                        let x1, y1, x2, y2, x3, y3;
+                        
+                        if (token === 'c') {
+                            x1 = x0 + cx1; y1 = y0 + cy1;
+                            x2 = x0 + cx2; y2 = y0 + cy2;
+                            x3 = x0 + cx; y3 = y0 + cy;
+                        } else {
+                            x1 = cx1; y1 = cy1;
+                            x2 = cx2; y2 = cy2;
+                            x3 = cx; y3 = cy;
+                        }
+                        
+                        // Аппроксимируем кривую Безье
+                        const steps = 30;
+                        for (let s = 1; s <= steps; s++) {
+                            const t = s / steps;
+                            const mt = 1 - t;
+                            const x = mt * mt * mt * x0 + 3 * mt * mt * t * x1 + 3 * mt * t * t * x2 + t * t * t * x3;
+                            const y = mt * mt * mt * y0 + 3 * mt * mt * t * y1 + 3 * mt * t * t * y2 + t * t * t * y3;
+                            points.push({x: x, y: y, move: false});
+                        }
+                        
+                        currentX = x3;
+                        currentY = y3;
+                        lastCommand = token.toLowerCase();
+                        break;
+                        
+                    case 'Z':
+                    case 'z':
+                        points.push({x: startX, y: startY, move: false});
+                        currentX = startX;
+                        currentY = startY;
+                        break;
+                        
+                    default:
+                        // Пропускаем неизвестные команды
+                        break;
+                }
+            } else {
+                // Если это не команда, значит продолжаем предыдущую команду
+                if (lastCommand === 'm') lastCommand = 'l';
+                else if (lastCommand === 'M') lastCommand = 'L';
+                else if (lastCommand === 'c') lastCommand = 'c';
+                else if (lastCommand === 'C') lastCommand = 'C';
+                
+                if (lastCommand) {
+                    commands.splice(i, 0, lastCommand);
+                } else {
+                    i++;
                 }
             }
         }
         
-        if (pathData.trim() !== '') {
-            const points = this.parsePathData(pathData);
-            const vectorPath = [];
-            
-            for (let i = 0; i < points.length; i++) {
-                const point = points[i];
-                const scaledX = point.x * scale;
-                const scaledY = point.y * scale;
-                
-                vectorPath.push({
-                    x: scaledX,
-                    y: scaledY,
-                    move: point.move || (i === 0)
-                });
-            }
-            
-            if (vectorPath.length > 1) {
-                this.vectorPaths.push(vectorPath);
-            }
-        }
-    });
-    
-    if (this.vectorPaths.length === 0) {
-        console.warn('В SVG нет векторных путей');
+        return points;
     }
-}
-
-parsePathData(pathData) {
-    const points = [];
-    
-    // Нормализуем пробелы и запятые
-    const normalized = pathData
-        .replace(/([MmLlHhVvCcSsQqTtAaZz])/g, ' $1 ')
-        .replace(/,/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    
-    const commands = normalized.split(' ');
-    
-    let i = 0;
-    let currentX = 0, currentY = 0;
-    let startX = 0, startY = 0;
-    let lastCommand = '';
-    
-    while (i < commands.length) {
-        let token = commands[i];
-        if (!token) {
-            i++;
-            continue;
-        }
-        
-        const isCommand = token.match(/^[MmLlHhVvCcSsQqTtAaZz]$/);
-        
-        if (isCommand) {
-            lastCommand = token;
-            i++;
-            
-            switch (token) {
-                case 'M':
-                case 'm':
-                    if (i + 1 >= commands.length) break;
-                    const mx = parseFloat(commands[i++]);
-                    const my = parseFloat(commands[i++]);
-                    if (token === 'm') {
-                        currentX += mx;
-                        currentY += my;
-                    } else {
-                        currentX = mx;
-                        currentY = my;
-                    }
-                    startX = currentX;
-                    startY = currentY;
-                    points.push({x: currentX, y: currentY, move: true});
-                    lastCommand = token.toLowerCase();
-                    break;
-                    
-                case 'L':
-                case 'l':
-                    if (i + 1 >= commands.length) break;
-                    const lx = parseFloat(commands[i++]);
-                    const ly = parseFloat(commands[i++]);
-                    if (token === 'l') {
-                        currentX += lx;
-                        currentY += ly;
-                    } else {
-                        currentX = lx;
-                        currentY = ly;
-                    }
-                    points.push({x: currentX, y: currentY, move: false});
-                    lastCommand = token.toLowerCase();
-                    break;
-                    
-                case 'H':
-                case 'h':
-                    if (i >= commands.length) break;
-                    const hx = parseFloat(commands[i++]);
-                    if (token === 'h') {
-                        currentX += hx;
-                    } else {
-                        currentX = hx;
-                    }
-                    points.push({x: currentX, y: currentY, move: false});
-                    lastCommand = token.toLowerCase();
-                    break;
-                    
-                case 'V':
-                case 'v':
-                    if (i >= commands.length) break;
-                    const vy = parseFloat(commands[i++]);
-                    if (token === 'v') {
-                        currentY += vy;
-                    } else {
-                        currentY = vy;
-                    }
-                    points.push({x: currentX, y: currentY, move: false});
-                    lastCommand = token.toLowerCase();
-                    break;
-                    
-                case 'C':
-                case 'c':
-                    if (i + 5 >= commands.length) break;
-                    const cx1 = parseFloat(commands[i++]);
-                    const cy1 = parseFloat(commands[i++]);
-                    const cx2 = parseFloat(commands[i++]);
-                    const cy2 = parseFloat(commands[i++]);
-                    const cx = parseFloat(commands[i++]);
-                    const cy = parseFloat(commands[i++]);
-                    
-                    let x0 = currentX, y0 = currentY;
-                    let x1, y1, x2, y2, x3, y3;
-                    
-                    if (token === 'c') {
-                        x1 = x0 + cx1; y1 = y0 + cy1;
-                        x2 = x0 + cx2; y2 = y0 + cy2;
-                        x3 = x0 + cx; y3 = y0 + cy;
-                    } else {
-                        x1 = cx1; y1 = cy1;
-                        x2 = cx2; y2 = cy2;
-                        x3 = cx; y3 = cy;
-                    }
-                    
-                    // Аппроксимируем кривую Безье
-                    const steps = 40;
-                    for (let s = 1; s <= steps; s++) {
-                        const t = s / steps;
-                        const mt = 1 - t;
-                        const x = mt * mt * mt * x0 + 3 * mt * mt * t * x1 + 3 * mt * t * t * x2 + t * t * t * x3;
-                        const y = mt * mt * mt * y0 + 3 * mt * mt * t * y1 + 3 * mt * t * t * y2 + t * t * t * y3;
-                        points.push({x: x, y: y, move: false});
-                    }
-                    
-                    currentX = x3;
-                    currentY = y3;
-                    lastCommand = token.toLowerCase();
-                    break;
-                    
-                case 'A':
-                case 'a':
-                    if (i + 6 >= commands.length) break;
-                    const rx = parseFloat(commands[i++]);
-                    const ry = parseFloat(commands[i++]);
-                    const xAxisRotation = parseFloat(commands[i++]);
-                    const largeArcFlag = parseFloat(commands[i++]);
-                    const sweepFlag = parseFloat(commands[i++]);
-                    const ax = parseFloat(commands[i++]);
-                    const ay = parseFloat(commands[i++]);
-                    
-                    let endX, endY;
-                    if (token === 'a') {
-                        endX = currentX + ax;
-                        endY = currentY + ay;
-                    } else {
-                        endX = ax;
-                        endY = ay;
-                    }
-                    
-                    // Упрощенная аппроксимация дуги
-                    const arcSteps = 20;
-                    const startAngle = Math.atan2(currentY - (currentY + endY) / 2, currentX - (currentX + endX) / 2);
-                    const endAngle = Math.atan2(endY - (currentY + endY) / 2, endX - (currentX + endX) / 2);
-                    
-                    for (let s = 1; s <= arcSteps; s++) {
-                        const t = s / arcSteps;
-                        const angle = startAngle + (endAngle - startAngle) * t;
-                        const x = (currentX + endX) / 2 + Math.abs(rx) * Math.cos(angle);
-                        const y = (currentY + endY) / 2 + Math.abs(ry) * Math.sin(angle);
-                        points.push({x: x, y: y, move: false});
-                    }
-                    
-                    currentX = endX;
-                    currentY = endY;
-                    lastCommand = token.toLowerCase();
-                    break;
-                    
-                case 'Z':
-                case 'z':
-                    points.push({x: startX, y: startY, move: false});
-                    currentX = startX;
-                    currentY = startY;
-                    break;
-            }
-        } else {
-            // Если это не команда, значит продолжаем предыдущую команду
-            if (lastCommand === 'm') lastCommand = 'l';
-            else if (lastCommand === 'M') lastCommand = 'L';
-            
-            if (lastCommand) {
-                commands.splice(i, 0, lastCommand);
-            } else {
-                i++;
-            }
-        }
-    }
-    
-    return points;
-}
-
-    getDisplayPaths() {
-        return this.getGcodePaths();
-    }
-
-getGcodePaths() {
-    const gcodePaths = [];
-    const cos = Math.cos(this.rotation);
-    const sin = Math.sin(this.rotation);
-    
-    if (!this.vectorPaths || this.vectorPaths.length === 0) {
-        return gcodePaths;
-    }
-    
-    // Центр для вращения - центр отображаемого элемента
-    const centerX = this.x + this.width * this.scale / 2;
-    const centerY = this.y + this.height * this.scale / 2;
-    
-    for (const path of this.vectorPaths) {
-        const transformedPath = [];
-        
-        for (const point of path) {
-            // 1. Берем масштабированные координаты из vectorPaths
-            // 2. Применяем дополнительный масштаб (this.scale)
-            const scaledX = point.x * this.scale;
-            const scaledY = point.y * this.scale;
-            
-            // 3. Сдвигаем к позиции элемента (this.x, this.y)
-            // 4. ИНВЕРТИРУЕМ Y: SVG Y растет вниз, плоттер Y растет вверх
-            const worldX = this.x + scaledX;
-            const worldY = this.y + (this.height * this.scale - scaledY); // ИНВЕРСИЯ ЗДЕСЬ!
-            
-            // 5. Поворачиваем вокруг центра элемента
-            const rotatedX = (worldX - centerX) * cos - (worldY - centerY) * sin + centerX;
-            const rotatedY = (worldX - centerX) * sin + (worldY - centerY) * cos + centerY;
-            
-            transformedPath.push({ 
-                x: rotatedX, 
-                y: rotatedY 
-            });
-        }
-        
-        if (transformedPath.length > 1) {
-            gcodePaths.push(transformedPath);
-        }
-    }
-    
-    return gcodePaths;
-}
 
     getBoundingBox() {
         return {
@@ -1258,6 +1320,49 @@ getGcodePaths() {
             width: this.width * this.scale,
             height: this.height * this.scale
         };
+    }
+
+    getDisplayPaths() {
+        return this.getGcodePaths();
+    }
+
+    getGcodePaths() {
+        const gcodePaths = [];
+        const cos = Math.cos(this.rotation);
+        const sin = Math.sin(this.rotation);
+        
+        if (!this.vectorPaths || this.vectorPaths.length === 0) {
+            return gcodePaths;
+        }
+        
+        const centerX = this.x + this.width * this.scale / 2;
+        const centerY = this.y + this.height * this.scale / 2;
+        
+        for (const path of this.vectorPaths) {
+            const transformedPath = [];
+            
+            for (const point of path) {
+                const scaledX = point.x * this.scale;
+                const scaledY = point.y * this.scale;
+                
+                const worldX = this.x + scaledX;
+                const worldY = this.y + (this.height * this.scale - scaledY);
+                
+                const rotatedX = (worldX - centerX) * cos - (worldY - centerY) * sin + centerX;
+                const rotatedY = (worldX - centerX) * sin + (worldY - centerY) * cos + centerY;
+                
+                transformedPath.push({ 
+                    x: rotatedX, 
+                    y: rotatedY 
+                });
+            }
+            
+            if (transformedPath.length > 1) {
+                gcodePaths.push(transformedPath);
+            }
+        }
+        
+        return gcodePaths;
     }
 }
 
@@ -1309,7 +1414,6 @@ class QRElement {
             
             // ГРУППИРУЕМ СОСЕДНИЕ МОДУЛИ В ОБЛАСТИ
             const areas = this.groupModulesIntoAreas(blackModules, moduleSize);
-            console.log(`Найдено ${areas.length} отдельных черных областей`);
             
             // ДЛЯ КАЖДОЙ ОБЛАСТИ СОЗДАЕМ СВОЮ ЗМЕЙКУ
             for (let i = 0; i < areas.length; i++) {
@@ -1366,10 +1470,8 @@ class QRElement {
                 }
             }
             
-            console.log(`Всего путей: ${this.paths.length}`);
             
         } catch (error) {
-            console.error('Ошибка генерации QR кода:', error);
             this.createErrorPlaceholder(text, size);
         }
     }
@@ -2084,6 +2186,7 @@ getGcodePaths() {
         await this.generatePaths();
     }
 }
+
 function createTextModalDialog() {
     // Контейнер для модального окна текста
     const modalContainer = document.createElement('div');
@@ -2402,10 +2505,8 @@ modalOk.onclick = async () => {
 
 function checkQRLibrary() {
     if (typeof qrcode !== 'undefined') {
-        console.log('Библиотека qrcode-generator загружена');
         return true;
     } else {
-        console.warn('Библиотека qrcode-generator не загружена');
         updateStatus('Библиотека QR не загружена, проверьте подключение', 'error');
         return false;
     }
@@ -2659,8 +2760,17 @@ function startQREdit(element, index) {
 // Включить режим выделения
 function enableSVGPartSelection() {
     isSelectingSVGPart = true;
-    updateStatus('Режим выделения части SVG: кликните и перетащите для выделения', 'success');
+    isDrawingSelection = false;
+    selectionStart = { x: 0, y: 0 };
+    selectionCurrent = { x: 0, y: 0 };
+    const startExtractBtn = document.getElementById('startExtractBtn');
+    if (startExtractBtn) {
+        startExtractBtn.classList.add('active');
+    }
+    updateStatus('Режим выделения: зажмите и перетащите мышь', 'success');
+    drawScene();
 }
+
         // Инициализация
         async function init() {
             updateCanvasSize();
@@ -2672,6 +2782,10 @@ function enableSVGPartSelection() {
             
             loadLastFont();
 			checkQRLibrary();
+			    setTimeout(() => {
+            updateCanvasSize();
+			updatePenCrosshair();
+			}, 200);
         }
         
         function setupCollapsible() {
@@ -2740,7 +2854,7 @@ async function addTextElementAtCenter() {
             
             const widthRatio = containerWidth / sheetWidth;
             const heightRatio = containerHeight / sheetHeight;
-            scaleFactor = Math.min(widthRatio, heightRatio) * 0.95;
+            scaleFactor = Math.min(widthRatio, heightRatio) * 0.93;
             
             mainCanvas.width = sheetWidth * scaleFactor;
             mainCanvas.height = sheetHeight * scaleFactor;
@@ -2762,118 +2876,89 @@ async function loadFiles(files) {
 
     try {
         for (let file of files) {
-            if (file.type === 'image/svg+xml' || file.name.endsWith('.svg')) {
+            if (file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')) {
                 try {
                     const svgContent = await readFileAsText(file);
                     
                     // Проверяем, это шрифт или обычный SVG
                     if (svgContent.includes('<font') || svgContent.includes('<glyph')) {
-                        // Это шрифт
-                        const fontName = file.name.replace('.svg', '');
+                        // Это шрифт (код без изменений)
+                        const fontName = file.name.replace('.svg', '').replace(/\.svg$/i, '');
                         const font = new GOSTSVGFont(svgContent, fontName);
                         
                         if (font.glyphs.size > 0) {
-                            // Создаем предпросмотр шрифта как изображение
                             const previewImage = await createFontPreviewImage(font, fontName);
                             
                             fonts.push({
                                 name: fontName,
                                 path: file.name,
                                 instance: font,
-                                previewImage: previewImage // Сохраняем data URL
+                                previewImage: previewImage
                             });
 
-                            // Создаем option с предпросмотром
                             const option = document.createElement('option');
                             option.value = file.name;
-                            option.title = fontName;
-                            
-                            // Контейнер с названием и предпросмотром
-                            const optionContent = document.createElement('div');
-                            optionContent.className = 'font-option';
-                            
-                            // Название шрифта
-                            const nameSpan = document.createElement('span');
-                            nameSpan.className = 'font-name';
-                            nameSpan.textContent = fontName;
-                            
-                            // Изображение предпросмотра
-                            const previewImg = document.createElement('img');
-                            previewImg.className = 'font-preview-img';
-                            previewImg.src = previewImage;
-                            previewImg.alt = `Предпросмотр: ${fontName}`;
-                            
-                            optionContent.appendChild(nameSpan);
-                            optionContent.appendChild(previewImg);
-                            
-                            // Для старых браузеров добавляем текст
                             option.textContent = fontName;
-                            option.appendChild(optionContent);
+                            if (previewImage) option.dataset.preview = previewImage;
                             
                             fontSelect.appendChild(option);
                             fontsLoaded++;
                         } else {
-                            console.warn(`Шрифт ${fontName} не содержит глифов`);
                             errors++;
                         }
                     } else {
-                        // Это обычный SVG рисунок (остальной код без изменений)
+                        // Это обычный SVG - загружаем 1:1
                         const svgElement = new SVGElement(
-                            Date.now(),
+                            Date.now() + Math.random(),
                             svgContent,
-                            sheetWidth / 2 - 25,
-                            sheetHeight / 2 - 25,
-                            50,
-                            50
+                            0, 0, 50, 50,
+                            file.name
                         );
                         
                         await svgElement.parseSVG(svgContent);
-                        svgElements.push(svgElement);
-                        svgsLoaded++;
-                        updateSVGElementsList();
-                        updateStatus(`SVG рисунок "${file.name}" загружен`, 'success');
+                        
+                        if (svgElement.vectorPaths.length > 0) {
+                            svgElements.push(svgElement);
+                            svgsLoaded++;
+                            
+                            // Показываем информацию о размере
+                            const scaleInfo = svgElement.baseScale !== 1 ? 
+                                ` (масштаб ${(svgElement.baseScale*100).toFixed(0)}%)` : '';
+                            updateStatus(`SVG "${file.name}": ${svgElement.originalWidth.toFixed(1)}×${svgElement.originalHeight.toFixed(1)}мм${scaleInfo}`, 'success');
+                        } else {
+                            console.warn(`SVG ${file.name} не содержит путей`);
+                            errors++;
+                        }
                     }
                     
                 } catch (error) {
-                    console.error(`Ошибка загрузки файла ${file.name}:`, error);
+                    console.error(`Ошибка загрузки ${file.name}:`, error);
                     errors++;
                 }
             }
         }
 
-if (fonts.length > 0 && fontsLoaded > 0) {
-    // Выбираем первый шрифт по умолчанию в ОСНОВНОМ select
-    fontSelect.value = fonts[0].path;
-    
-    // Обновляем предпросмотр в панели свойств
-    updateFontSelectPreviews();
-    
-    // ВЫЗЫВАЕМ ИНИЦИАЛИЗАЦИЮ КАСТОМНОГО SELECT С ВЫБРАННЫМ ШРИФТОМ
-    setTimeout(() => {
-        if (typeof initCustomFontSelect === 'function') {
-            initCustomFontSelect();
+        if (fontsLoaded > 0) {
+            updateFontSelectPreviews();
+            if (fonts.length > 0 && !fontSelect.value) {
+                fontSelect.value = fonts[0].path;
+            }
         }
-        updateStatus(`Выбран шрифт: ${fonts[0].name}`, 'success');
-    }, 100);
-    
-    localStorage.setItem('lastFonts', JSON.stringify(
-        files.filter(f => f.name.endsWith('.svg')).map(f => f.name)
-    ));
-}
-
+        
+        if (svgsLoaded > 0) {
+            updateSVGElementsList();
+            drawScene();
+        }
+        
         let statusMessage = '';
         if (fontsLoaded > 0) statusMessage += `Шрифтов: ${fontsLoaded}. `;
-        if (svgsLoaded > 0) statusMessage += `Рисунков: ${svgsLoaded}. `;
+        if (svgsLoaded > 0) statusMessage += `SVG: ${svgsLoaded}. `;
         if (errors > 0) statusMessage += `Ошибок: ${errors}.`;
         
-        if (fontsLoaded > 0 || svgsLoaded > 0) {
-            updateStatus(statusMessage || 'Файлы загружены', 'success');
-            drawScene();
-        } else {
-            updateStatus('Не удалось загрузить файлы', 'error');
-        }
+        updateStatus(statusMessage || 'Готово', svgsLoaded > 0 ? 'success' : 'error');
+        
     } catch (error) {
-        console.error('Общая ошибка загрузки файлов:', error);
+        console.error('Ошибка загрузки:', error);
         updateStatus('Ошибка загрузки файлов', 'error');
     } finally {
         showLoading(false);
@@ -3251,7 +3336,7 @@ function updateSelectWithPreviews(selectElement) {
                         updateStatus('Найдены предыдущие шрифты. Загрузите файлы снова.', 'success');
                     }
                 } catch (e) {
-                    console.log('Нет сохраненных шрифтов');
+				updateStatus('Нет сохраненных шрифтов', 'success');
                 }
             }
         }
@@ -3266,6 +3351,31 @@ function updateSelectWithPreviews(selectElement) {
         }
         
         function setupEventListeners() {
+		const gcodeUploadInput = document.getElementById('gcodeUpload');
+		const loadGcodeBtn = document.getElementById('loadGcodeBtn');
+
+		if (loadGcodeBtn && gcodeUploadInput) {
+			loadGcodeBtn.addEventListener('click', () => gcodeUploadInput.click());
+			
+			gcodeUploadInput.addEventListener('change', async (e) => {
+				const files = Array.from(e.target.files);
+				if (files.length === 0) return;
+				
+				showLoading(true);
+				try {
+					for (let file of files) {
+						await loadGCodeFile(file);
+					}
+					// Очищаем input для возможности повторной загрузки того же файла
+					gcodeUploadInput.value = '';
+				} catch (error) {
+					console.error('Ошибка загрузки:', error);
+					updateStatus('Ошибка загрузки: ' + error.message, 'error');
+				} finally {
+					showLoading(false);
+				}
+			});
+		}
 			document.getElementById('startExtractBtn').addEventListener('click', enableSVGPartSelection);
 			document.getElementById('extractBtn').addEventListener('click', extractSVGPartFromSelection);
 			document.getElementById('CopyBtn').addEventListener('click', CopySVGPartFromSelection);
@@ -3532,14 +3642,6 @@ function handleKeyDown(event) {
             event.preventDefault();
             break;
             
-        case 'F2':
-            // F2 - отладка
-            if (selectedElementIndex !== -1 || (isSVGSelected && selectedSVGIndex !== -1)) {
-                debugElement();
-                event.preventDefault();
-            }
-            break;
-            
         case 'Tab':
             // Tab - переключение между элементами
             if (!event.target.matches('input, textarea, select')) {
@@ -3710,231 +3812,239 @@ function extractSVGPartFromSelection() {
     const rect = getSelectionRect();
     let extractedCount = 0;
     
-    // Проходим по копии массива, так как мы будем удалять элементы
-    const elementsToProcess = [...svgElements];
-    
-    for (let i = 0; i < elementsToProcess.length; i++) {
-        const svg = elementsToProcess[i];
+    // Определяем тип выбранного элемента
+    if (isSVGSelected && selectedSVGIndex !== -1) {
+        // Извлекаем часть из SVG/G-code элемента
+        const svg = svgElements[selectedSVGIndex];
         const svgBounds = svg.getBoundingBox();
         
-        // Проверяем пересечение
         if (rectsIntersect(rect, svgBounds)) {
-            // Извлекаем часть (функция сама удалит из оригинала)
-            const newPart = extractPartFromSVG(svg, rect);
+            const newPart = processSVGPart(svg, rect, true);
             if (newPart) {
-                // Добавляем как новый элемент
                 svgElements.push(newPart);
                 extractedCount++;
             }
         }
+    } else if (selectedElementIndex !== -1) {
+        const textElement = textElements[selectedElementIndex];
+        const newPart = processSVGPart(textElement, rect, false);
+        if (newPart) {
+            svgElements.push(newPart);
+            extractedCount++;
+        }
+    } else if (isQRSelected && selectedQRIndex !== -1) {
+        const qrElement = qrElements[selectedQRIndex];
+        const newPart = processSVGPart(qrElement, rect, false);
+        if (newPart) {
+            svgElements.push(newPart);
+            extractedCount++;
+        }
     }
-    
     if (extractedCount > 0) {
         updateStatus(`Вырезано ${extractedCount} частей`, 'success');
         updateSVGElementsList();
+        updateTextElementsList();
+        updateQRElementsList();
         drawScene();
     } else {
-        updateStatus('В выделенной области нет SVG элементов', 'warning');
+        updateStatus('В выделенной области нет частей элемента', 'warning');
     }
     
     clearSelection();
 }
 
-// Извлечь часть из SVG элемента
-function extractPartFromSVG(svgElement, selectionRect) {
+// Общая функция обработки части SVG
+function processSVGPart(svgElement, selectionRect, modifyOriginal = false) {
     const pathsInSelection = [];
-    const pathsToKeep = [];
-    const selectionMinX = selectionRect.x;
-    const selectionMinY = selectionRect.y;
-    const selectionMaxX = selectionRect.x + selectionRect.width;
-    const selectionMaxY = selectionRect.y + selectionRect.height;
+    const pathsOutsideInWorld = [];
+    const rectMinX = selectionRect.x;
+    const rectMinY = selectionRect.y;
+    const rectMaxX = selectionRect.x + selectionRect.width;
+    const rectMaxY = selectionRect.y + selectionRect.height;
     
-    const originalPaths = svgElement.vectorPaths || [];
+    const allPaths = svgElement.getGcodePaths();
     
-    // Находим границы извлеченной части
-    let extractedMinX = Infinity;
-    let extractedMinY = Infinity;
-    let extractedMaxX = -Infinity;
-    let extractedMaxY = -Infinity;
+    let extractedMinX = Infinity, extractedMinY = Infinity;
+    let extractedMaxX = -Infinity, extractedMaxY = -Infinity;
     
-    for (let pathIndex = 0; pathIndex < originalPaths.length; pathIndex++) {
-        const originalPath = originalPaths[pathIndex];
+    for (const path of allPaths) {
+        const segmentsInRect = [];
+        const segmentsOutside = [];
         
-        // Конвертируем путь в мировые координаты для проверки
-        const worldPath = originalPath.map(point => {
-            const worldX = svgElement.x + point.x * svgElement.scale;
-            const worldY = svgElement.y + point.y * svgElement.scale;
-            return { x: worldX, y: worldY, move: point.move };
-        });
+        let currentInside = [];
+        let currentOutside = [];
+        let isInside = false;
         
-        let currentExtractedSegment = [];
-        let currentKeptSegment = [];
-        let lastState = null;
-        
-        for (let i = 0; i < worldPath.length; i++) {
-            const worldPoint = worldPath[i];
-            const isInside = worldPoint.x >= selectionMinX && worldPoint.x <= selectionMaxX &&
-                           worldPoint.y >= selectionMinY && worldPoint.y <= selectionMaxY;
-            const currentState = isInside ? 'inside' : 'outside';
+        for (let i = 0; i < path.length; i++) {
+            const point = path[i];
+            const inRect = point.x >= rectMinX && point.x <= rectMaxX &&
+                          point.y >= rectMinY && point.y <= rectMaxY;
             
-            if (lastState === null) {
-                lastState = currentState;
-                if (isInside) {
-                    currentExtractedSegment.push({
-                        x: worldPoint.x,
-                        y: worldPoint.y,
-                        move: true
-                    });
-                } else {
-                    currentKeptSegment.push({
-                        x: worldPoint.x,
-                        y: worldPoint.y,
-                        move: true
-                    });
+            if (inRect) {
+                if (!isInside && currentOutside.length > 0) {
+                    if (i > 0) {
+                        const prevPoint = path[i - 1];
+                        const intersection = findIntersectionWithRect(prevPoint, point, selectionRect);
+                        if (intersection) {
+                            currentOutside.push({ x: intersection.x, y: intersection.y });
+                            segmentsOutside.push([...currentOutside]);
+                            currentOutside = [];
+                            
+                            currentInside.push({ x: intersection.x, y: intersection.y });
+                        }
+                    } else {
+                        segmentsOutside.push([...currentOutside]);
+                        currentOutside = [];
+                    }
                 }
-            } else if (currentState === lastState) {
-                if (isInside) {
-                    currentExtractedSegment.push({
-                        x: worldPoint.x,
-                        y: worldPoint.y,
-                        move: false
-                    });
-                } else {
-                    currentKeptSegment.push({
-                        x: worldPoint.x,
-                        y: worldPoint.y,
-                        move: false
-                    });
-                }
+                isInside = true;
+                currentInside.push({ x: point.x, y: point.y });
+                
+                extractedMinX = Math.min(extractedMinX, point.x);
+                extractedMinY = Math.min(extractedMinY, point.y);
+                extractedMaxX = Math.max(extractedMaxX, point.x);
+                extractedMaxY = Math.max(extractedMaxY, point.y);
+                
             } else {
-                // Сохраняем сегменты
-                if (lastState === 'inside' && currentExtractedSegment.length > 1) {
-                    pathsInSelection.push([...currentExtractedSegment]);
-                    
-                    // Обновляем границы извлеченной части
-                    currentExtractedSegment.forEach(p => {
-                        extractedMinX = Math.min(extractedMinX, p.x);
-                        extractedMinY = Math.min(extractedMinY, p.y);
-                        extractedMaxX = Math.max(extractedMaxX, p.x);
-                        extractedMaxY = Math.max(extractedMaxY, p.y);
-                    });
+                if (isInside && currentInside.length > 0) {
+                    if (i > 0) {
+                        const prevPoint = path[i - 1];
+                        const intersection = findIntersectionWithRect(prevPoint, point, selectionRect);
+                        if (intersection) {
+                            currentInside.push({ x: intersection.x, y: intersection.y });
+                            extractedMinX = Math.min(extractedMinX, intersection.x);
+                            extractedMinY = Math.min(extractedMinY, intersection.y);
+                            extractedMaxX = Math.max(extractedMaxX, intersection.x);
+                            extractedMaxY = Math.max(extractedMaxY, intersection.y);
+                            
+                            segmentsInRect.push([...currentInside]);
+                            currentInside = [];
+                            
+                            currentOutside.push({ x: intersection.x, y: intersection.y });
+                        }
+                    } else {
+                        segmentsInRect.push([...currentInside]);
+                        currentInside = [];
+                    }
                 }
-                if (lastState === 'outside' && currentKeptSegment.length > 1) {
-                    // Конвертируем обратно в локальные координаты для сохранения
-                    const localKeptSegment = currentKeptSegment.map(p => ({
-                        x: (p.x - svgElement.x) / svgElement.scale,
-                        y: (p.y - svgElement.y) / svgElement.scale,
-                        move: p.move
-                    }));
-                    pathsToKeep.push(localKeptSegment);
-                }
-                
-                // Начинаем новые сегменты
-                currentExtractedSegment = [];
-                currentKeptSegment = [];
-                
-                if (isInside) {
-                    currentExtractedSegment.push({
-                        x: worldPoint.x,
-                        y: worldPoint.y,
-                        move: true
-                    });
-                } else {
-                    currentKeptSegment.push({
-                        x: worldPoint.x,
-                        y: worldPoint.y,
-                        move: true
-                    });
-                }
-                
-                lastState = currentState;
+                isInside = false;
+                currentOutside.push({ x: point.x, y: point.y });
             }
         }
         
-        // Сохраняем последние сегменты
-        if (lastState === 'inside' && currentExtractedSegment.length > 1) {
-            pathsInSelection.push([...currentExtractedSegment]);
-            currentExtractedSegment.forEach(p => {
-                extractedMinX = Math.min(extractedMinX, p.x);
-                extractedMinY = Math.min(extractedMinY, p.y);
-                extractedMaxX = Math.max(extractedMaxX, p.x);
-                extractedMaxY = Math.max(extractedMaxY, p.y);
-            });
+        if (currentInside.length > 0) {
+            segmentsInRect.push(currentInside);
         }
-        if (lastState === 'outside' && currentKeptSegment.length > 1) {
-            const localKeptSegment = currentKeptSegment.map(p => ({
-                x: (p.x - svgElement.x) / svgElement.scale,
-                y: (p.y - svgElement.y) / svgElement.scale,
-                move: p.move
-            }));
-            pathsToKeep.push(localKeptSegment);
+        if (currentOutside.length > 0) {
+            segmentsOutside.push(currentOutside);
+        }
+        
+        for (const seg of segmentsInRect) {
+            if (seg.length >= 2) pathsInSelection.push(seg);
+        }
+        for (const seg of segmentsOutside) {
+            if (seg.length >= 2) pathsOutsideInWorld.push(seg);
         }
     }
     
-    // Обновляем оригинальный SVG
-    svgElement.vectorPaths = pathsToKeep;
+    if (pathsInSelection.length === 0) {
+        return null;
+    }
     
-    // Удаляем пустой SVG
-    if (pathsToKeep.length === 0) {
-        const index = svgElements.indexOf(svgElement);
-        if (index !== -1) {
-            svgElements.splice(index, 1);
+    // Обратное преобразование оставшихся путей
+    const scale = svgElement.scale * svgElement.baseScale;
+    const elementWidth = svgElement.width * svgElement.scale;
+    const elementHeight = svgElement.height * svgElement.scale;
+    const centerX = svgElement.x + elementWidth / 2;
+    const centerY = svgElement.y + elementHeight / 2;
+    const cos = Math.cos(svgElement.rotation);
+    const sin = Math.sin(svgElement.rotation);
+    
+    const scaleSquared = scale / scale; // Как вы сказали
+    
+    const newVectorPaths = pathsOutsideInWorld.map(path => 
+        path.map((p, i) => {
+            const dx = p.x - centerX;
+            const dy = p.y - centerY;
+            const unrotatedX = dx * cos + dy * sin + centerX;
+            const unrotatedY = -dx * sin + dy * cos + centerY;
+            
+            const localX = (unrotatedX - svgElement.x) / scaleSquared;
+            const localY = (elementHeight - (unrotatedY - svgElement.y)) / scaleSquared;
+            
+            return { x: localX, y: localY, move: i === 0 };
+        })
+    ).filter(p => p.length >= 2);
+    
+    // Обновляем оригинал только если нужно
+    if (modifyOriginal) {
+        svgElement.vectorPaths = newVectorPaths;
+        
+        if (newVectorPaths.length === 0) {
+            const index = svgElements.indexOf(svgElement);
+            if (index !== -1) svgElements.splice(index, 1);
         }
     }
     
-    if (pathsInSelection.length === 0) return null;
-    
-    // Рассчитываем размер извлеченной части
+    // Создаём новый элемент
     const extractedWidth = extractedMaxX - extractedMinX;
     const extractedHeight = extractedMaxY - extractedMinY;
     
-    // Создаем новый SVG элемент
+    if (extractedWidth <= 0 || extractedHeight <= 0) {
+        return null;
+    }
+    
     const newSVG = new SVGElement(
         Date.now(),
         '<svg><path/></svg>',
-        extractedMinX, // Начальная позиция по минимальным координатам
+        extractedMinX,
         extractedMinY,
         extractedWidth,
-        extractedHeight
+        extractedHeight,
+        modifyOriginal ? 'Вырезанная_часть' : 'Копия_части'
     );
     
-    // Преобразуем пути к локальным координатам нового SVG
-    const transformedPaths = pathsInSelection.map(path => {
-        return path.map(point => ({
-            x: (point.x - extractedMinX), // Относительно левого верхнего угла
-            y: (point.y - extractedMinY), // Относительно левого верхнего угла
-            move: point.move
-        }));
-    });
+    const localPaths = pathsInSelection.map(path =>
+        path.map((p, i) => ({
+            x: p.x - extractedMinX,
+            y: extractedHeight - (p.y - extractedMinY),
+            move: i === 0
+        }))
+    );
     
-    newSVG.vectorPaths = transformedPaths;
-    newSVG.scale = 1; // Используем масштаб 1, так как координаты уже правильные
+    newSVG.vectorPaths = localPaths;
+    newSVG.scale = 1;
     newSVG.rotation = 0;
+    newSVG.baseScale = 1;
+    newSVG.sourceType = svgElement.sourceType;
+    newSVG.x = extractedMinX;
+    newSVG.y = extractedMinY;
+    newSVG.width = extractedWidth;
+    newSVG.height = extractedHeight;
+    newSVG.originalWidth = extractedWidth;
+    newSVG.originalHeight = extractedHeight;
     
-    // Создаем простой canvas для отображения
+    // Canvas
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(10, Math.min(50, extractedWidth));
     canvas.height = Math.max(10, Math.min(50, extractedHeight));
     
-    // Рисуем на canvas для предпросмотра
     const ctx = canvas.getContext('2d');
-    ctx.strokeStyle = 'black';
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#000';
     ctx.lineWidth = 1;
     
-    for (const path of transformedPaths) {
+    const scaleX = canvas.width / extractedWidth;
+    const scaleY = canvas.height / extractedHeight;
+    
+    for (const path of localPaths) {
         if (path.length < 2) continue;
-        
-        const scaleX = canvas.width / extractedWidth;
-        const scaleY = canvas.height / extractedHeight;
-        const scale = Math.min(scaleX, scaleY);
-        
         ctx.beginPath();
-        ctx.moveTo(path[0].x * scale, path[0].y * scale);
-        
+        ctx.moveTo(path[0].x * scaleX, canvas.height - path[0].y * scaleY);
         for (let i = 1; i < path.length; i++) {
-            ctx.lineTo(path[i].x * scale, path[i].y * scale);
+            ctx.lineTo(path[i].x * scaleX, canvas.height - path[i].y * scaleY);
         }
-        
         ctx.stroke();
     }
     
@@ -3943,43 +4053,177 @@ function extractPartFromSVG(svgElement, selectionRect) {
     return newSVG;
 }
 
+function updateAllLists() {
+    updateTextElementsList();
+    updateSVGElementsList();
+    updateQRElementsList();
+    updateElementProperties();
+    updateDeleteButtonsVisibility();
+}
+
 function CopySVGPartFromSelection() {
+    if (!isSelectingSVGPart) {
+        updateStatus('Сначала включите режим выделения', 'error');
+        return;
+    }
+    
     if (!isValidSelection()) {
         updateStatus('Сначала выделите область', 'error');
         return;
     }
     
     const rect = getSelectionRect();
-    let extractedCount = 0;
+    let copiedCount = 0;
     
-    // Проходим по копии массива, так как мы будем удалять элементы
-    const elementsToProcess = [...svgElements];
+    // Определяем тип выбранного элемента и копируем ВСЕ что попало в выделение
+    if (isSVGSelected && selectedSVGIndex !== -1) {
+        const svg = svgElements[selectedSVGIndex];
+        const newPart = processSVGPart(svg, rect, false);
+        if (newPart) {
+            svgElements.push(newPart);
+            copiedCount++;
+        }
+    } else if (selectedElementIndex !== -1) {
+        const textElement = textElements[selectedElementIndex];
+        const newPart = processSVGPart(textElement, rect, false);
+        if (newPart) {
+            svgElements.push(newPart);
+            copiedCount++;
+        }
+    } else if (isQRSelected && selectedQRIndex !== -1) {
+        const qrElement = qrElements[selectedQRIndex];
+        const newPart = processSVGPart(qrElement, rect, false);
+        if (newPart) {
+            svgElements.push(newPart);
+            copiedCount++;
+        }
+    } else {
+        updateStatus('Нет выбранного элемента', 'error');
+        return;
+    }
     
-    for (let i = 0; i < elementsToProcess.length; i++) {
-        const svg = elementsToProcess[i];
-        const svgBounds = svg.getBoundingBox();
-        
-        // Проверяем пересечение
-        if (rectsIntersect(rect, svgBounds)) {
-            // Извлекаем часть (функция сама удалит из оригинала)
-            const newPart = CopyPartFromSVG(svg, rect);
-            if (newPart) {
-                // Добавляем как новый элемент
-                svgElements.push(newPart);
-                extractedCount++;
+    if (copiedCount > 0) {
+        updateStatus(`Скопирована область ${rect.width.toFixed(1)} × ${rect.height.toFixed(1)} мм`, 'success');
+        updateSVGElementsList();
+        drawScene();
+    } else {
+        updateStatus('В выделенной области ничего нет', 'warning');
+    }
+    
+    // Сбрасываем выделение
+    isDrawingSelection = false;
+    selectionStart = { x: 0, y: 0 };
+    selectionCurrent = { x: 0, y: 0 };
+    drawScene();
+}
+
+// Найти пересечение отрезка с прямоугольником
+function findIntersectionWithRect(p1, p2, rect) {
+    const rectLines = [
+        { x1: rect.x, y1: rect.y, x2: rect.x + rect.width, y2: rect.y }, // низ
+        { x1: rect.x + rect.width, y1: rect.y, x2: rect.x + rect.width, y2: rect.y + rect.height }, // право
+        { x1: rect.x + rect.width, y1: rect.y + rect.height, x2: rect.x, y2: rect.y + rect.height }, // верх
+        { x1: rect.x, y1: rect.y + rect.height, x2: rect.x, y2: rect.y } // лево
+    ];
+    
+    for (const line of rectLines) {
+        const intersection = lineIntersection(
+            p1.x, p1.y, p2.x, p2.y,
+            line.x1, line.y1, line.x2, line.y2
+        );
+        if (intersection) return intersection;
+    }
+    
+    return null;
+}
+
+// Найти все пересечения линии с прямоугольником
+function findLineRectIntersections(p1, p2, rect) {
+    const intersections = [];
+    const rectLines = [
+        { x1: rect.x, y1: rect.y, x2: rect.x + rect.width, y2: rect.y },
+        { x1: rect.x + rect.width, y1: rect.y, x2: rect.x + rect.width, y2: rect.y + rect.height },
+        { x1: rect.x + rect.width, y1: rect.y + rect.height, x2: rect.x, y2: rect.y + rect.height },
+        { x1: rect.x, y1: rect.y + rect.height, x2: rect.x, y2: rect.y }
+    ];
+    
+    for (const line of rectLines) {
+        const intersection = lineIntersection(
+            p1.x, p1.y, p2.x, p2.y,
+            line.x1, line.y1, line.x2, line.y2
+        );
+        if (intersection) {
+            // Проверяем, нет ли уже такой точки
+            const exists = intersections.some(p => 
+                Math.abs(p.x - intersection.x) < 0.01 && Math.abs(p.y - intersection.y) < 0.01
+            );
+            if (!exists) {
+                intersections.push(intersection);
             }
         }
     }
     
-    if (extractedCount > 0) {
-        updateStatus(`Вырезано ${extractedCount} частей`, 'success');
-        updateSVGElementsList();
-        drawScene();
-    } else {
-        updateStatus('В выделенной области нет SVG элементов', 'warning');
+    return intersections;
+}
+
+// Пересечение двух отрезков
+function lineIntersection(x1, y1, x2, y2, x3, y3, x4, y4) {
+    const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+    if (denom === 0) return null;
+    
+    const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+    const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
+    
+    if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
+        return {
+            x: x1 + ua * (x2 - x1),
+            y: y1 + ua * (y2 - y1)
+        };
     }
     
-    clearSelection();
+    return null;
+}
+
+// Создать canvas для предпросмотра
+function createPreviewCanvas(paths, width, height) {
+    const canvas = document.createElement('canvas');
+    const maxSize = 100;
+    let canvasWidth, canvasHeight;
+    
+    if (width > height) {
+        canvasWidth = maxSize;
+        canvasHeight = (height / width) * maxSize;
+    } else {
+        canvasHeight = maxSize;
+        canvasWidth = (width / height) * maxSize;
+    }
+    
+    canvas.width = Math.max(10, canvasWidth);
+    canvas.height = Math.max(10, canvasHeight);
+    
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    
+    const scaleX = canvas.width / width;
+    const scaleY = canvas.height / height;
+    
+    for (const path of paths) {
+        if (path.length < 2) continue;
+        
+        ctx.beginPath();
+        ctx.moveTo(path[0].x * scaleX, canvas.height - path[0].y * scaleY); // Инверсия Y для canvas
+        
+        for (let i = 1; i < path.length; i++) {
+            ctx.lineTo(path[i].x * scaleX, canvas.height - path[i].y * scaleY);
+        }
+        
+        ctx.stroke();
+    }
+    
+    return canvas;
 }
 
 //копировать
@@ -3990,7 +4234,7 @@ function CopyPartFromSVG(svgElement, selectionRect) {
     const selectionMaxX = selectionRect.x + selectionRect.width;
     const selectionMaxY = selectionRect.y + selectionRect.height;
     
-    // Получаем все пути элемента (уже преобразованные с учетом поворота и масштаба)
+    // Получаем все пути элемента
     const gcodePaths = svgElement.getGcodePaths();
     
     for (const path of gcodePaths) {
@@ -4007,7 +4251,7 @@ function CopyPartFromSVG(svgElement, selectionRect) {
                 newPath.push({
                     x: point.x - selectionRect.x,
                     y: point.y - selectionRect.y,
-                    move: newPath.length === 0 // Первая точка - move
+                    move: newPath.length === 0
                 });
             } else if (hasPointsInSelection && newPath.length > 0) {
                 // Если вышли за пределы выделения, завершаем путь
@@ -4025,25 +4269,219 @@ function CopyPartFromSVG(svgElement, selectionRect) {
     // Создаем новый SVG элемент
     const newSVG = new SVGElement(
         Date.now(),
-        '<svg><path/></svg>', // Минимальный SVG контент
+        '<svg><path/></svg>',
         selectionRect.x,
         selectionRect.y,
         selectionRect.width,
-        selectionRect.height
+        selectionRect.height,
+        'Копия части'
     );
     
-    // Переопределяем векторные пути
     newSVG.vectorPaths = pathsInSelection;
     newSVG.scale = 1;
     newSVG.rotation = 0;
+    newSVG.sourceType = svgElement.sourceType;
+    newSVG.sourceFile = 'Копия_' + (svgElement.sourceFile || 'part');
     
-    // Создаем простой SVG для отображения
-    newSVG.svgImage = document.createElement('canvas');
-    newSVG.svgImage.width = 50;
-    newSVG.svgImage.height = 50;
+    // Создаем простой canvas для отображения
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(10, Math.min(50, selectionRect.width));
+    canvas.height = Math.max(10, Math.min(50, selectionRect.height));
+    
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    
+    const scaleX = canvas.width / selectionRect.width;
+    const scaleY = canvas.height / selectionRect.height;
+    const scale = Math.min(scaleX, scaleY);
+    
+    for (const path of pathsInSelection) {
+        if (path.length < 2) continue;
+        
+        ctx.beginPath();
+        ctx.moveTo(path[0].x * scale, path[0].y * scale);
+        
+        for (let i = 1; i < path.length; i++) {
+            ctx.lineTo(path[i].x * scale, path[i].y * scale);
+        }
+        
+        ctx.stroke();
+    }
+    
+    newSVG.svgImage = canvas;
     
     return newSVG;
 }
+
+// Функция копирования части из текста
+function CopyPartFromText(textElement, selectionRect) {
+    const pathsInSelection = [];
+    const selectionMinX = selectionRect.x;
+    const selectionMinY = selectionRect.y;
+    const selectionMaxX = selectionRect.x + selectionRect.width;
+    const selectionMaxY = selectionRect.y + selectionRect.height;
+    
+    const gcodePaths = textElement.getGcodePaths();
+    
+    for (const path of gcodePaths) {
+        const newPath = [];
+        let hasPointsInSelection = false;
+        
+        for (const point of path) {
+            if (point.x >= selectionMinX && point.x <= selectionMaxX &&
+                point.y >= selectionMinY && point.y <= selectionMaxY) {
+                
+                hasPointsInSelection = true;
+                newPath.push({
+                    x: point.x - selectionRect.x,
+                    y: point.y - selectionRect.y,
+                    move: newPath.length === 0
+                });
+            }
+        }
+        
+        if (hasPointsInSelection && newPath.length > 1) {
+            pathsInSelection.push(newPath);
+        }
+    }
+    
+    if (pathsInSelection.length === 0) return null;
+    
+    // Создаем SVG элемент из части текста
+    const newSVG = new SVGElement(
+        Date.now(),
+        '<svg><path/></svg>',
+        selectionRect.x,
+        selectionRect.y,
+        selectionRect.width,
+        selectionRect.height,
+        'Копия текста'
+    );
+    
+    newSVG.vectorPaths = pathsInSelection;
+    newSVG.scale = 1;
+    newSVG.rotation = 0;
+    newSVG.sourceType = 'text_part';
+    
+    // Создаем canvas для предпросмотра
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(10, Math.min(50, selectionRect.width));
+    canvas.height = Math.max(10, Math.min(50, selectionRect.height));
+    
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    
+    const scaleX = canvas.width / selectionRect.width;
+    const scaleY = canvas.height / selectionRect.height;
+    const scale = Math.min(scaleX, scaleY);
+    
+    for (const path of pathsInSelection) {
+        if (path.length < 2) continue;
+        
+        ctx.beginPath();
+        ctx.moveTo(path[0].x * scale, path[0].y * scale);
+        
+        for (let i = 1; i < path.length; i++) {
+            ctx.lineTo(path[i].x * scale, path[i].y * scale);
+        }
+        
+        ctx.stroke();
+    }
+    
+    newSVG.svgImage = canvas;
+    
+    return newSVG;
+}
+
+// Функция копирования части из QR
+function CopyPartFromQR(qrElement, selectionRect) {
+    const pathsInSelection = [];
+    const selectionMinX = selectionRect.x;
+    const selectionMinY = selectionRect.y;
+    const selectionMaxX = selectionRect.x + selectionRect.width;
+    const selectionMaxY = selectionRect.y + selectionRect.height;
+    
+    const gcodePaths = qrElement.getGcodePaths();
+    
+    for (const path of gcodePaths) {
+        const newPath = [];
+        let hasPointsInSelection = false;
+        
+        for (const point of path) {
+            if (point.x >= selectionMinX && point.x <= selectionMaxX &&
+                point.y >= selectionMinY && point.y <= selectionMaxY) {
+                
+                hasPointsInSelection = true;
+                newPath.push({
+                    x: point.x - selectionRect.x,
+                    y: point.y - selectionRect.y,
+                    move: newPath.length === 0
+                });
+            }
+        }
+        
+        if (hasPointsInSelection && newPath.length > 1) {
+            pathsInSelection.push(newPath);
+        }
+    }
+    
+    if (pathsInSelection.length === 0) return null;
+    
+    // Создаем SVG элемент из части QR
+    const newSVG = new SVGElement(
+        Date.now(),
+        '<svg><path/></svg>',
+        selectionRect.x,
+        selectionRect.y,
+        selectionRect.width,
+        selectionRect.height,
+        'Копия QR'
+    );
+    
+    newSVG.vectorPaths = pathsInSelection;
+    newSVG.scale = 1;
+    newSVG.rotation = 0;
+    newSVG.sourceType = 'qr_part';
+    
+    // Создаем canvas для предпросмотра
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(10, Math.min(50, selectionRect.width));
+    canvas.height = Math.max(10, Math.min(50, selectionRect.height));
+    
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#000000';
+    
+    const scaleX = canvas.width / selectionRect.width;
+    const scaleY = canvas.height / selectionRect.height;
+    const scale = Math.min(scaleX, scaleY);
+    
+    for (const path of pathsInSelection) {
+        if (path.length < 4) continue;
+        
+        ctx.beginPath();
+        ctx.moveTo(path[0].x * scale, path[0].y * scale);
+        
+        for (let i = 1; i < path.length; i++) {
+            ctx.lineTo(path[i].x * scale, path[i].y * scale);
+        }
+        
+        ctx.closePath();
+        ctx.fill();
+    }
+    
+    newSVG.svgImage = canvas;
+    
+    return newSVG;
+}
+
 
 // Проверка валидности выделения
 function isValidSelection() {
@@ -4068,6 +4506,10 @@ function clearSelection() {
         isDrawingSelection = false;
         selectionStart = { x: 0, y: 0 };
         selectionCurrent = { x: 0, y: 0 };
+		const startExtractBtn = document.getElementById('startExtractBtn');
+        if (startExtractBtn) {
+            startExtractBtn.classList.remove('active');
+        }
         drawScene();
         updateStatus('Режим выделения отключен', 'success');
     }
@@ -4140,11 +4582,16 @@ function moveSelectedElement(deltaX, deltaY) {
 }
 		
 function handleCanvasClick(event) {
+    if (justFinishedSelection) {
+        justFinishedSelection = false;
+        return;
+    }
+    
     if (isAddingText) return;
     
     // ЕСЛИ ТОЛЬКО ЧТО ПЕРЕМЕЩАЛИ ЭЛЕМЕНТ - НЕ ДОБАВЛЯЕМ ТЕКСТ
     if (isMovingElement) {
-        console.log('Было перемещение - не добавляем текст');
+
         return;
     }
     
@@ -4187,7 +4634,7 @@ function handleCanvasClick(event) {
         
         // Если кликнули на уже выделенный элемент - ничего не делаем
         if (clickedOnSelectedElement) {
-            console.log('Кликнули на выделенный элемент - не меняем выбор');
+
             clickTimeout = null;
             return;
         }
@@ -4378,7 +4825,7 @@ async function addQRElementAtPosition(text, type, x, y) {
     try {
         // Форматируем данные в зависимости от типа
         const formattedData = formatQRData(type, text);
-        console.log(`QR тип: ${type}, исходные данные: ${text}, форматированные: ${formattedData}`);
+
         
         const newQR = new QRElement(
             Date.now(),
@@ -4657,7 +5104,7 @@ function updateElementProperties() {
     const qrSpecificProps = document.getElementById('qrSpecificProps');
     const elementFontLabel = document.querySelector('label[for="elementFont"]');
     const elementFontSelect = document.getElementById('elementFont');
-    const elementQRTypeSelect = document.getElementById('elementQRType'); // Получаем элемент
+    const elementQRTypeSelect = document.getElementById('elementQRType'); 
     
     if (isQRSelected && selectedQRIndex !== -1) {
         const element = qrElements[selectedQRIndex];
@@ -4714,9 +5161,14 @@ function updateSVGElementsList() {
     
     svgElements.forEach((element, index) => {
         const div = document.createElement('div');
-
         div.className = `text-element ${index === selectedSVGIndex && isSVGSelected ? 'active' : ''}`;
-        div.textContent = `SVG элемент ${index + 1} (${(element.width * element.scale).toFixed(0)}×${(element.height * element.scale).toFixed(0)}мм)`;
+        
+        // Показываем реальные размеры в мм
+        const displayWidth = (element.originalWidth).toFixed(0);
+        const displayHeight = (element.originalHeight).toFixed(0);
+        const scalePercent = element.baseScale !== 1 ? ` (${(element.baseScale*100).toFixed(0)}%)` : '';
+        
+        div.textContent = `SVG: ${displayWidth}×${displayHeight}мм${scalePercent}`;
         div.dataset.index = index;
         
         div.addEventListener('click', (e) => {
@@ -4724,22 +5176,21 @@ function updateSVGElementsList() {
             selectedSVGIndex = index;
             isSVGSelected = true;
             selectedElementIndex = -1;
+            isQRSelected = false;
+            selectedQRIndex = -1;
+            
             updateTextElementsList();
             updateSVGElementsList();
+            updateQRElementsList();
             updateElementProperties();
-			updateDeleteButtonsVisibility();
+            updateDeleteButtonsVisibility();
             drawScene();
-        });
-        
-        div.addEventListener('dblclick', (e) => {
-            e.stopPropagation();
-            // Можно добавить функционал редактирования SVG
-            updateStatus(`SVG элемент ${index + 1} двойной клик`, 'success');
         });
         
         svgList.appendChild(div);
     });
-	updateDeleteButtonsVisibility();
+    
+    updateDeleteButtonsVisibility();
 }
 
 async function updateSelectedElement() {
@@ -4922,39 +5373,13 @@ function handleMouseDown(event) {
     const x = (event.clientX - rect.left) / scaleFactor;
     const y = sheetHeight - (event.clientY - rect.top) / scaleFactor;
 
-    // Если в режиме выделения части SVG
+    // Если в режиме выделения
     if (isSelectingSVGPart) {
         isDrawingSelection = true;
         selectionStart = { x: x, y: y };
         selectionCurrent = { x: x, y: y };
+        drawScene();
         return;
-    }
-    
-    // Проверяем, есть ли в месте клика уже выделенный элемент
-    let clickedOnSelectedElement = false;
-    
-    // Проверяем выделенный QR элемент
-    if (isQRSelected && selectedQRIndex !== -1) {
-        const selectedElement = qrElements[selectedQRIndex];
-        if (selectedElement && isPointInQRElement(x, y, selectedElement)) {
-            clickedOnSelectedElement = true;
-        }
-    }
-    
-    // Проверяем выделенный SVG элемент
-    if (!clickedOnSelectedElement && isSVGSelected && selectedSVGIndex !== -1) {
-        const selectedElement = svgElements[selectedSVGIndex];
-        if (selectedElement && isPointInSVGElement(x, y, selectedElement)) {
-            clickedOnSelectedElement = true;
-        }
-    }
-    
-    // Проверяем выделенный текстовый элемент
-    if (!clickedOnSelectedElement && selectedElementIndex !== -1) {
-        const selectedElement = textElements[selectedElementIndex];
-        if (selectedElement && isPointInTextElement(x, y, selectedElement)) {
-            clickedOnSelectedElement = true;
-        }
     }
     
     // Проверка на перо
@@ -4969,117 +5394,98 @@ function handleMouseDown(event) {
         return;
     }
     
-    // Если кликнули на уже выделенный элемент - начинаем перетаскивание
-    if (clickedOnSelectedElement) {
-        console.log('Начали перетаскивание выделенного элемента');
+    // Проверяем выделенные элементы для перетаскивания
+    let clickedOnSelected = false;
+    
+    if (isQRSelected && selectedQRIndex !== -1) {
+        const el = qrElements[selectedQRIndex];
+        if (el && isPointInQRElement(x, y, el)) clickedOnSelected = true;
+    }
+    if (!clickedOnSelected && isSVGSelected && selectedSVGIndex !== -1) {
+        const el = svgElements[selectedSVGIndex];
+        if (el && isPointInSVGElement(x, y, el)) clickedOnSelected = true;
+    }
+    if (!clickedOnSelected && selectedElementIndex !== -1) {
+        const el = textElements[selectedElementIndex];
+        if (el && isPointInTextElement(x, y, el)) clickedOnSelected = true;
+    }
+    
+    if (clickedOnSelected) {
         isDragging = true;
-        isMovingElement = true; // УСТАНАВЛИВАЕМ ФЛАГ
+        isMovingElement = true;
         
-        if (isQRSelected && selectedQRIndex !== -1) {
+        if (isQRSelected) {
             dragOffsetX = x - qrElements[selectedQRIndex].x;
             dragOffsetY = y - qrElements[selectedQRIndex].y;
-        } else if (isSVGSelected && selectedSVGIndex !== -1) {
+        } else if (isSVGSelected) {
             dragOffsetX = x - svgElements[selectedSVGIndex].x;
             dragOffsetY = y - svgElements[selectedSVGIndex].y;
-        } else if (selectedElementIndex !== -1) {
+        } else {
             dragOffsetX = x - textElements[selectedElementIndex].x;
             dragOffsetY = y - textElements[selectedElementIndex].y;
         }
         return;
     }
-
-    // Сначала проверяем QR элементы (сверху вниз)
+    
+    // Поиск элемента под кликом
     for (let i = qrElements.length - 1; i >= 0; i--) {
-        const element = qrElements[i];
-        
-        if (isPointInQRElement(x, y, element)) {
+        if (isPointInQRElement(x, y, qrElements[i])) {
             selectedQRIndex = i;
             isQRSelected = true;
             isSVGSelected = false;
-            isDragging = true;
-            isMovingElement = true; // УСТАНАВЛИВАЕМ ФЛАГ
             selectedElementIndex = -1;
             selectedSVGIndex = -1;
-            
-            dragOffsetX = x - element.x;
-            dragOffsetY = y - element.y;
-            
-            updateTextElementsList();
-            updateSVGElementsList();
-            updateQRElementsList();
-            updateElementProperties();
-            updateDeleteButtonsVisibility();
+            isDragging = true;
+            isMovingElement = true;
+            dragOffsetX = x - qrElements[i].x;
+            dragOffsetY = y - qrElements[i].y;
+            updateAllLists();
             drawScene();
             return;
         }
     }
     
-    // Затем проверяем SVG элементы
     for (let i = svgElements.length - 1; i >= 0; i--) {
-        const element = svgElements[i];
-        
-        if (isPointInSVGElement(x, y, element)) {
+        if (isPointInSVGElement(x, y, svgElements[i])) {
             selectedSVGIndex = i;
             isSVGSelected = true;
             isQRSelected = false;
-            isDragging = true;
-            isMovingElement = true; // УСТАНАВЛИВАЕМ ФЛАГ
             selectedElementIndex = -1;
             selectedQRIndex = -1;
-            
-            dragOffsetX = x - element.x;
-            dragOffsetY = y - element.y;
-            
-            updateTextElementsList();
-            updateSVGElementsList();
-            updateQRElementsList();
-            updateElementProperties();
-            updateDeleteButtonsVisibility();
+            isDragging = true;
+            isMovingElement = true;
+            dragOffsetX = x - svgElements[i].x;
+            dragOffsetY = y - svgElements[i].y;
+            updateAllLists();
             drawScene();
             return;
         }
     }
     
-    // Затем проверяем текстовые элементы
     for (let i = textElements.length - 1; i >= 0; i--) {
-        const element = textElements[i];
-        
-        if (isPointInTextElement(x, y, element)) {
+        if (isPointInTextElement(x, y, textElements[i])) {
             selectedElementIndex = i;
             isSVGSelected = false;
             isQRSelected = false;
-            isDragging = true;
-            isMovingElement = true; // УСТАНАВЛИВАЕМ ФЛАГ
             selectedSVGIndex = -1;
             selectedQRIndex = -1;
-            
-            dragOffsetX = x - element.x;
-            dragOffsetY = y - element.y;
-            
-            updateTextElementsList();
-            updateSVGElementsList();
-            updateQRElementsList();
-            updateElementProperties();
-            updateDeleteButtonsVisibility();
+            isDragging = true;
+            isMovingElement = true;
+            dragOffsetX = x - textElements[i].x;
+            dragOffsetY = y - textElements[i].y;
+            updateAllLists();
             drawScene();
             return;
         }
     }
     
-    // Если не нашли элемент - снимаем выделение
+    // Снимаем выделение
     selectedElementIndex = -1;
     isSVGSelected = false;
     isQRSelected = false;
     selectedSVGIndex = -1;
     selectedQRIndex = -1;
-    isDragging = false;
-    isMovingElement = false; // СБРАСЫВАЕМ ФЛАГ
-    
-    updateTextElementsList();
-    updateSVGElementsList();
-    updateQRElementsList();
-    updateElementProperties();
-    updateDeleteButtonsVisibility();
+    updateAllLists();
     drawScene();
 }
 
@@ -5103,11 +5509,11 @@ function isPointInQRElement(x, y, element) {
 }
 
 function handleMouseMove(event) {
+    const rect = mainCanvas.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / scaleFactor;
+    const y = sheetHeight - (event.clientY - rect.top) / scaleFactor;
+    
     if (isDragging) {
-        const rect = mainCanvas.getBoundingClientRect();
-        const x = (event.clientX - rect.left) / scaleFactor;
-        const y = sheetHeight - (event.clientY - rect.top) / scaleFactor;
-        
         if (isQRSelected && selectedQRIndex !== -1) {
             qrElements[selectedQRIndex].x = x - dragOffsetX;
             qrElements[selectedQRIndex].y = y - dragOffsetY;
@@ -5125,18 +5531,10 @@ function handleMouseMove(event) {
             drawScene();
         }
     } else if (isMovingPen) {
-        const rect = mainCanvas.getBoundingClientRect();
-        const x = (event.clientX - rect.left) / scaleFactor;
-        const y = sheetHeight - (event.clientY - rect.top) / scaleFactor;
-        
         penStartXInput.value = x.toFixed(1);
         penStartYInput.value = y.toFixed(1);
         updatePenCrosshair();
     } else if (isSelectingSVGPart && isDrawingSelection) {
-        const rect = mainCanvas.getBoundingClientRect();
-        const x = (event.clientX - rect.left) / scaleFactor;
-        const y = sheetHeight - (event.clientY - rect.top) / scaleFactor;
-        
         selectionCurrent = { x: x, y: y };
         drawScene();
     }
@@ -5145,13 +5543,27 @@ function handleMouseMove(event) {
 }
        
 function handleMouseUp(event) {
+    if (isSelectingSVGPart && isDrawingSelection) {
+        isDrawingSelection = false;
+        justFinishedSelection = true;  // ← БЛОКИРУЕМ КЛИК
+        
+        const rect = getSelectionRect();
+        if (rect.width > 1 && rect.height > 1) {
+            updateStatus(`Выделено: ${rect.width.toFixed(1)} × ${rect.height.toFixed(1)} мм`, 'success');
+        }
+        
+        updateTextElementsList();
+        updateSVGElementsList();
+        updateQRElementsList();
+        drawScene();
+        return;
+    }
+    
     isDragging = false;
     isMovingPen = false;
-    setTimeout(() => {
-        isMovingElement = false;
-    }, 100);
+    setTimeout(() => { isMovingElement = false; }, 100);
 }
-        
+       
 		function isPointInTextElement(x, y, element) {
 			const bbox = element.getBoundingBox();
 			
@@ -5496,111 +5908,82 @@ async function exportToSvg() {
     
     showLoading(true);
     try {
+        // Собираем все пути
+        const allPaths = [];
+        
+        // SVG элементы
+        for (let element of svgElements) {
+            const paths = element.getGcodePaths();
+            for (const path of paths) {
+                if (path.length < 2) continue;
+                allPaths.push({ type: 'svg', path: path });
+            }
+        }
+        
+        // Текстовые элементы
+        for (let element of textElements) {
+            const paths = element.getGcodePaths();
+            for (const path of paths) {
+                if (path.length < 2) continue;
+                allPaths.push({ type: 'text', path: path });
+            }
+        }
+        
+        // QR элементы
+        for (let element of qrElements) {
+            const paths = element.getGcodePaths();
+            for (const path of paths) {
+                if (path.length < 2) continue;
+                allPaths.push({ type: 'qr', path: path });
+            }
+        }
+        
+        if (allPaths.length === 0) {
+            updateStatus('Нет путей для экспорта', 'error');
+            return;
+        }
+        
+        // Создаем SVG с инверсией Y
         let svgContent = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${sheetWidth}mm" height="${sheetHeight}mm" viewBox="0 0 ${sheetWidth} ${sheetHeight}" 
-     xmlns="http://www.w3.org/2000/svg"
-     xmlns:xlink="http://www.w3.org/1999/xlink">
-  <defs>
-    <!-- Styles for the design -->
-    <style type="text/css">
-      .text-path { fill: none; stroke: black; stroke-width: 0.1; }
-      .svg-element { fill: none; stroke: black; stroke-width: 0.1; }
-      .qr-element { fill: black; stroke: none; }
-    </style>
-  </defs>
-  
-  <!-- Background (if any) -->
-  <rect width="100%" height="100%" fill="white"/>
-  
-  <!-- ДОБАВЛЕНО: Отражаем всю сцену по вертикали -->
-  <g transform="scale(1, -1) translate(0, -${sheetHeight})">
+     xmlns="http://www.w3.org/2000/svg">
 `;
         
-        // Экспорт текстовых элементов
-        for (let element of textElements) {
-            const paths = element.getDisplayPaths();
-            if (paths.length === 0) continue;
+        // Экспорт путей с инверсией Y
+        for (const item of allPaths) {
+            const path = item.path;
             
-            svgContent += `  <g class="text-element">\n`;
+            // Инвертируем Y координаты: newY = sheetHeight - oldY
+            let pathData = `M ${path[0].x.toFixed(3)} ${(sheetHeight - path[0].y).toFixed(3)}`;
             
-            for (const path of paths) {
-                if (path.length < 2) continue;
-                
-                let pathData = `M ${path[0].x.toFixed(3)} ${path[0].y.toFixed(3)}`;
-                for (let i = 1; i < path.length; i++) {
-                    pathData += ` L ${path[i].x.toFixed(3)} ${path[i].y.toFixed(3)}`;
-                }
-                
-                svgContent += `    <path d="${pathData}" class="text-path"/>\n`;
+            for (let i = 1; i < path.length; i++) {
+                pathData += ` L ${path[i].x.toFixed(3)} ${(sheetHeight - path[i].y).toFixed(3)}`;
             }
             
-            svgContent += `  </g>\n`;
-        }
-        
-        // Экспорт SVG элементов
-        for (let element of svgElements) {
-            const paths = element.getDisplayPaths();
-            if (paths.length === 0) continue;
-            
-            svgContent += `  <g class="svg-element">\n`;
-            
-            for (const path of paths) {
-                if (path.length < 2) continue;
-                
-                let pathData = `M ${path[0].x.toFixed(3)} ${path[0].y.toFixed(3)}`;
-                for (let i = 1; i < path.length; i++) {
-                    pathData += ` L ${path[i].x.toFixed(3)} ${path[i].y.toFixed(3)}`;
-                }
-                
-                svgContent += `    <path d="${pathData}" class="svg-path"/>\n`;
+            if (item.type === 'qr') {
+                svgContent += `  <path fill="black" stroke="none" d="${pathData}"/>\n`;
+            } else {
+                svgContent += `  <path fill="none" stroke="black" stroke-width="0.3" stroke-linecap="round" stroke-linejoin="round" d="${pathData}"/>\n`;
             }
-            
-            svgContent += `  </g>\n`;
         }
-        
-        // Экспорт QR элементов (ДОБАВИТЬ ЭТО)
-        for (let element of qrElements) {
-            const paths = element.getDisplayPaths();
-            if (paths.length === 0) continue;
-            
-            svgContent += `  <g class="qr-element">\n`;
-            
-            for (const path of paths) {
-                if (path.length < 2) continue;
-                
-                let pathData = `M ${path[0].x.toFixed(3)} ${path[0].y.toFixed(3)}`;
-                for (let i = 1; i < path.length; i++) {
-                    pathData += ` L ${path[i].x.toFixed(3)} ${path[i].y.toFixed(3)}`;
-                }
-                
-                // Для QR кода делаем заливку черным (это квадратики)
-                svgContent += `    <path d="${pathData}" fill="black" stroke="none"/>\n`;
-            }
-            
-            svgContent += `  </g>\n`;
-        }
-        
-        // Закрываем группу отражения
-        svgContent += `  </g>\n`;
         
         svgContent += '</svg>';
         
-        // Создаем и скачиваем файл
+        // Скачиваем файл
         const blob = new Blob([svgContent], { type: 'image/svg+xml' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'plotter_design_' + new Date().toISOString().slice(0,10) + '.svg';
+        a.download = `plotter_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.svg`;
         document.body.appendChild(a);
         a.click();
         
-        // Очистка
         setTimeout(() => {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         }, 100);
         
-        updateStatus('SVG файл экспортирован', 'success');
+        updateStatus(`SVG экспортирован (${sheetWidth}×${sheetHeight} мм)`, 'success');
     } catch (error) {
         console.error('Ошибка экспорта SVG:', error);
         updateStatus('Ошибка экспорта SVG: ' + error.message, 'error');
@@ -5697,54 +6080,108 @@ function generateGCode(textElements, svgElements, qrElements, penStartX, penStar
     gcode.push('G4 P' + pauseTime);
     gcode.push('');
 
-// Собираем все пути с упрощением
-let allPaths = [];
-const MIN_DISTANCE = 1 / MAX_POINTS_PER_MM; // ~0.16 мм
+    // Собираем все пути с упрощением и удалением дубликатов
+    let allPaths = [];
+    const MIN_DISTANCE = 1 / MAX_POINTS_PER_MM; // ~0.16 мм
 
-// Текстовые элементы
-textElements.forEach(element => {
-    let elementPaths = element.getGcodePaths();
-    elementPaths = elementPaths.map(path => simplifyPath(path, MIN_DISTANCE));
-    allPaths = allPaths.concat(elementPaths);
-});
-
-// SVG элементы
-svgElements.forEach(element => {
-    if (element.getGcodePaths) {
-        let elementPaths = element.getGcodePaths();
-        elementPaths = elementPaths.map(path => simplifyPath(path, MIN_DISTANCE));
-        allPaths = allPaths.concat(elementPaths);
+    // Функция удаления дубликатов точек в пути
+    function removeDuplicatePoints(path, tolerance = 0.01) {
+        if (path.length < 2) return path;
+        
+        const result = [path[0]];
+        
+        for (let i = 1; i < path.length; i++) {
+            const lastPoint = result[result.length - 1];
+            const currentPoint = path[i];
+            
+            // Проверяем расстояние до последней добавленной точки
+            const distance = Math.sqrt(
+                Math.pow(currentPoint.x - lastPoint.x, 2) + 
+                Math.pow(currentPoint.y - lastPoint.y, 2)
+            );
+            
+            // Добавляем только если расстояние больше tolerance
+            if (distance > tolerance) {
+                result.push(currentPoint);
+            }
+        }
+        
+        return result;
     }
-});
 
-// QR элементы
-qrElements.forEach(element => {
-    let elementPaths = element.getGcodePaths();
-    elementPaths = elementPaths.map(path => simplifyPath(path, MIN_DISTANCE));
-    allPaths = allPaths.concat(elementPaths);
-});
+    // Текстовые элементы
+    textElements.forEach(element => {
+        let elementPaths = element.getGcodePaths();
+        elementPaths = elementPaths.map(path => {
+            const simplified = simplifyPath(path, MIN_DISTANCE);
+            return removeDuplicatePoints(simplified, 0.05); // Удаляем дубликаты
+        });
+        allPaths = allPaths.concat(elementPaths);
+    });
 
-// Удаляем пустые пути
-allPaths = allPaths.filter(path => path.length >= 2);
+    // SVG элементы
+    svgElements.forEach(element => {
+        if (element.getGcodePaths) {
+            let elementPaths = element.getGcodePaths();
+            elementPaths = elementPaths.map(path => {
+                const simplified = simplifyPath(path, MIN_DISTANCE);
+                return removeDuplicatePoints(simplified, 0.05);
+            });
+            allPaths = allPaths.concat(elementPaths);
+        }
+    });
+
+    // QR элементы
+    qrElements.forEach(element => {
+        let elementPaths = element.getGcodePaths();
+        elementPaths = elementPaths.map(path => {
+            const simplified = simplifyPath(path, MIN_DISTANCE);
+            return removeDuplicatePoints(simplified, 0.05);
+        });
+        allPaths = allPaths.concat(elementPaths);
+    });
+
+    // Удаляем пустые пути
+    allPaths = allPaths.filter(path => path.length >= 2);
     
     if (allPaths.length === 0) {
         gcode.push('M280 P0 S30.00');
         gcode.push('G4 P' + pauseTime);
         gcode.push('G1 X' + penStartX.toFixed(2) + ' Y' + penStartY.toFixed(2) + ' F' + travelSpeed);
-		gcode.push('G4 P' + pauseTime);
+        gcode.push('G4 P' + pauseTime);
         gcode.push('M2');
         return gcode.join('\n');
     }
     
     // ПАРАМЕТРЫ ОПТИМИЗАЦИИ
     const MAX_DISTANCE_NO_LIFT = 0.5;
-    const MIN_POINTS_IN_PATH = 0;
     
-    // Объединяем близко расположенные пути
+    // Функция для безопасного добавления точки в путь (без дубликатов)
+    function addPointToPath(path, point, tolerance = 0.01) {
+        if (path.length === 0) {
+            path.push(point);
+            return true;
+        }
+        
+        const lastPoint = path[path.length - 1];
+        const distance = Math.sqrt(
+            Math.pow(point.x - lastPoint.x, 2) + 
+            Math.pow(point.y - lastPoint.y, 2)
+        );
+        
+        if (distance > tolerance) {
+            path.push(point);
+            return true;
+        }
+        
+        return false;
+    }
+    
+    // Объединяем близко расположенные пути без дубликатов
     let optimizedPaths = [];
     let currentPath = null;
     
-    // Сначала сортируем все начальные точки по расстоянию от стартовой позиции
+    // Сортируем все начальные точки по расстоянию от стартовой позиции
     allPaths.sort((a, b) => {
         const distA = Math.sqrt(Math.pow(a[0].x - penStartX, 2) + Math.pow(a[0].y - penStartY, 2));
         const distB = Math.sqrt(Math.pow(b[0].x - penStartX, 2) + Math.pow(b[0].y - penStartY, 2));
@@ -5754,10 +6191,14 @@ allPaths = allPaths.filter(path => path.length >= 2);
     for (let i = 0; i < allPaths.length; i++) {
         const path = allPaths[i];
         
-        if (path.length < MIN_POINTS_IN_PATH) continue;
+        if (path.length < 2) continue;
         
         if (!currentPath) {
-            currentPath = [...path];
+            currentPath = [];
+            // Добавляем точки без дубликатов
+            for (const point of path) {
+                addPointToPath(currentPath, point, 0.05);
+            }
         } else {
             const lastPoint = currentPath[currentPath.length - 1];
             const firstPoint = path[0];
@@ -5767,25 +6208,32 @@ allPaths = allPaths.filter(path => path.length >= 2);
             );
             
             if (distance <= MAX_DISTANCE_NO_LIFT) {
-                for (let j = 1; j < path.length; j++) {
-                    currentPath.push(path[j]);
+                // Продолжаем текущий путь, добавляем точки без дубликатов
+                for (let j = 0; j < path.length; j++) {
+                    addPointToPath(currentPath, path[j], 0.05);
                 }
             } else {
-                optimizedPaths.push(currentPath);
-                currentPath = [...path];
+                // Сохраняем текущий путь и начинаем новый
+                if (currentPath.length >= 2) {
+                    optimizedPaths.push(currentPath);
+                }
+                currentPath = [];
+                for (const point of path) {
+                    addPointToPath(currentPath, point, 0.05);
+                }
             }
         }
     }
     
-    if (currentPath && currentPath.length >= MIN_POINTS_IN_PATH) {
+    if (currentPath && currentPath.length >= 2) {
         optimizedPaths.push(currentPath);
     }
     
-    console.log(`Оптимизация: было ${allPaths.length} путей, стало ${optimizedPaths.length} путей`);
     
     // Генерация G-code с оптимизированными путями
     let currentX = penStartX;
     let currentY = penStartY;
+    let isPenDown = false;
     
     // Сортировка оптимизированных путей по расстоянию от текущей позиции
     optimizedPaths.sort((a, b) => {
@@ -5816,44 +6264,66 @@ allPaths = allPaths.filter(path => path.length >= 2);
         
         const path = optimizedPaths[closestIndex];
         
-        // Перемещение к началу пути (перо вверху)
-        gcode.push('G4 P' + pauseTime);
-        gcode.push('M280 P0 S30.00');  // Поднять перо
-        gcode.push('G4 P' + pauseTime);
-        gcode.push('G1 X' + path[0].x.toFixed(2) + ' Y' + path[0].y.toFixed(2) + ' F' + travelSpeed);
-        
-        // Проверяем, нужно ли опускать перо
-        const distanceFromCurrent = Math.sqrt(
+        // Перемещение к началу пути
+        const distanceToStart = Math.sqrt(
             Math.pow(path[0].x - currentX, 2) + 
             Math.pow(path[0].y - currentY, 2)
         );
         
-        if (distanceFromCurrent > 0.1) {
-            gcode.push('G4 P' + pauseTime);
-            gcode.push('M280 P0 S0.00');   // Опустить перо
-            gcode.push('G4 P' + pauseTime);
+        if (distanceToStart > 0.1) {
+            // Поднимаем перо если нужно
+            if (isPenDown) {
+                gcode.push('G4 P' + pauseTime);
+                gcode.push('M280 P0 S30.00');
+                gcode.push('G4 P' + pauseTime);
+                isPenDown = false;
+            }
+            
+            // Перемещаемся к началу пути
+            gcode.push('G1 X' + path[0].x.toFixed(2) + ' Y' + path[0].y.toFixed(2) + ' F' + travelSpeed);
+            currentX = path[0].x;
+            currentY = path[0].y;
         }
         
-        // Рисование пути
-        for (let i = 0; i < path.length; i++) {
+        // Опускаем перо
+        if (!isPenDown) {
+            gcode.push('G4 P' + pauseTime);
+            gcode.push('M280 P0 S0.00');
+            gcode.push('G4 P' + pauseTime);
+            isPenDown = true;
+        }
+        
+        // Рисование пути (пропускаем первую точку если мы уже на ней)
+        let startIndex = (distanceToStart <= 0.1) ? 1 : 0;
+        
+        for (let i = startIndex; i < path.length; i++) {
             const point = path[i];
-            const speed = (i === 0 && distanceFromCurrent > 0.1) ? travelSpeed : drawSpeed;
-            gcode.push('G1 X' + point.x.toFixed(2) + ' Y' + point.y.toFixed(2) + ' F' + speed);
+            
+            // Проверяем, не дублируется ли точка
+            const distToCurrent = Math.sqrt(
+                Math.pow(point.x - currentX, 2) + 
+                Math.pow(point.y - currentY, 2)
+            );
+            
+            if (distToCurrent > 0.05) {  // Пропускаем дубликаты
+                gcode.push('G1 X' + point.x.toFixed(2) + ' Y' + point.y.toFixed(2) + ' F' + drawSpeed);
+                currentX = point.x;
+                currentY = point.y;
+            }
         }
-        
-        // Обновляем позицию
-        currentX = path[path.length - 1].x;
-        currentY = path[path.length - 1].y;
         
         // Удаляем обработанный путь
         optimizedPaths.splice(closestIndex, 1);
     }
     
     // Завершение
-    gcode.push('G4 P' + pauseTime);
-    gcode.push('M280 P0 S30.00');  // Поднять перо
-    gcode.push('G4 P' + pauseTime);
+    if (isPenDown) {
+        gcode.push('G4 P' + pauseTime);
+        gcode.push('M280 P0 S30.00');
+        gcode.push('G4 P' + pauseTime);
+    }
     gcode.push('G1 X' + penStartX.toFixed(2) + ' Y' + penStartY.toFixed(2) + ' F' + travelSpeed);
+    gcode.push('G4 P' + pauseTime);
     gcode.push('M2');
     
     return gcode.join('\n');
@@ -5867,8 +6337,239 @@ allPaths = allPaths.filter(path => path.length >= 2);
             statusDiv.textContent = message;
             statusDiv.className = `status ${type}`;
         }
+		
+// Функция парсинга G-code в SVG элемент (без трансформаций, 1:1)
+async function parseGCodeToSVGElement(gcodeContent, fileName) {
+    const lines = gcodeContent.split('\n');
+    const paths = [];
+    let currentPath = [];
+    
+    let currentX = 0, currentY = 0;
+    let isPenDown = false;
+    let isAbsoluteMode = true;
+    let unitMultiplier = 1.0;
+    
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    
+    for (let line of lines) {
+        line = line.trim().toUpperCase();
+        if (line === '' || line.startsWith(';') || line.startsWith('(')) continue;
         
+        const commentIndex = line.indexOf(';');
+        if (commentIndex > 0) line = line.substring(0, commentIndex).trim();
+        
+        if (line === 'G20') { unitMultiplier = 25.4; continue; }
+        if (line === 'G21') { unitMultiplier = 1.0; continue; }
+        if (line === 'G90') { isAbsoluteMode = true; continue; }
+        if (line === 'G91') { isAbsoluteMode = false; continue; }
+        if (line.startsWith('G92') || line.startsWith('G4')) continue;
+        
+        // Опускание пера
+        if (line.includes('M280 P0 S0') || line.includes('M280 P0 S0.00') || 
+            line === 'M3' || line === 'M4') {
+            
+            if (!isPenDown) {
+                isPenDown = true;
+                currentPath = [{ x: currentX, y: currentY }];
+                
+                minX = Math.min(minX, currentX);
+                maxX = Math.max(maxX, currentX);
+                minY = Math.min(minY, currentY);
+                maxY = Math.max(maxY, currentY);
+            }
+            continue;
+        }
+        
+        // Поднятие пера
+        if (line.includes('M280 P0 S30') || line.includes('M280 P0 S30.00') || 
+            line === 'M5') {
+            
+            if (isPenDown) {
+                isPenDown = false;
+                if (currentPath.length >= 2) {
+                    paths.push([...currentPath]);
+                }
+                currentPath = [];
+            }
+            continue;
+        }
+        
+        // Конец программы
+        if (line === 'M2' || line === 'M30') {
+            if (isPenDown && currentPath.length >= 2) {
+                paths.push([...currentPath]);
+            }
+            currentPath = [];
+            isPenDown = false;
+            continue;
+        }
+        
+        // Движение
+        if (line.startsWith('G0') || line.startsWith('G1') || 
+            line.startsWith('G00') || line.startsWith('G01')) {
+            
+            const xMatch = line.match(/X([-\d.]+)/);
+            const yMatch = line.match(/Y([-\d.]+)/);
+            
+            let newX = currentX;
+            let newY = currentY;
+            
+            if (xMatch) {
+                const xVal = parseFloat(xMatch[1]) * unitMultiplier;
+                newX = isAbsoluteMode ? xVal : currentX + xVal;
+            }
+            
+            if (yMatch) {
+                const yVal = parseFloat(yMatch[1]) * unitMultiplier;
+                newY = isAbsoluteMode ? yVal : currentY + yVal;
+            }
+            
+            if (newX !== currentX || newY !== currentY) {
+                currentX = newX;
+                currentY = newY;
+                
+                minX = Math.min(minX, currentX);
+                maxX = Math.max(maxX, currentX);
+                minY = Math.min(minY, currentY);
+                maxY = Math.max(maxY, currentY);
+                
+                if (isPenDown) {
+                    const lastPoint = currentPath.length > 0 ? currentPath[currentPath.length - 1] : null;
+                    
+                    if (!lastPoint || Math.abs(lastPoint.x - currentX) > 0.001 || Math.abs(lastPoint.y - currentY) > 0.001) {
+                        currentPath.push({ x: currentX, y: currentY });
+                    }
+                }
+            }
+        }
+    }
+    
+    if (currentPath.length >= 2) {
+        paths.push([...currentPath]);
+    }
+    
+    const validPaths = paths.filter(path => path.length >= 2);
+    
+    if (validPaths.length === 0) {
+        throw new Error('В G-code не найдено путей рисования');
+    }
+    
+    const sheetWidth = maxX;
+    const sheetHeight = maxY;
+    
+    // ✅ Создаем SVGElement с минимальным SVG и напрямую задаем vectorPaths
+    const svgElement = new SVGElement(
+        Date.now() + Math.random(),
+        '<svg><path/></svg>',
+        0, 0,
+        sheetWidth,
+        sheetHeight,
+        fileName
+    );
+    
+    // ✅ НАПРЯМУЮ задаем пути без повторного парсинга
+    svgElement.vectorPaths = validPaths.map(path => 
+        path.map((p, i) => ({
+            x: p.x,
+            y: sheetHeight - p.y,  // Инвертируем Y для SVG
+            move: i === 0
+        }))
+    );
+    
+    svgElement.x = 0;
+    svgElement.y = 0;
+    svgElement.width = sheetWidth;
+    svgElement.height = sheetHeight;
+    svgElement.originalWidth = sheetWidth;
+    svgElement.originalHeight = sheetHeight;
+    svgElement.baseScale = 1.0;
+    svgElement.scale = 1.0;
+    svgElement.sourceType = 'gcode';
+    svgElement.sourceFile = fileName;
+    
+    // ✅ Создаем превью вручную
+    const canvas = document.createElement('canvas');
+    const maxSize = 200;
+    let previewWidth, previewHeight;
+    
+    if (sheetWidth > sheetHeight) {
+        previewWidth = maxSize;
+        previewHeight = (sheetHeight / sheetWidth) * maxSize;
+    } else {
+        previewHeight = maxSize;
+        previewWidth = (sheetWidth / sheetHeight) * maxSize;
+    }
+    
+    canvas.width = Math.max(10, previewWidth);
+    canvas.height = Math.max(10, previewHeight);
+    
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1.5;
+    
+    const scaleX = canvas.width / sheetWidth;
+    const scaleY = canvas.height / sheetHeight;
+    
+    for (const path of svgElement.vectorPaths) {
+        if (path.length < 2) continue;
+        
+        ctx.beginPath();
+        ctx.moveTo(path[0].x * scaleX, canvas.height - path[0].y * scaleY);
+        
+        for (let i = 1; i < path.length; i++) {
+            ctx.lineTo(path[i].x * scaleX, canvas.height - path[i].y * scaleY);
+        }
+        
+        ctx.stroke();
+    }
+    
+    svgElement.svgImage = canvas;
+    
+    return svgElement;
+}
+
+
+// Функция загрузки G-code файла
+async function loadGCodeFile(file) {
+    try {
+        const content = await readFileAsText(file);
+        
+        updateStatus(`Парсинг G-code "${file.name}"...`, 'success');
+        
+        const svgElement = await parseGCodeToSVGElement(content, file.name);
+        
+        if (svgElement.vectorPaths.length > 0) {
+            svgElements.push(svgElement);
+            
+            // Выделяем новый элемент
+            selectedSVGIndex = svgElements.length - 1;
+            isSVGSelected = true;
+            selectedElementIndex = -1;
+            isQRSelected = false;
+            selectedQRIndex = -1;
+            
+            updateSVGElementsList();
+            updateTextElementsList();
+            updateQRElementsList();
+            updateElementProperties();
+            updateDeleteButtonsVisibility();
+            drawScene();
+            
+            updateStatus(`G-code "${file.name}" загружен: ${svgElement.width.toFixed(1)}×${svgElement.height.toFixed(1)} мм, ${svgElement.vectorPaths.length} путей`, 'success');
+        } else {
+            updateStatus(`В G-code "${file.name}" не найдено путей рисования`, 'error');
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки G-code:', error);
+        updateStatus('Ошибка загрузки G-code: ' + error.message, 'error');
+    }
+}
+
         window.addEventListener('load', init);
     </script>
+
 </body>
 </html>
