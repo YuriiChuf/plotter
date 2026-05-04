@@ -345,15 +345,15 @@
 					<label style="display: block; margin-top: 0px; margin: 5px;">Толщина: <span id="widthValue">3</span></label>
 					<input type="range" id="widthSlider" min="1" max="20" value="3">
                 </div>
-                <div id="eraserSettings" style="display: none; margin-top: 10px;">
+<div id="eraserSettings" style="display: none; margin-top: 10px;">
     <label>Размер ластика: <span id="eraserSizeValue">20</span>px</label>
     <input type="range" id="eraserSizeSlider" min="5" max="100" value="20">
-
+	<label style="display: block; font-size: 12px; color: #888; margin-bottom: 3px;">+Ctrl - удалить вектор</label>
 </div>
-                <div id="penSettings" style="display: none;">
-                    <label>Сглаживание: <span id="smoothValue">5</span></label>
-                    <input type="range" id="smoothSlider" min="1" max="20" value="5">
-					<h3>Привязка</h3>
+<div id="penSettings" style="display: none;">
+	<label>Сглаживание: <span id="smoothValue">5</span></label>
+	<input type="range" id="smoothSlider" min="1" max="20" value="5">
+	<h3>Привязка</h3>
     <label style="display: block; margin: 10px 0;">
         <input type="checkbox" id="continueVectorToggle" > Продолжать вектор
     </label>
@@ -364,7 +364,7 @@
         Расстояние: <span id="snapDistanceValue">10</span>px
     </label>
     <input type="range" id="snapDistanceSlider" min="1" max="50" value="10">
-                </div>
+</div>
 <div id="bezierSettings" style="display: none;">
     <label style="display: block; margin: 10px 0;">
         <input type="checkbox" id="bezierSmoothToggle" checked> Создавать гладкие точки
@@ -373,7 +373,7 @@
         Двойной клик по точке переключает гладкая/угловая
     </label>
 </div>
-				<div id="pushSettings" style="display: none; margin-top: 10px;">
+<div id="pushSettings" style="display: none; margin-top: 10px;">
     <label>Радиус воздействия: <span id="pushRadiusValue">20</span>px</label>
     <input type="range" id="pushRadiusSlider" min="5" max="100" value="20">
     
@@ -536,9 +536,9 @@ constructor() {
         searchRadius: 15,
         continueVector: true
     };
-	this.selectedElement = null;  // Выделенный элемент
-	this.isResizing = false;      // Режим масштабирования
-	this.isRotating = false;      // Режим поворота
+	this.selectedElement = null; 
+	this.isResizing = false;
+	this.isRotating = false;
 	this.selectionAngle = 0;
 	this.resizeStart = { x: 0, y: 0, width: 0, height: 0, angle: 0 };
 	this.isSpiralActive = false;
@@ -553,7 +553,8 @@ constructor() {
     this.lastErasePoint = null;
     this.imageCanvasCache = null;
     this.imageDataCache = null;
-    
+    this.isDraggingPivot = false;
+	this.pivotDragData = null;
     this.history = {
         snapshots: [],
         index: -1,
@@ -649,16 +650,11 @@ constructor() {
 			document.getElementById('aspectRatioDisplay').addEventListener('click', (e) => {
 				e.preventDefault();
 				e.stopPropagation();
-				
-				// Берем текущие значения из полей ввода
 				const currentWidth = parseFloat(document.getElementById('mmWidth').value) || 210;
 				const currentHeight = parseFloat(document.getElementById('mmHeight').value) || 297;
-				
-				// Просто обновляем отображение соотношения сторон
 				this.updateAspectRatioDisplay(currentWidth, currentHeight);
 				
 			});
-			// Загрузка SVG
 			document.getElementById('loadSvgBtn').onclick = () => {
 				document.getElementById('svgInput').click();
 			};
@@ -666,30 +662,18 @@ constructor() {
 			document.getElementById('svgInput').onchange = (e) => {
 				if (e.target.files[0]) this.loadSVG(e.target.files[0]);
 			};
-			// Обработчики событий
 			this.setupEventListeners();
-			
-			// ОБНОВЛЯЕМ ВСЕ ТЕКСТОВЫЕ ЭЛЕМЕНТЫ ОТ СЛАЙДЕРОВ ПРИ ЗАГРУЗКЕ
 			this.updateAllSliderTexts();
 			
-			// Загружаем настройки из UI
 			this.loadSettingsFromUI();
 			this.setupGlobalDragHandlers();
-			
-			// Обновление интерфейса
 			this.updateZoomDisplay();
-				// Создаем группу для контрольных элементов
 				this.state.bezierControlGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
 				this.state.bezierControlGroup.id = 'bezier-control-group';
 				this.svg.appendChild(this.state.bezierControlGroup);
-			// Автоматически создаем подложку A4 при запуске
 			this.createA4Background();
-			
-			// Обновляем отображение пикселей при изменении размеров
 			document.getElementById('mmWidth').oninput = () => this.updatePixelDisplay();
 			document.getElementById('mmHeight').oninput = () => this.updatePixelDisplay();
-			
-			// Создание подложки по нажатию кнопки
 			document.getElementById('createBackgroundBtn').onclick = () => this.createBackgroundFromInput();
 			this.setupToolToggle();
 
@@ -697,29 +681,18 @@ constructor() {
 		}
 
 setupSimpleUndoRedo() {
-    // Назначаем кнопки
     document.getElementById('undoBtn').onclick = () => this.simpleUndo();
     document.getElementById('redoBtn').onclick = () => this.simpleRedo();
-    
-    // Сохраняем начальное состояние (пустое)
     setTimeout(() => this.saveSnapshot(), 100);
-    
-    // Сохраняем при ЛЮБОМ mouseup (отпускании мыши)
     this.svg.addEventListener('mouseup', (e) => {
         setTimeout(() => this.saveSnapshot(), 50);
     });
-    
-    // Сохраняем при загрузке SVG
     document.getElementById('svgInput').addEventListener('change', () => {
         setTimeout(() => this.saveSnapshot(), 300);
     });
-    
-    // Сохраняем при очистке
     document.getElementById('clearBtn').addEventListener('click', () => {
         setTimeout(() => this.saveSnapshot(), 300);
     });
-    
-    // Сохраняем при изменении изображения
     document.getElementById('imageInput').addEventListener('change', () => {
         setTimeout(() => this.saveSnapshot(), 500);
     });
@@ -730,53 +703,40 @@ saveSnapshot() {
     if (this.isSpiralActive) {
         return;
     }
-    // Дебаунсинг
     const now = Date.now();
     if (this.lastSave && (now - this.lastSave < 100)) {
         return;
     }
     
     try {
-        // Создаем копию SVG без временных элементов
         const svgClone = this.svg.cloneNode(true);
         
-        // Удаляем временные элементы
         const tempIds = ['push-indicator', 'eraser-indicator'];
         tempIds.forEach(id => {
             const el = svgClone.querySelector(`#${id}`);
             if (el) el.remove();
         });
         
-        // Берем HTML
         const snapshot = svgClone.innerHTML;
         
-        // Проверяем, отличается ли от последнего снимка
         const lastSnapshot = this.history.snapshots[this.history.index];
         if (lastSnapshot === snapshot) {
-            console.log('Снимок не изменился, пропускаем');
             return;
         }
         
-        // Удаляем всё после текущего индекса
         this.history.snapshots = this.history.snapshots.slice(0, this.history.index + 1);
-        
-        // Добавляем новый снимок
+
         this.history.snapshots.push(snapshot);
         this.history.index++;
-        
-        // Ограничиваем историю
+
         if (this.history.snapshots.length > this.history.max) {
             this.history.snapshots.shift();
             this.history.index--;
         }
-        
-        // Обновляем кнопки
+
         this.updateUndoRedoButtons();
         
         this.lastSave = now;
-        console.log('✅ Сохранён снимок #' + this.history.index, 
-                   'можно отменить:', this.history.index > 0,
-                   'можно вернуть:', this.history.index < this.history.snapshots.length - 1);
     } catch (error) {
         console.error('Ошибка при сохранении снимка:', error);
     }
@@ -788,7 +748,6 @@ simpleUndo() {
     if (this.history.index > 0) {
         this.history.index--;
         this.restoreSnapshot();
-        console.log('Отмена к снимку #' + this.history.index);
     }
 }
 
@@ -797,7 +756,6 @@ simpleRedo() {
     if (this.history.index < this.history.snapshots.length - 1) {
         this.history.index++;
         this.restoreSnapshot();
-        console.log('Возврат к снимку #' + this.history.index);
     }
 }
 
@@ -807,14 +765,10 @@ restoreSnapshot() {
     if (!snapshot) return;
     
     this.svg.innerHTML = snapshot;
-    
-    // === ВАЖНО: перепривязываем ссылки на слои ===
     this.worksheetLayer = document.getElementById('worksheet-layer');
     this.photoLayer = document.getElementById('photo-layer');
     this.vectorLayer = document.getElementById('vector-layer');
     this.helperLayer = document.getElementById('helper-layer');
-    
-    // Если слоёв нет — создаём заново
     if (!this.vectorLayer) {
         this.vectorLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         this.vectorLayer.id = 'vector-layer';
@@ -833,13 +787,6 @@ updateUndoRedoButtons() {
     const canUndo = this.history.index > 0;
     const canRedo = this.history.index < this.history.snapshots.length - 1;
     
-    console.log('Обновление кнопок:', {
-        index: this.history.index,
-        total: this.history.snapshots.length,
-        canUndo,
-        canRedo
-    });
-    
     undoBtn.disabled = !canUndo;
     redoBtn.disabled = !canRedo;
 
@@ -852,7 +799,6 @@ updateUndoRedoButtons() {
 
 setupHotkeys() {
     document.addEventListener('keydown', (e) => {
-        // Игнорируем если фокус в поле ввода
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         // Обработка Ctrl для ластика
         if (e.key === 'Control' || e.key === 'Meta') {
@@ -963,7 +909,6 @@ setupHotkeys() {
         if (e.key === 'Control' || e.key === 'Meta') {
             if (this.state.currentTool === 'eraser') {
                 this.svg.style.cursor = 'none';
-                // Сразу показываем индикатор ластика на последней позиции мыши
                 const radius = this.state.eraserSize / this.state.zoom;
                 this.showEraserIndicator(this.state.lastMouseX, this.state.lastMouseY, radius);
             }
@@ -1016,35 +961,32 @@ updateSizeWithAspectRatio(changedField, value) {
     }
 }
 
-		setupGlobalDragHandlers() {
-			// Глобальный обработчик движения мыши
-			document.addEventListener('mousemove', (e) => {
-				// Если перетаскиваем основную точку Безье
-				if (this.state.isDraggingPoint) {
-					const coords = this.getSVGCoordinates(e);
-					this.updatePointDrag(coords.x, coords.y);
-				}
-				
-				// Если перетаскиваем контрольную точку Безье
-				if (this.state.isDraggingBezierControl) {
-					const coords = this.getSVGCoordinates(e);
-					this.updateBezierControlDrag(coords.x, coords.y);
-				}
-			});
-			
-			// Глобальный обработчик отпускания мыши
-			document.addEventListener('mouseup', (e) => {
-				// Завершаем перетаскивание основной точки Безье
-				if (this.state.isDraggingPoint) {
-					this.endPointDrag();
-				}
-				
-				// Завершаем перетаскивание контрольной точки Безье
-				if (this.state.isDraggingBezierControl) {
-					this.endBezierControlDrag();
-				}
-			});
+setupGlobalDragHandlers() {
+	// Глобальный обработчик движения мыши
+	document.addEventListener('mousemove', (e) => {
+
+		if (this.state.isDraggingPoint) {
+			const coords = this.getSVGCoordinates(e);
+			this.updatePointDrag(coords.x, coords.y);
 		}
+
+		if (this.state.isDraggingBezierControl) {
+			const coords = this.getSVGCoordinates(e);
+			this.updateBezierControlDrag(coords.x, coords.y);
+		}
+	});
+
+	document.addEventListener('mouseup', (e) => {
+
+		if (this.state.isDraggingPoint) {
+			this.endPointDrag();
+		}
+		
+		if (this.state.isDraggingBezierControl) {
+			this.endBezierControlDrag();
+		}
+	});
+}
 
            setupEventListeners() {
 				// Настройки заливки
@@ -1058,10 +1000,9 @@ updateSizeWithAspectRatio(changedField, value) {
 				const bezierSmoothToggle = document.getElementById('bezierSmoothToggle');
 				if (bezierSmoothToggle) {
 					bezierSmoothToggle.onchange = (e) => {
-						console.log('Режим Безье:', e.target.checked ? 'гладкие точки' : 'угловые точки');
+
 					};
 				}
-				    // Управление размером фото
 				const photoSizeSlider = document.getElementById('photoSizeSlider');
 				const photoSizePercent = document.getElementById('photoSizePercent');
 				
@@ -1101,9 +1042,7 @@ updateSizeWithAspectRatio(changedField, value) {
 						}
 					}
 				}, { passive: false });
-				// Кнопки управления фото
 
-                // Загрузка изображения
                 document.getElementById('loadImageBtn').onclick = () => {
                     document.getElementById('imageInput').click();
                 };
@@ -1115,16 +1054,14 @@ updateSizeWithAspectRatio(changedField, value) {
                 document.getElementById('removeImageBtn').onclick = () => {
                     this.removeImage();
                 };
-                
-                // Инструменты
+
                 document.querySelectorAll('.tool-btn').forEach(btn => {
                     btn.onclick = (e) => {
                         const tool = e.target.dataset.tool;
                         this.setTool(tool);
                     };
                 });
-                
-                // Свойства
+
                 document.getElementById('strokeColor').oninput = (e) => {
                     this.state.strokeColor = e.target.value;
                 };
@@ -1139,13 +1076,11 @@ updateSizeWithAspectRatio(changedField, value) {
 					document.getElementById('eraserSizeValue').textContent = e.target.value;
 				};
 
-                // Сглаживание пера
                 document.getElementById('smoothSlider').oninput = (e) => {
                     this.state.smoothing = parseInt(e.target.value);
                     document.getElementById('smoothValue').textContent = e.target.value;
                 };
-                
-                // Прозрачность изображения
+
 				document.getElementById('opacitySlider').oninput = (e) => {
 					const photoElement = document.getElementById('photo-overlay');
 					if (photoElement) {
@@ -1153,16 +1088,13 @@ updateSizeWithAspectRatio(changedField, value) {
 						document.getElementById('opacityValue').textContent = e.target.value + '%';
 					}
 				};
-                
-                // Зум
+
                 document.getElementById('zoomIn').onclick = () => this.zoomIn();
                 document.getElementById('zoomOut').onclick = () => this.zoomOut();
                 
-                // Действия
                 document.getElementById('saveBtn').onclick = () => this.saveSVG();
                 document.getElementById('clearBtn').onclick = () => this.clearVectors();
                 
-                // События мыши на холсте
                 this.svg.onmousedown = (e) => this.onMouseDown(e);
                 this.svg.onmousemove = (e) => {
                     this.onMouseMove(e);
@@ -1171,28 +1103,25 @@ updateSizeWithAspectRatio(changedField, value) {
                 this.svg.onmouseup = (e) => this.onMouseUp();
                 this.svg.onmouseleave = (e) => this.onMouseLeave();
 				document.addEventListener('mouseup', (e) => {
-					// Проверяем, не обработано ли уже событие в onMouseUp
+
 					if (this.state.isDraggingPhoto || this.state.isDraggingElement || this.state.isMoving) {
-						console.log('Глобальный mouseup - дублируем завершение');
 						this.onMouseUp();
 					}
 				});
-                // Зум колесиком
+
 				document.getElementById('canvasContainer').onwheel = (e) => {
-					e.preventDefault(); // Предотвращаем стандартную прокрутку
+					e.preventDefault(); 
 					
-					const delta = e.deltaY > 0 ? 0.9 : 1.1; // Уменьшение при прокрутке вниз, увеличение вверх
+					const delta = e.deltaY > 0 ? 0.9 : 1.1; 
 					const coords = this.getSVGCoordinates(e);
 					this.zoomToPoint(coords.x, coords.y, delta);
 				};
 				const snapPanel = document.createElement('div');
 
-				// Вставляем после панели свойств
 				const sidebar = document.querySelector('.sidebar');
 				const propertiesPanel = document.querySelectorAll('.panel')[2];
 				sidebar.insertBefore(snapPanel, propertiesPanel.nextSibling);
 				
-				// Обработчики для новых элементов
 				document.getElementById('continueVectorToggle').onchange = (e) => {
 					this.snapSettings.continueVector = e.target.checked;
 				};
@@ -1205,14 +1134,14 @@ updateSizeWithAspectRatio(changedField, value) {
 					this.snapSettings.snapDistance = parseInt(e.target.value);
 					document.getElementById('snapDistanceValue').textContent = e.target.value;
 				};
-				 // Настройки пуш-инструмента
+
 				document.getElementById('pushRadiusSlider').oninput = (e) => {
 					this.state.pushRadius = parseInt(e.target.value);
 					document.getElementById('pushRadiusValue').textContent = e.target.value;
 				};
 				
 				document.getElementById('pushStrengthSlider').oninput = (e) => {
-					// Значение от 0.01 до 1.0
+
 					this.state.pushStrength = parseInt(e.target.value) / 100;
 					document.getElementById('pushStrengthValue').textContent = this.state.pushStrength.toFixed(1);
 				};
@@ -1247,14 +1176,12 @@ scalePhoto(scale) {
     
     this.updatePhotoScaleDisplay();
     
-    console.log('Фото масштабировано:', scale * 100 + '%', 'Размер:', newWidth, 'x', newHeight);
 }
 
 scalePhotoByWidthPercent(percent) {
     const photoElement = document.getElementById('photo-overlay');
     if (!photoElement || !this.state.image) return;
-    
-    // Получаем физический размер фото (100%)
+
     const img = this.state.image;
     const currentDpi = parseInt(document.getElementById('dpiInput')?.value) || 96;
     const photoWidthInches = img.width / currentDpi;
@@ -1275,18 +1202,15 @@ scalePhotoByWidthPercent(percent) {
     const svgPixelsPerInchX = worksheetSvgWidth / worksheetWidthInches;
     const svgPixelsPerInchY = worksheetSvgHeight / worksheetHeightInches;
     
-    // Базовый физический размер (100%)
     const baseWidth = photoWidthInches * svgPixelsPerInchX;
     const baseHeight = photoHeightInches * svgPixelsPerInchY;
     
-    // Применяем пользовательский масштаб
     const scaleFactor = percent / 100;
     const newWidth = baseWidth * scaleFactor;
     const newHeight = baseHeight * scaleFactor;
     
     this.state.photoScale = (baseWidth * scaleFactor) / img.width;
     
-    // Сохраняем центр
     const currentX = parseFloat(photoElement.getAttribute('x')) || 0;
     const currentY = parseFloat(photoElement.getAttribute('y')) || 0;
     const currentWidth = parseFloat(photoElement.getAttribute('width')) || newWidth;
@@ -1334,7 +1258,6 @@ fitPhotoToCanvas() {
     const baseWidth = photoWidthInches * svgPixelsPerInchX;
     const baseHeight = photoHeightInches * svgPixelsPerInchY;
     
-    // Целевая ширина = ширина листа
     const targetWidth = worksheetSvgWidth;
 
     const scale = targetWidth / baseWidth;
@@ -1398,19 +1321,16 @@ loadSettingsFromUI() {
     if (strokeColorInput && strokeColorInput.value) {
         this.state.strokeColor = strokeColorInput.value;
     }
-    
     // Толщина линии
     const widthSlider = document.getElementById('widthSlider');
     if (widthSlider && widthSlider.value) {
         this.state.strokeWidth = parseInt(widthSlider.value);
     }
-    
     // Сглаживание пера
     const smoothSlider = document.getElementById('smoothSlider');
     if (smoothSlider && smoothSlider.value) {
         this.state.smoothing = parseInt(smoothSlider.value);
     }
-    
     // Настройка продолжения вектора
     const continueVectorToggle = document.getElementById('continueVectorToggle');
     if (continueVectorToggle) {
@@ -1454,7 +1374,6 @@ loadSettingsFromUI() {
         this.state.eraserSize = parseInt(eraserSizeSlider.value);
     }
     
-    console.log('Настройки загружены из UI');
 }
 
 updateAllSliderTexts() {
@@ -1534,8 +1453,7 @@ updateAllSliderTexts() {
     if (photoSizeSlider && photoSizePercent) {
         photoSizePercent.value = photoSizeSlider.value;
     }
-    
-    console.log('Значения слайдеров обновлены из сохраненного состояния');
+
 }
 
             // ЗУМ
@@ -1680,7 +1598,7 @@ startBezierContourDrag(e, clickedElement) {
     };
     
     this.svg.style.cursor = 'grabbing';
-    console.log('Начато перетаскивание контура Безье:', contourVectors.length, 'векторов');
+
 }
 
 findAllConnectedBezierVectors(startVector) {
@@ -1773,9 +1691,6 @@ doBezierContourDrag(x, y) {
 
 stopPhotoDrag() {
     if (!this.state.isDraggingPhoto) return;
-    
-    console.log('Остановка перетаскивания фото');
-    
     if (this.state.draggingPhotoElement) {
         this.state.draggingPhotoElement.style.outline = '';
         this.state.draggingPhotoElement.style.outlineOffset = '';
@@ -1790,7 +1705,6 @@ stopPhotoDrag() {
         this.svg.style.cursor = 'crosshair';
     }
 }
-
 
 // Вспомогательный метод для сдвига пути
 translatePath(d, dx, dy) {
@@ -1832,51 +1746,14 @@ stopPanning() {
 
 // Получение центра фигуры в глобальных координатах
 getElementCenter(element) {
-    const tag = element.tagName.toLowerCase();
-    let cx, cy;
-    
-    if (tag === 'circle') {
-        cx = parseFloat(element.getAttribute('cx')) || 0;
-        cy = parseFloat(element.getAttribute('cy')) || 0;
-    } else if (tag === 'ellipse') {
-        cx = parseFloat(element.getAttribute('cx')) || 0;
-        cy = parseFloat(element.getAttribute('cy')) || 0;
-    } else if (tag === 'rect') {
-        const x = parseFloat(element.getAttribute('x')) || 0;
-        const y = parseFloat(element.getAttribute('y')) || 0;
-        const w = parseFloat(element.getAttribute('width')) || 0;
-        const h = parseFloat(element.getAttribute('height')) || 0;
-        cx = x + w / 2;
-        cy = y + h / 2;
-    } else if (tag === 'line') {
-        const x1 = parseFloat(element.getAttribute('x1')) || 0;
-        const y1 = parseFloat(element.getAttribute('y1')) || 0;
-        const x2 = parseFloat(element.getAttribute('x2')) || 0;
-        const y2 = parseFloat(element.getAttribute('y2')) || 0;
-        cx = (x1 + x2) / 2;
-        cy = (y1 + y2) / 2;
-    } else if (tag === 'image') {
-        const x = parseFloat(element.getAttribute('x')) || 0;
-        const y = parseFloat(element.getAttribute('y')) || 0;
-        const w = parseFloat(element.getAttribute('width')) || 0;
-        const h = parseFloat(element.getAttribute('height')) || 0;
-        cx = x + w / 2;
-        cy = y + h / 2;
-    } else if (tag === 'path') {
-        try {
-            const bbox = element.getBBox();
-            cx = bbox.x + bbox.width / 2;
-            cy = bbox.y + bbox.height / 2;
-        } catch(e) {
-            cx = 0;
-            cy = 0;
-        }
-    } else {
-        cx = 0;
-        cy = 0;
+    const transform = element.getAttribute('transform') || '';
+    const rotateMatch = transform.match(/rotate\([^,]+,([^,]+),([^)]+)\)/);
+    if (rotateMatch) {
+        return { x: parseFloat(rotateMatch[1]), y: parseFloat(rotateMatch[2]) };
     }
-    
-    return { x: cx, y: cy };
+    // Иначе из bbox
+    const bbox = this.getElementBBox(element);
+    return { x: bbox.x + bbox.width/2, y: bbox.y + bbox.height/2 };
 }
 
 // Получение угла поворота фигуры (в радианах)
@@ -2063,12 +1940,30 @@ showSelectionHandles(element) {
         
         handles.appendChild(handle);
     });
-    
+    // === ТОЧКА ЦЕНТРА ВРАЩЕНИЯ ===
+const centerPoint = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+centerPoint.setAttribute('cx', center.x);
+centerPoint.setAttribute('cy', center.y);
+centerPoint.setAttribute('r', 6);
+centerPoint.setAttribute('fill', 'rgba(255, 107, 107, 0.3)');
+centerPoint.setAttribute('stroke', '#ff6b6b');
+centerPoint.setAttribute('stroke-width', '2');
+centerPoint.setAttribute('cursor', 'move');
+centerPoint.setAttribute('data-type', 'pivot');
+
+centerPoint.addEventListener('mousedown', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    this.startPivotDrag(e);
+});
+
+handles.appendChild(centerPoint);
     // === ТОЧКА ПОВОРОТА ===
-    const rotateHandleY = bbox.y - 25;
+    const rotateHandleY = bbox.y - 30;
     const rotateHandle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+	//rotateHandle.setAttribute('cx', bbox.x + bbox.width / 2);
     rotateHandle.setAttribute('cx', center.x);
-    rotateHandle.setAttribute('cy', rotateHandleY);
+	rotateHandle.setAttribute('cy', rotateHandleY);
     rotateHandle.setAttribute('r', 7);
     rotateHandle.setAttribute('fill', '#ff6b6b');
     rotateHandle.setAttribute('stroke', 'white');
@@ -2293,6 +2188,81 @@ stopElementDrag() {
     }
 }
 
+// ПЕРЕМЕЩЕНИЕ ОПОРНОЙ ТОЧКИ
+startPivotDrag(e) {
+    if (!this.selectedElement) return;
+    
+    const coords = this.getSVGCoordinates(e);
+    const element = this.selectedElement;
+    const rotation = this.getElementRotation(element);
+    
+    // Сохраняем угол и временно убираем поворот
+    this.isDraggingPivot = true;
+    this.pivotDragData = {
+        startX: coords.x,
+        startY: coords.y,
+        element: element,
+        angle: rotation.angle,
+        savedTransform: element.getAttribute('transform') || ''
+    };
+    
+    // Временно убираем rotate
+    if (rotation.angle !== 0) {
+        element.setAttribute('transform', `rotate(0, ${coords.x}, ${coords.y})`);
+    } else {
+        element.setAttribute('transform', `rotate(0, ${coords.x}, ${coords.y})`);
+    }
+    
+    this.svg.style.cursor = 'grabbing';
+    this.updateSelectionHandles();
+}
+
+// В doPivotDrag - просто визуальное обновление без изменения transform
+doPivotDrag(e) {
+    if (!this.isDraggingPivot || !this.pivotDragData) return;
+    
+    const coords = this.getSVGCoordinates(e);
+    this.pivotDragData.endX = coords.x;
+    this.pivotDragData.endY = coords.y;
+    
+    this.updatePivotPreview(coords.x, coords.y);
+}
+
+// В stopPivotDrag - одно применение
+stopPivotDrag() {
+    if (!this.isDraggingPivot || !this.pivotDragData) return;
+    
+    const data = this.pivotDragData;
+    const element = data.element;
+    
+    if (data.endX !== undefined) {
+        // Возвращаем сохранённый угол с новой позицией pivot
+        const angleDeg = data.angle * 180 / Math.PI;
+        element.setAttribute('transform', `rotate(${angleDeg}, ${data.endX}, ${data.endY})`);
+    } else {
+        // Восстанавливаем оригинальный transform
+        element.setAttribute('transform', data.savedTransform);
+    }
+    
+    this.isDraggingPivot = false;
+    this.pivotDragData = null;
+    this.svg.style.cursor = 'move';
+    this.updateSelectionHandles();
+}
+
+updatePivotPreview(x, y) {
+    const handles = document.getElementById('selection-handles');
+    if (!handles) return;
+    
+    // Находим точку центра вращения
+    const pivotPoint = handles.querySelector('[data-type="pivot"]');
+    if (pivotPoint) {
+        pivotPoint.setAttribute('cx', x);
+        pivotPoint.setAttribute('cy', y);
+    }
+    
+}
+
 // МАСШТАБИРОВАНИЕ
 startResizing(e, handleType) {
     if (!this.selectedElement) return;
@@ -2443,6 +2413,7 @@ applyBBoxToElement(element, bbox, originalPosition) {
         
         element.setAttribute('d', newD.trim());
     }
+	
 }
 
 // ПОВОРОТ
@@ -2683,7 +2654,6 @@ saveSVG() {
         URL.revokeObjectURL(url);
     }, 100);
     
-    console.log(`SVG сохранен: ${mmWidth}×${mmHeight} мм (границы листа: ${sheetX},${sheetY} ${sheetWidth}×${sheetHeight})`);
 }
 
 loadSVG(file) {
@@ -3064,8 +3034,6 @@ createBackground(width, height) {
         if (!this.state.image) {
             this.updateImageCache(img);
         }
-        
-        console.log(`Создана белая подложка ${width}x${height}px`);
     };
     img.src = canvas.toDataURL('image/png');
 }
@@ -3226,16 +3194,11 @@ displayPhoto(img) {
     photoElement.setAttribute('y', newY);
     
     this.updatePhotoSizeDisplay(100);
-    
-    console.log('Фото отображено в физическом размере:', 
-                Math.round(photoSvgWidth), 'x', Math.round(photoSvgHeight), 'px',
-                '(', percentOfWorksheet, '% от ширины листа)');
 }
 
 removePhotoOnly() {
     const photoElement = document.getElementById('photo-overlay');
     if (photoElement) {
-        console.log('Удаляем старое фото');
         photoElement.remove();
     }
 }
@@ -3308,8 +3271,6 @@ simplifyRatio(width, height) {
 			const ctx = this.imageCanvasCache.getContext('2d');
 			ctx.drawImage(imageToCache, 0, 0);
 			this.imageDataCache = ctx.getImageData(0, 0, imageToCache.width, imageToCache.height);
-			
-			console.log('Кэш изображения обновлен (размер:', imageToCache.width, 'x', imageToCache.height, ')');
 		}
 
 
@@ -3458,8 +3419,6 @@ setTool(tool) {
     if (tool !== previousTool) {
         this.lastTool = previousTool;
     }
-    
-    console.log('Инструмент переключен на:', tool, 'pointer-events фото:', photoElement?.style.pointerEvents);
 }
 
 updateCursor() {
@@ -3524,7 +3483,6 @@ deleteEntireVectorAt(e) {
         if (vector) {
             const connectedVectors = this.findAllConnectedBezierVectors(vector);
             this.deleteBezierVectors(connectedVectors);
-            console.log('Удален контур Безье:', connectedVectors.length, 'векторов');
             return;
         }
     }
@@ -3534,7 +3492,6 @@ deleteEntireVectorAt(e) {
         const pointIndex = parseInt(target.getAttribute('data-index'));
         if (!isNaN(pointIndex)) {
             this.deleteBezierPoint(pointIndex);
-            console.log('Удалена точка Безье:', pointIndex);
             return;
         }
     }
@@ -3554,7 +3511,6 @@ deleteEntireVectorAt(e) {
         if (this.isPointNearPath(coords.x, coords.y, path, radius)) {
             if (path.parentNode) {
                 path.parentNode.removeChild(path);
-                console.log('Удален path');
                 return;
             }
         }
@@ -3574,7 +3530,6 @@ deleteEntireVectorAt(e) {
         if (dist <= radius) {
             if (line.parentNode) {
                 line.parentNode.removeChild(line);
-                console.log('Удалена линия');
                 return;
             }
         }
@@ -3594,7 +3549,6 @@ deleteEntireVectorAt(e) {
             coords.y >= y && coords.y <= y + h) {
             if (rect.parentNode) {
                 rect.parentNode.removeChild(rect);
-                console.log('Удален прямоугольник');
                 return;
             }
         }
@@ -3613,7 +3567,6 @@ deleteEntireVectorAt(e) {
         if (dist <= r + radius) {
             if (circle.parentNode) {
                 circle.parentNode.removeChild(circle);
-                console.log('Удален круг');
                 return;
             }
         }
@@ -3634,7 +3587,6 @@ deleteEntireVectorAt(e) {
         if (dist <= Math.max(rx, ry) + radius) {
             if (ellipse.parentNode) {
                 ellipse.parentNode.removeChild(ellipse);
-                console.log('Удален эллипс');
                 return;
             }
         }
@@ -3921,8 +3873,6 @@ findVectorByControlPoint(controlType, belongsToPointIndex) {
 onMouseDown(e) {
     const coords = this.getSVGCoordinates(e);
     const target = e.target;
-    
-    console.log('onMouseDown - target:', target.id, 'tool:', this.state.currentTool);
 if (this.state.currentTool === 'fill-shape') {
     e.preventDefault();
     
@@ -3971,7 +3921,6 @@ if (this.state.currentTool === 'fill-shape') {
 
     if (target.id === 'photo-overlay' && this.state.currentTool === 'select') {
         e.preventDefault();
-        console.log('✅ ПЕРЕТАСКИВАНИЕ ФОТО');
         this.startPhotoDrag(e, target);
         return;
     }
@@ -4041,7 +3990,6 @@ if (this.state.currentTool === 'select') {
     
     // === БЕЗЬЕ-ВЕКТОР: выделяем и перетаскиваем весь контур ===
     if (isBezierVector) {
-        console.log('Перетаскивание контура Безье');
         this.startBezierContourDrag(e, target);
         return;
     }
@@ -4053,7 +4001,6 @@ if (this.state.currentTool === 'select') {
             this.selectionAngle = 0;
         }
         this.selectElement(target);
-        console.log('Перетаскивание вектора');
         this.startElementDrag(e, target);
         return;
     }
@@ -4061,7 +4008,6 @@ if (this.state.currentTool === 'select') {
     // Пустое место
     this.removeSelectionHandles();
     this.selectedElement = null;
-    console.log('Панорамирование');
     this.startPanning(e);
     return;
 }
@@ -4399,8 +4345,6 @@ onMouseMove(e) {
         
         this.state.draggingPhotoElement.setAttribute('x', newX);
         this.state.draggingPhotoElement.setAttribute('y', newY);
-        
-        console.log('Фото движется:', newX, newY);
         return;
     }
 	
@@ -4427,6 +4371,11 @@ if (this.isRotating) {
     return;
 }
 
+if (this.isDraggingPivot) {
+    e.preventDefault();
+    this.doPivotDrag(e);
+    return;
+}
     if (this.state.currentTool === 'bezier-points') {
         if (this.state.isDraggingPoint) {
             this.updatePointDrag(coords.x, coords.y);
@@ -4524,7 +4473,6 @@ if (this.state.currentTool === 'eraser') {
 }
 
 onMouseUp() {
-    console.log('onMouseUp вызван');
     
     if (this.isResizing || this.isRotating) {
 		if (this.isResizing) {
@@ -4544,21 +4492,21 @@ onMouseUp() {
 		}
     }
 	
+	if (this.isDraggingPivot) {
+		this.stopPivotDrag();
+	}
     // Завершаем перетаскивание фото
     if (this.state.isDraggingPhoto) {
-        console.log('onMouseUp - завершаем перетаскивание фото');
         this.stopPhotoDrag();
     }
     
     // Завершаем перетаскивание вектора
     if (this.state.isDraggingElement) {
-        console.log('onMouseUp - завершаем перетаскивание элемента');
         this.stopElementDrag();
     }
     
     // Завершаем панорамирование
     if (this.state.isMoving) {
-        console.log('onMouseUp - завершаем панорамирование');
         this.stopPanning();
     }
 
@@ -4637,9 +4585,6 @@ startPhotoDrag(e, photoElement) {
     
     if (isNaN(currentX)) currentX = 0;
     if (isNaN(currentY)) currentY = 0;
-    
-    console.log('Начало перетаскивания фото:', currentX, currentY);
-    
     this.state.isDraggingPhoto = true;
     this.state.draggingPhotoElement = photoElement;
     this.state.photoDragStartX = coords.x;
@@ -4823,11 +4768,8 @@ cutPathAtIntersections(path, x, y, radius) {
 lineCircleIntersection(p1, p2, center, radius) {
     const intersections = [];
     
-    // Вектор направления отрезка
     const dx = p2.x - p1.x;
     const dy = p2.y - p1.y;
-    
-    // Квадратичное уравнение для нахождения пересечений
     const A = dx * dx + dy * dy;
     const B = 2 * (dx * (p1.x - center.x) + dy * (p1.y - center.y));
     const C = (p1.x - center.x) * (p1.x - center.x) + 
@@ -4837,14 +4779,12 @@ lineCircleIntersection(p1, p2, center, radius) {
     const discriminant = B * B - 4 * A * C;
     
     if (discriminant < 0) {
-        // Нет пересечений
         return intersections;
     }
     
     const t1 = (-B - Math.sqrt(discriminant)) / (2 * A);
     const t2 = (-B + Math.sqrt(discriminant)) / (2 * A);
     
-    // Проверяем, что пересечения находятся на отрезке (0 <= t <= 1)
     if (t1 >= 0 && t1 <= 1) {
         intersections.push({
             x: p1.x + t1 * dx,
@@ -4879,30 +4819,24 @@ splitPathAtIntersections(originalPoints, intersections, isClosed) {
     const parts = [];
     let currentPart = { points: [] };
     
-    // Добавляем все точки до первого пересечения
     for (let i = 0; i < originalPoints.length; i++) {
         currentPart.points.push(originalPoints[i]);
         
-        // Проверяем, нужно ли разрезать после этой точки
         const nextPointIndex = (i + 1) % originalPoints.length;
         const segmentIntersections = intersections.filter(
             inter => inter.segmentIndex === i
         ).sort((a, b) => a.t - b.t);
         
         if (segmentIntersections.length > 0) {
-            // Добавляем точку пересечения
             segmentIntersections.forEach(inter => {
                 currentPart.points.push(inter.point);
-                // Завершаем текущую часть
                 if (currentPart.points.length >= 2) {
                     parts.push({...currentPart});
                 }
-                // Начинаем новую часть с точки пересечения
                 currentPart = { points: [inter.point] };
             });
         }
         
-        // Если это последняя точка в незамкнутом пути
         if (!isClosed && i === originalPoints.length - 1) {
             if (currentPart.points.length >= 2) {
                 parts.push({...currentPart});
@@ -4910,9 +4844,7 @@ splitPathAtIntersections(originalPoints, intersections, isClosed) {
         }
     }
     
-    // Для замкнутого пути - соединяем последнюю часть с первой
     if (isClosed && parts.length > 0 && currentPart.points.length > 0) {
-        // Добавляем оставшиеся точки к первой части
         parts[0].points = [...currentPart.points, ...parts[0].points.slice(1)];
     } else if (currentPart.points.length >= 2) {
         parts.push({...currentPart});
@@ -4930,8 +4862,6 @@ eraseVectorsAt(x, y) {
     const radius = this.state.eraserSize / this.state.zoom;
     
     this.hideEraserIndicator();
-    
-    // ============ ВОТ ЭТОТ БЛОК ДОБАВИТЬ В НАЧАЛО ============
     // Сначала обрабатываем Безье-векторы
 	let bezierProcessed = false;
 for (let v = this.state.bezierVectors.length - 1; v >= 0; v--) {
@@ -4972,7 +4902,6 @@ for (let v = this.state.bezierVectors.length - 1; v >= 0; v--) {
         }
     }
     
-    // Конец внутри ластика — ищем вход
     if (toDist <= radius && exitT === null) {
         for (let s = steps - 1; s >= 0; s--) {
             const t1 = s / steps;
@@ -4987,7 +4916,6 @@ for (let v = this.state.bezierVectors.length - 1; v >= 0; v--) {
     
     if (enterT !== null && exitT !== null && exitT - enterT > 0.01) {
         if (enterT > 0.01 && exitT < 0.99) {
-            // Середина
             const p1 = this.evaluateCubicBezier(from.x, from.y, vec.control1.x, vec.control1.y, vec.control2.x, vec.control2.y, to.x, to.y, enterT);
             const p2 = this.evaluateCubicBezier(from.x, from.y, vec.control1.x, vec.control1.y, vec.control2.x, vec.control2.y, to.x, to.y, exitT);
             this.createSingleBezierPoint(p1.x, p1.y);
@@ -5021,7 +4949,7 @@ for (let v = this.state.bezierVectors.length - 1; v >= 0; v--) {
     }
 }
   // ============ КОНЕЦ БЛОКА БЕЗЬЕ ============
-    // === ЗАТЕМ ОБРАБАТЫВАЕМ ОБЫЧНЫЕ ВЕКТОРЫ ===
+    // === ОБЫЧНЫЕ ВЕКТОРЫ ===
     // 1. Пути (НЕ Безье)
 const allPaths = Array.from(this.svg.querySelectorAll('path'))
     .filter(path => !path.id || !path.id.includes('background') && 
@@ -5033,12 +4961,10 @@ const allPaths = Array.from(this.svg.querySelectorAll('path'))
         const result = this.cutPathAtIntersections(path, x, y, radius);
         
         if (result === 'delete') {
-            // Удаляем весь путь
             if (path.parentNode) {
                 path.parentNode.removeChild(path);
             }
         } else if (result && result.length > 0) {
-            // Удаляем оригинальный путь
             const parent = path.parentNode;
             if (parent) {
                 const stroke = path.getAttribute('stroke');
@@ -5048,8 +4974,7 @@ const allPaths = Array.from(this.svg.querySelectorAll('path'))
                 const linejoin = path.getAttribute('stroke-linejoin');
                 
                 parent.removeChild(path);
-                
-                // Создаем новые пути из частей
+
                 result.forEach((pathData) => {
                     const points = this.parsePathToPoints(pathData).points;
                     if (points.length >= 2) {
@@ -5943,14 +5868,9 @@ alignTangentsForSmoothConnection(newVector, previousVector) {
         }
     }
     
-    // Обновляем пути
     this.updateBezierVectorPath(previousVector);
     this.updateBezierVectorPath(newVector);
     
-    console.log('Выровнены касательные:');
-    console.log('Касательная 2->1:', previousVector.control2.x, previousVector.control2.y);
-    console.log('Касательная 2->3:', newVector.control1.x, newVector.control1.y);
-    console.log('Общая точка:', commonPoint.x, commonPoint.y);
 }
 
     // СОЗДАНИЕ ЭЛЕМЕНТА ТОЧКИ
@@ -5997,11 +5917,9 @@ toggleBezierPointType(pointIndex) {
     });
     
     if (relatedVectors.length === 0) {
-        console.log('Нет связанных векторов для точки', pointIndex);
         return;
     }
     
-    // Проверяем, является ли точка уже "пустой" (все контрольные точки совпадают с основной точкой)
     let isFlat = true;
     
     relatedVectors.forEach(({ vector }) => {
@@ -6064,11 +5982,9 @@ toggleBezierPointType(pointIndex) {
                 }
             }
             
-            // Обновляем путь
             this.updateBezierVectorPath(vector);
         });
         
-        console.log('Точка', pointIndex, 'стала ГЛАДКОЙ');
     } else {
         // Точка гладкая — делаем её "пустой" (угловой)
         relatedVectors.forEach(({ vector }) => {
@@ -6103,8 +6019,7 @@ toggleBezierPointType(pointIndex) {
             // Обновляем путь
             this.updateBezierVectorPath(vector);
         });
-        
-        console.log('Точка', pointIndex, 'стала УГЛОВОЙ');
+
     }
     
     // Сохраняем состояние
@@ -6174,7 +6089,6 @@ startBezierControlDrag(e) {
         this.state.draggingBezierControlOriginalY = vector.control2.y;
     }
     
-    console.log('Начато перетаскивание контрольной точки', type, 'вектора', vectorIndex);
 }
    
     // ОБНОВЛЕНИЕ ПЕРЕТАСКИВАНИЯ КОНТРОЛЬНОЙ ТОЧКИ БЕЗЬЕ
@@ -6242,7 +6156,6 @@ updateBezierControlDrag(x, y) {
         this.state.isDraggingBezierControl = false;
         this.state.draggingBezierControlVectorIndex = null;
         this.state.draggingBezierControlType = null;
-        console.log('Завершено перетаскивание контрольной точки');
     }
         
     // ОБНОВЛЕНИЕ ПУТИ БЕЗЬЕ (после перемещения контрольной точки)
