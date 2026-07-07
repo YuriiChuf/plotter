@@ -34,7 +34,10 @@
             margin-bottom: 40px;
             border: 1px solid #45475a;
         }
-
+		.grid {
+			display: grid;
+            grid-template-columns: 3fr 1fr ;
+		}
         .logo {
             display: flex;
             align-items: center;
@@ -251,11 +254,16 @@
             <div class="logo">
                 <i class="fas fa-pen-fancy"></i>
                 <h1>Инструменты для векторной графики</h1>
-            </div>
+            </div><div class= "grid">
             <p class="tagline">
                 Полный набор инструментов для работы с векторной графикой, создания шрифтов и подготовки G-кода для плоттера Sovol SO-1.
                 Все инструменты работают в браузере и не требуют установки дополнительного ПО.
-            </p>
+            </p><a href="laserCub.html" 
+				   class="btn btn-secondary" 
+				   style="margin-bottom: 10px;">
+					<i class="fas fa-external-link-alt"></i> Бонус Куб-головоломка для любителей лазерной резки
+				</a></div>
+			
         </header>
 
         <div class="tools-grid">
