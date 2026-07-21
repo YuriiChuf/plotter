@@ -1,0 +1,576 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Генератор деталей · октаэдр, куб, додекаэдр</title>
+    <style>
+        * { margin: 0; box-sizing: border-box; }
+        body {
+            background: #e8e5df;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 1.5rem 1rem;
+        }
+        .card {
+            background: white;
+            border-radius: 2rem;
+            padding: 1.8rem 2rem 2rem;
+            box-shadow: 0 20px 35px rgba(0,0,0,0.07);
+            width: fit-content;
+            max-width: 950px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1.2rem;
+        }
+        h2 { font-weight: 500; font-size: 1.5rem; color: #2e2e2c; margin: 0; }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: end;
+            justify-content: center;
+            gap: 0.8rem;
+            background: #fafaf8;
+            padding: 1.2rem 1.5rem;
+            border-radius: 3rem;
+            width: 100%;
+        }
+        .input-group { display: flex; flex-direction: column; gap: 0.3rem; }
+        .input-group label {
+            font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.5px; color: #4b4b45; margin-left: 0.2rem; white-space: nowrap;
+        }
+        .input-group input, .input-group select {
+            width: 85px; padding: 0.5rem 0.5rem; border: 1.5px solid #dbd9d3;
+            border-radius: 2.5rem; font-size: 0.85rem; font-weight: 500;
+            background: white; text-align: center; transition: 0.2s; outline: none;
+        }
+        .input-group select {
+            width: 200px; cursor: pointer; appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%235b5b55'/%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: right 0.5rem center; padding-right: 1.5rem;
+        }
+        .input-group input:focus, .input-group select:focus {
+            border-color: #b8875b; box-shadow: 0 0 0 3px rgba(184,135,91,0.2);
+        }
+        .workspace {
+            display: flex;
+            gap: 1rem;
+            align-items: flex-start;
+            width: 100%;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .left-panel {
+            flex: 1;
+            min-width: 280px;
+        }
+        .svg-container {
+            background: #ffffff;
+            border-radius: 1.5rem;
+            padding: 1rem;
+            border: 1px solid #e7e4df;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 300px;
+        }
+        .svg-container svg {
+            display: block;
+            width: 100%;
+            height: auto;
+            max-width: 400px;
+            background: #fff;
+        }
+        .right-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 0.8rem;
+            min-width: 180px;
+            max-width: 250px;
+        }
+        .preview-container {
+            background: #fafaf8;
+            border-radius: 1.5rem;
+            padding: 1rem;
+            border: 1px solid #e7e4df;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .preview-container svg {
+            display: block;
+            width: 100%;
+            height: auto;
+            max-width: 200px;
+        }
+        .preview-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #5b5b55;
+            text-align: center;
+        }
+        .preview-sub {
+            font-size: 0.65rem;
+            color: #999;
+            text-align: center;
+            margin-top: -0.3rem;
+        }
+        .btn-row { 
+            display: flex; 
+            gap: 0.4rem; 
+            flex-wrap: wrap; 
+            justify-content: center; 
+        }
+        button {
+            background: #1f1f1d; border: 1px solid #3f3f3b; color: white;
+            font-weight: 600; padding: 0.45rem 0.9rem; border-radius: 2.5rem;
+            font-size: 0.7rem; letter-spacing: 0.4px; cursor: pointer;
+            display: flex; align-items: center; gap: 0.2rem; transition: 0.2s;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.04); white-space: nowrap;
+        }
+        button:hover { background: #3d3d39; border-color: #5a5a54; }
+        button.secondary { background: #fff; color: #1f1f1d; border: 1.5px solid #cfcdc5; }
+        button.secondary:hover { background: #f5f3ee; }
+        button.primary-btn {
+            background: #1f1f1d; border: 1px solid #3f3f3b; color: white;
+            font-size: 0.8rem; padding: 0.55rem 1.2rem;
+        }
+        .info-text {
+            color: #4f4d48;
+            font-size: 0.8rem;
+            font-weight: 500;
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+            background: #f9f7f3;
+            padding: 0.4rem 1rem;
+            border-radius: 2rem;
+            flex-wrap: wrap;
+            justify-content: center;
+            width: 100%;
+        }
+        .info-text span { font-weight: 700; color: #2e2e2c; }
+        .info-text .highlight { background: #e8e0d5; padding: 0.15rem 0.5rem; border-radius: 1rem; }
+        .toast {
+            position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
+            background: #2e2e2c; color: #fff; padding: 0.7rem 1.8rem;
+            border-radius: 2rem; font-size: 0.9rem; font-weight: 500;
+            z-index: 999; opacity: 0; transition: opacity 0.3s; pointer-events: none;
+        }
+        .toast.show { opacity: 1; }
+			.info-tooltip {
+	  position: fixed;
+	  top: 50%;
+	  left: 50%;
+	  transform: translate(-50%, -50%);
+	  background: white;
+	  border-radius: 1rem;
+	  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+	  padding: 1.5rem;
+	  max-width: 320px;
+	  width: 90%;
+	  z-index: 1000;
+	  font-size: 0.85rem;
+	  line-height: 1.5;
+	}
+		.info-tooltip h3 {
+	  margin: 0 0 0.5rem 0;
+	  font-size: 1rem;
+	  color: #1a1a2e;
+	}
+	.info-tooltip p {
+	  margin: 0.3rem 0;
+	  color: #555;
+	}
+	.info-tooltip .close-btn {
+	  position: absolute;
+	  top: 0.5rem;
+	  right: 0.5rem;
+	  background: none;
+	  border: none;
+	  font-size: 1.2rem;
+	  cursor: pointer;
+	  color: #999;
+	  width: 28px;
+	  height: 28px;
+	  border-radius: 50%;
+	  display: flex;
+	  align-items: center;
+	  justify-content: center;
+	}
+	.info-tooltip .close-btn:hover {
+	  background: #f0f0f0;
+	  color: #333;
+	}
+    </style>
+</head>
+<body>
+<div class="card">
+    <h2>🔷 генератор деталей для многогранников</h2>
+    <div class="controls">
+        <div class="input-group">
+            <label>📐 фигура</label>
+            <select id="shapeSelect">
+                <option value="3">△ треуг.(8 шт)</option>
+                <option value="4">◇ квадр.(6 шт)</option>
+                <option value="5">⬠ пятиуг.(12 шт)</option>
+            </select>
+        </div>
+        <div class="input-group">
+            <label>📏 сторона мм</label>
+            <input type="number" id="sideInput" value="20" step="0.5" min="6" max="200">
+        </div>
+        <div class="input-group">
+            <label>🪵 толщина мм</label>
+            <input type="number" id="thicknessInput" value="2.4" step="0.1" min="0.5" max="15">
+        </div>
+        <div class="input-group">
+            <label>🔢 пар шип-паз</label>
+            <input type="number" id="pairsInput" value="3" step="1" min="2" max="20">
+        </div>
+        <div class="input-group">
+            <label>▶ начало</label>
+            <select id="startSelect">
+                <option value="spike">с шипа</option>
+                <option value="gap">с паза</option>
+            </select>
+        </div>
+		
+        <button id="generateBtn" class="primary-btn">↻</button>
+    </div>
+
+    <div class="workspace">
+        <div class="left-panel">
+            <div class="svg-container" id="svgContainer"></div>
+        </div>
+        <div class="right-panel">
+            <div class="preview-container" id="previewContainer">
+                <div class="preview-label" id="previewLabel">Октаэдр</div>
+                <div class="preview-sub" id="previewSub">8 треугольников</div>
+                <div id="previewSVGContainer"></div>
+            </div>
+            <div class="btn-row">
+                <button id="saveBtn" class="secondary">💾 сохранить SVG</button>
+                <button id="copyBtn" class="secondary">📋 копировать SVG</button>
+				<button id="infoBtn" class="secondary"  >ℹ️ Информация</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="info-text">
+        📐 сторона: <span id="sideDisplay">20</span> мм ·
+        🪵 толщина: <span id="thickDisplay">2.4</span> мм ·
+        📏 шип/паз: <span class="highlight" id="spikeWidthDisplay">3.33</span> мм ·
+        📐 габариты: <span class="highlight" id="dimensionsDisplay">—</span> ·
+        📦 <span id="totalDisplay">8 шт</span>
+    </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+    (function() {
+        const SVG_NS = "http://www.w3.org/2000/svg";
+        const shapeSelect = document.getElementById('shapeSelect');
+        const sideInput = document.getElementById('sideInput');
+        const thicknessInput = document.getElementById('thicknessInput');
+        const pairsInput = document.getElementById('pairsInput');
+        const startSelect = document.getElementById('startSelect');
+        const generateBtn = document.getElementById('generateBtn');
+        const saveBtn = document.getElementById('saveBtn');
+        const copyBtn = document.getElementById('copyBtn');
+        const svgContainer = document.getElementById('svgContainer');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewLabel = document.getElementById('previewLabel');
+        const sideDisplay = document.getElementById('sideDisplay');
+        const thickDisplay = document.getElementById('thickDisplay');
+        const spikeWidthDisplay = document.getElementById('spikeWidthDisplay');
+        const dimensionsDisplay = document.getElementById('dimensionsDisplay');
+        const totalDisplay = document.getElementById('totalDisplay');
+        const toast = document.getElementById('toast');
+
+        let currentCleanSVG = '';
+
+        function showToast(msg) {
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2000);
+        }
+
+        function getTotalPieces(sides) {
+            return { 3: 8, 4: 6, 5: 12 }[sides] || 0;
+        }
+
+        function getPolyhedronInfo(sides) {
+            return {
+                3: { name: 'Октаэдр', sub: '8 треугольников' },
+                4: { name: 'Куб', sub: '6 квадратов' },
+                5: { name: 'Додекаэдр', sub: '12 пятиугольников' }
+            }[sides] || { name: '', sub: '' };
+        }
+
+        // Схема: многогранник из отдельных граней
+        function getAssemblySVG(sides) {
+            if (sides === 3) {
+                return `<svg xmlns="${SVG_NS}" viewBox="120 140 100 130" width="150" height="180">
+            <polygon points="60,130 110,55 10,55" fill="#e8d5c0" fill-opacity="0.4" stroke="#b8875b" stroke-width="1.2" transform="matrix(0.79255437,0.11909167,-0.12420642,0.826593,125.48168,145.27608)"/>
+            <path style="fill:#e8d5c0;fill-opacity:0.4;stroke:#b8875b;stroke-width:0.397" d="m 126.57588,191.92961 46.15879,-18.88769 33.09664,30.79686 z"/>
+            <path style="fill:#e8d5c0;fill-opacity:0.4;stroke:#b8875b;stroke-width:0.397" d="m 126.57587,191.92961 30.31224,67.94906 -27.91202,-32.297 z"/>
+            <path style="fill:#e8d5c0;fill-opacity:0.4;stroke:#b8875b;stroke-width:0.397" d="m 156.88811,259.87867 48.9432,-56.03989 -4.67593,31.23692 z"/>
+            <text x="175" y="290" text-anchor="middle" font-size="6" fill="#999">8 треугольников</text>
+        </svg>`;
+            } else if (sides === 4) {
+                return `<svg xmlns="${SVG_NS}" viewBox="15 10 110 110" width="150" height="150">
+            <polygon points="20,30 70,15 100,50 50,65" fill="#e8d5c0" fill-opacity="0.4" stroke="#b8875b" stroke-width="1.2"/>
+            <polygon points="20,30 50,65 50,105 20,70" fill="#f0e0d0" fill-opacity="0.4" stroke="#b8875b" stroke-width="1.2"/>
+            <polygon points="50,65 100,50 100,90 50,105" fill="#dcc8b0" fill-opacity="0.4" stroke="#b8875b" stroke-width="1.2"/>
+            <text x="60" y="125" text-anchor="middle" font-size="6" fill="#999">6 квадратов</text>
+        </svg>`;
+            } else if (sides === 5) {
+                return `<svg xmlns="${SVG_NS}" viewBox="87 90 35 28" width="200" height="180">
+            <polygon points="103.26,111.71 93.18,105.31 95.48,95.63 109.37,95.02 112.64,104.46" fill="#f0e0d0" fill-opacity="0.4" stroke="#b8875b" stroke-width="0.2mm"/>
+            <polygon points="103.26,111.71 112.55,103.70 114.91,106.98 111.16,114.07 103.50,115.11" fill="#dcc8b0" fill-opacity="0.4" stroke="#b8875b" stroke-width="0.1mm"/>
+            <polygon points="112.55,103.70 109.38,95.03 111.48,95.45 114.22,100.34 114.91,106.98" fill="#dcc8b0" fill-opacity="0.4" stroke="#b8875b" stroke-width="0.1mm"/>
+            <polygon points="93.18,105.31 103.26,111.71 103.50,115.11 95.35,114.73 91.09,108.96" fill="#e0d0c0" fill-opacity="0.4" stroke="#b8875b" stroke-width="0.1mm"/>
+            <polygon points="95.48,95.63 93.18,105.31 91.09,108.96 91.38,101.94 93.26,96.84" fill="#e0d0c0" fill-opacity="0.4" stroke="#b8875b" stroke-width="0.1mm"/>
+        </svg>`;
+            }
+            return '';
+        }
+
+        function getPolygonVertices(sides, sideLength) {
+            const vertices = [];
+            const radius = sideLength / (2 * Math.sin(Math.PI / sides));
+
+            let startAngle = -Math.PI / 2;
+            if (sides === 4) {
+                startAngle = -Math.PI / 4; // -45 градусов
+            }
+            for (let i = 0; i < sides; i++) {
+                const angle = startAngle + (2 * Math.PI * i) / sides;
+                vertices.push({ x: radius * Math.cos(angle), y: radius * Math.sin(angle) });
+            }
+            return vertices;
+        }
+
+        function generatePartPath(vertices, thicknessMM, numPairs, startWithSpike) {
+            const t = thicknessMM;
+            const v = vertices;
+            const sideLen = Math.sqrt(Math.pow(v[1].x-v[0].x,2) + Math.pow(v[1].y-v[0].y,2));
+            const fw = sideLen / (numPairs * 2);
+
+            function buildSide(p1, p2) {
+                const dx=p2.x-p1.x, dy=p2.y-p1.y, len=Math.sqrt(dx*dx+dy*dy);
+                if(len<0.001) return [`L ${p2.x} ${p2.y}`];
+                const ux=dx/len, uy=dy/len;
+                const mx=(p1.x+p2.x)/2, my=(p1.y+p2.y)/2;
+                const ml=Math.sqrt(mx*mx+my*my), nx=mx/(ml||1), ny=my/(ml||1);
+                const pt=d=>({x:p1.x+ux*d, y:p1.y+uy*d});
+
+                const spike = d => {
+                    const bl=pt(d), br=pt(d+fw);
+                    return [
+                        `L ${bl.x.toFixed(3)} ${bl.y.toFixed(3)}`,
+                        `L ${(bl.x+nx*t).toFixed(3)} ${(bl.y+ny*t).toFixed(3)}`,
+                        `L ${(br.x+nx*t).toFixed(3)} ${(br.y+ny*t).toFixed(3)}`,
+                        `L ${br.x.toFixed(3)} ${br.y.toFixed(3)}`
+                    ];
+                };
+                const gap = d => {
+                    const g1=pt(d), g2=pt(d+fw);
+                    return [`L ${g1.x.toFixed(3)} ${g1.y.toFixed(3)}`, `L ${g2.x.toFixed(3)} ${g2.y.toFixed(3)}`];
+                };
+
+                const cmds=[]; let cur=0, isSp=startWithSpike;
+                for(let i=0;i<numPairs*2;i++){ cmds.push(...(isSp?spike(cur):gap(cur))); cur+=fw; isSp=!isSp; }
+                return cmds;
+            }
+
+            let d = `M ${v[0].x.toFixed(3)} ${v[0].y.toFixed(3)}`;
+            for(let i=0;i<v.length;i++) d += ' '+buildSide(v[i], v[(i+1)%v.length]).join(' ');
+            return d + ' Z';
+        }
+
+        function getBounds(pathD) {
+            const nums = pathD.match(/[-\d.]+/g).map(Number);
+            let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+            for(let i=0;i<nums.length;i+=2){ 
+                if(!isNaN(nums[i])){ minX=Math.min(minX,nums[i]); maxX=Math.max(maxX,nums[i]); }
+                if(!isNaN(nums[i+1])){ minY=Math.min(minY,nums[i+1]); maxY=Math.max(maxY,nums[i+1]); }
+            }
+            return { minX, minY, maxX, maxY, w: maxX-minX, h: maxY-minY };
+        }
+
+        function buildDisplaySVG(pathD, bounds) {
+            const pad = Math.max(bounds.w, bounds.h) * 0.12;
+            const vb = `${(bounds.minX-pad).toFixed(2)} ${(bounds.minY-pad).toFixed(2)} ${(bounds.w+pad*2).toFixed(2)} ${(bounds.h+pad*2).toFixed(2)}`;
+            return `<svg xmlns="${SVG_NS}" viewBox="${vb}">
+			<path style="stroke:#000;stroke-width:0.25mm;fill:none;stroke-linejoin:round;stroke-linecap:round" d="${pathD}"/>
+		</svg>`;
+				}
+
+		function shiftPathToPositive(pathD) {
+			const nums = pathD.match(/[-\d.]+/g).map(Number);
+			let minX = Infinity, minY = Infinity;
+			for (let i = 0; i < nums.length; i += 2) {
+				if (!isNaN(nums[i])) minX = Math.min(minX, nums[i]);
+				if (!isNaN(nums[i + 1])) minY = Math.min(minY, nums[i + 1]);
+			}
+			
+			const offsetX = Math.abs(minX) + 2;
+			const offsetY = Math.abs(minY) + 2;
+			
+			// Смещаем все координаты в path
+			let shifted = pathD.replace(/([-\d.]+)\s+([-\d.]+)/g, (match, x, y) => {
+				const newX = (parseFloat(x) + offsetX).toFixed(3);
+				const newY = (parseFloat(y) + offsetY).toFixed(3);
+				return `${newX} ${newY}`;
+			});
+			
+			return shifted;
+		}
+
+		function getBoundsPositive(pathD) {
+			const nums = pathD.match(/[-\d.]+/g).map(Number);
+			let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+			for (let i = 0; i < nums.length; i += 2) {
+				if (!isNaN(nums[i])) {
+					minX = Math.min(minX, nums[i]);
+					maxX = Math.max(maxX, nums[i]);
+				}
+				if (!isNaN(nums[i + 1])) {
+					minY = Math.min(minY, nums[i + 1]);
+					maxY = Math.max(maxY, nums[i + 1]);
+				}
+			}
+			return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
+		}
+
+		function buildCleanSVG(pathD, bounds) {
+			// Смещаем в положительные координаты
+			const shiftedPath = shiftPathToPositive(pathD);
+			const posBounds = getBoundsPositive(shiftedPath);
+			
+			const pad = 2;
+			const w = (posBounds.w + pad * 2).toFixed(3);
+			const h = (posBounds.h + pad * 2).toFixed(3);
+			const vb = `${(posBounds.minX - pad).toFixed(3)} ${(posBounds.minY - pad).toFixed(3)} ${w} ${h}`;
+			
+			return `<?xml version="1.0" encoding="UTF-8"?>
+		<svg xmlns="${SVG_NS}" width="${w}mm" height="${h}mm" viewBox="${vb}">
+			<path style="stroke:#000000;stroke-width:0.05mm;fill:none" d="${shiftedPath}"/>
+		</svg>`;
+		}
+
+        function update() {
+            const sides = parseInt(shapeSelect.value);
+            let side = parseFloat(sideInput.value);
+            let thick = parseFloat(thicknessInput.value);
+            let pairs = parseInt(pairsInput.value);
+            const startSpike = startSelect.value === 'spike';
+
+            if(isNaN(side)||side<5) side=20;
+            if(isNaN(thick)||thick<0.3) thick=2.4;
+            if(isNaN(pairs)||pairs<1) pairs=1;
+
+            const verts = getPolygonVertices(sides, side);
+            const sideLen = Math.sqrt(Math.pow(verts[1].x-verts[0].x,2)+Math.pow(verts[1].y-verts[0].y,2));
+            const fw = sideLen/(pairs*2);
+            if(fw<0.5){ pairs=Math.floor(sideLen/1); if(pairs<1) pairs=1; }
+            if(pairs>20) pairs=20;
+
+            sideInput.value=side.toFixed(1);
+            thicknessInput.value=thick.toFixed(1);
+            pairsInput.value=pairs;
+
+            const pathD = generatePartPath(verts, thick, pairs, startSpike);
+            const bounds = getBounds(pathD);
+            const actualFW = sideLen/(pairs*2);
+            const info = getPolyhedronInfo(sides);
+
+            svgContainer.innerHTML = buildDisplaySVG(pathD, bounds);
+            currentCleanSVG = buildCleanSVG(pathD, bounds);
+
+            // Обновляем превью
+            const existingSvg = previewContainer.querySelector('svg');
+            if (existingSvg) existingSvg.remove();
+            const assemblySvg = getAssemblySVG(sides);
+            previewContainer.insertAdjacentHTML('afterbegin', assemblySvg);
+            previewLabel.textContent = info.name;
+            // Обновляем подпись
+            const subEl = previewContainer.querySelector('.preview-sub');
+            if (subEl) subEl.textContent = info.sub;
+
+            sideDisplay.textContent = side.toFixed(1);
+            thickDisplay.textContent = thick.toFixed(1);
+            spikeWidthDisplay.textContent = actualFW.toFixed(2);
+            dimensionsDisplay.textContent = `${bounds.w.toFixed(1)} × ${bounds.h.toFixed(1)} мм`;
+            totalDisplay.textContent = `${getTotalPieces(sides)} шт`;
+        }
+		document.getElementById('infoBtn').addEventListener('click', () => {
+		  let thick = parseFloat(thicknessInput.value);
+		  const recommendedThickness = (thick + 0.1).toFixed(1);
+		  
+		  const overlay = document.createElement('div');
+		  overlay.className = 'info-overlay';
+		  
+		  const tooltip = document.createElement('div');
+		  tooltip.className = 'info-tooltip';
+		  tooltip.innerHTML = `
+			<button class="close-btn">✕</button>
+			<h3>💡 Настройки для лазерной резки</h3>
+			<p>📏 
+			  При толщине фанеры <b>${thick.toFixed(1)} мм</b><br>
+			  и вы не измеряли её штангенциркулем то фанера скорее всего больше, установите <b>${recommendedThickness} мм</b> тогда сторона не будет вылезать за грань. И при резке 
+			 установите смещение<b> 0.04-0.06 мм</b> наружу, для жескости соединения.
+			</p>
+		  `;
+		  
+		  document.body.appendChild(overlay);
+		  document.body.appendChild(tooltip);
+		  
+		  const close = () => {
+			overlay.remove();
+			tooltip.remove();
+		  };
+		  
+		  tooltip.querySelector('.close-btn').addEventListener('click', close);
+		  overlay.addEventListener('click', close);
+		});
+
+        saveBtn.addEventListener('click', ()=>{
+            if(!currentCleanSVG) return;
+            const blob = new Blob([currentCleanSVG], {type:'image/svg+xml'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'detal.svg';
+            a.click();
+            URL.revokeObjectURL(a.href);
+            showToast('Сохранено!');
+        });
+
+        copyBtn.addEventListener('click', ()=>{
+            if(!currentCleanSVG) return;
+            navigator.clipboard.writeText(currentCleanSVG).then(()=>showToast('SVG скопирован!')).catch(()=>showToast('Ошибка'));
+        });
+
+        generateBtn.addEventListener('click', update);
+        [shapeSelect,sideInput,thicknessInput,pairsInput,startSelect].forEach(el=>{
+            el.addEventListener('change', update);
+            el.addEventListener('keypress', e=>{ if(e.key==='Enter') update(); });
+        });
+
+        window.addEventListener('DOMContentLoaded', update);
+    })();
+</script>
+</body>
+</html>

@@ -1,0 +1,4185 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Лазерный раскрой — с камерой</title>
+    <style>
+        :root{--bg:#0d0d14;--panel:#161622;--border:#2a2a3a;--text:#d0d0d0;--accent:#ff4444;--success:#2ed573;}
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:hidden;user-select:none;}
+        .sidebar{width:360px;min-width:360px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:10;}
+        .sidebar-header{padding:16px;border-bottom:1px solid var(--border);background:#1a0a0a;}
+        .sidebar-header h1{font-size:1.1em;font-weight:700;color:#fff;}
+        .sidebar-content{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:8px;}
+        .section{background:#111122;border-radius:8px;padding:10px;border:1px solid var(--border);}
+        .section-label{font-size:0.6em;text-transform:uppercase;letter-spacing:1.5px;color:#777;margin-bottom:6px;font-weight:700;}
+        textarea{width:100%;height:80px;background:#0a0a16;border:1px solid var(--border);border-radius:6px;color:#ccc;padding:8px;font-family:'Consolas',monospace;font-size:0.7em;resize:vertical;}
+        textarea:focus{outline:none;border-color:var(--accent);}
+        input[type="number"], input[type="text"], input[type="range"] {
+            background:#0a0a16;border:1px solid #444;color:#ccc;padding:4px 6px;border-radius:4px;font-size:0.75em;
+        }
+		.btn{
+		background:transparent;
+		border:0px solid #444;
+		color:#ccc;
+		position: relative;
+		right: -10px; 
+		width:auto;
+		display:none;
+		padding: 0px 0px
+		}
+        button{padding:7px 10px;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.75em;width:100%;display:flex;align-items:center;justify-content:center;gap:4px;transition: all 0.2s;}
+        button:hover { filter: brightness(1.2); }
+        .btn-primary{background:var(--accent);color:#fff;}
+        .btn-success{background:var(--success);color:#000;font-weight:700;}
+        .btn-outline{background:transparent;border:1px solid #444;color:#ccc;}
+        .btn-warning { background:#ffa502; color:#000; }
+        .btn-row{display:flex;gap:4px;}.btn-row button{flex:1;}
+        .stats{font-size:0.65em;color:#999;display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid #222;margin-top:4px;padding-top:5px;}
+        .stats span{color:#fff;font-weight:600;}
+        .canvas-container{flex:1;position:relative;overflow:hidden;background:#f0f0e8;cursor:grab;}
+        .canvas-container svg{width:100%;height:100%;display:block;}
+        .zoom-indicator{position:absolute;top:10px;right:14px;background:rgba(0,0,0,0.6);color:#fff;font-size:0.65em;padding:3px 8px;border-radius:10px;pointer-events:none;z-index:5;}
+        .toast{position:fixed;top:20px;right:20px;background:#222;color:#fff;padding:10px 16px;border-radius:8px;font-size:0.8em;z-index:10000;opacity:0;transform:translateY(-10px);transition:all 0.3s;pointer-events:none;}
+        .toast.show{opacity:1;transform:translateY(0);}.toast.success{background:#1a3d2e;}
+
+        /* Стили модального окна */
+.modal-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.8); z-index: 1000;
+    display: flex; align-items: center; justify-content: center;
+}
+.modal-content {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px; 
+    width: 90vw;                    /* ← было max-width, теперь width */
+    max-width: 1200px;              /* ← ограничение для больших экранов */
+    max-height: 90vh;
+    display: flex; flex-direction: column; gap: 12px;
+    position: relative; color: var(--text);
+}
+.modal-video-container {
+    position: relative;
+    overflow: visible;
+    border-radius: 8px;
+    background: #000;
+    display: block;
+	height: 60vh;
+    max-height: 65vh;
+    border: 1px solid #333;
+    min-height: 350px;
+    width: 100%;
+}
+
+.modal-video-container video,
+.modal-video-container canvas {
+    display: block;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+.calibration-marker {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background: rgba(255, 68, 68, 0.9);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    z-index: 20;
+    box-shadow: 0 0 8px rgba(0,0,0,0.8);
+    pointer-events: auto;
+}
+        .calibration-marker.active { background: #2ed573; }
+        
+        .modal-controls {
+            display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+        }
+        .modal-controls input, .modal-controls button {
+            width: auto; flex: 0 0 auto;
+        }
+        .status-badge {
+            font-size: 0.7em; padding: 2px 8px; border-radius: 10px;
+            background: #333; color: #aaa;
+        }
+        .status-badge.calibrated { background: #1a3d2e; color: #2ed573; }
+.polygon-marker {
+    box-shadow: 0 0 6px rgba(46, 213, 115, 0.8);
+}
+.polygon-marker:hover {
+    width: 14px !important;
+    height: 14px !important;
+    background: #fff !important;
+    border-color: #2ed573 !important;
+}
+    </style>
+</head>
+<body>
+
+<!-- ================== САЙДБАР ================== -->
+<div class="sidebar">
+    <div class="sidebar-header"><h1>🔴 Лазерный раскрой</h1></div>
+    <div class="sidebar-content">
+        
+        <!-- ===== СЕКЦИЯ 1: ЗАГРУЗКА SVG ===== -->
+        <div class="section">
+            <div class="section-label">📥 Загрузка SVG</div>
+            <textarea id="svgInput" placeholder="Вставьте SVG код..."></textarea>
+            <button class="btn-primary" id="btnLoadSvg" style="margin-top:4px;">📥 Из текстовой строки</button>
+            <input type="file" id="fileInput" accept=".svg" style="display:none;">
+            <button class="btn-outline" id="btnFileLoad" style="margin-top:4px;">📁 Из файла</button>
+			<button class="btn-outline" id="btnClear" style="margin-top:4px;color:#ff4444;">🗑️ Очистить</button>
+			<span style="color:#999;font-size:0.7em;padding:0px 8px;">Глубина разбора svg:</span>
+                <input id="parseDepth" type="number" value="1" min="0" max="10" style="width:40px;background:#0a0a16;border:1px solid #444;color:#ccc;padding:4px;border-radius:4px;">
+        </div>
+
+        <!-- ===== СЕКЦИЯ 2: КАМЕРА И ЛИСТ ===== -->
+<div class="section">
+    <div class="section-label">📸 Камера и лист</div>
+    <div style="display:flex; gap:6px; margin-bottom:8px;">
+        <select id="cameraSelect" style="flex:1; background:#0a0a16; color:#ccc; border:1px solid #444; border-radius:4px; padding:4px;">
+            <option>Нет камер</option>
+        </select>
+        <button class="btn-outline" id="btnRefreshCameras" style="width:auto; padding:4px 8px;">🔄</button>
+    </div>
+    <button class="btn-primary" id="btnCapture">📸 Открыть снимок</button>
+    <button class="btn-outline" id="btnCalibrate" style="margin-top:4px;">⚙️ Калибровка</button>
+    <div id="calibStatus" class="status-badge" style="margin-top:6px;">⚪ Калибровка не выполнена</div>
+
+    
+</div>
+
+        <!-- ===== СЕКЦИЯ 3: РАЗМЕР ЛИСТА ===== -->
+        <div class="section">
+            <div style="display:flex;gap:4px;align-items:center;">
+			<div class="section-label">📐 Размер листа (мм)</div>
+            
+                <input id="sheetW" type="number" value="72" style="width:60px;background:#0a0a16;border:1px solid #444;color:#ccc;padding:4px;border-radius:4px;">
+                <span style="color:#999;">×</span>
+                <input id="sheetH" type="number" value="54" style="width:60px;background:#0a0a16;border:1px solid #444;color:#ccc;padding:4px;border-radius:4px;">
+                <button class="btn-outline" id="btnResize" style="width:auto;padding:4px 8px;">↻</button>
+                
+            </div>
+				<div style="margin-top:8px; display:flex; align-items:center; gap:6px;">
+					<span style="font-size:0.7em; color:#999;">Отступ от края:</span>
+					<input id="edgeMargin" type="number" value="1" min="0" max="50" step="0.1" style="width:50px;">
+					<span style="font-size:0.7em; color:#999;">мм</span>
+				</div>
+        </div>
+
+        <!-- ===== СЕКЦИЯ 4: ЗАЗОРЫ ===== -->
+        <div class="section">
+            <div class="section-label">⚙️ Зазор между фигурами</div>
+            <div style="display:flex;gap:4px;align-items:center;">
+                <input type="checkbox" id="gapEnabled" style="margin-right:4px;">
+                <span style="color:#999;font-size:0.7em;">Вкл</span>
+                <input id="gapSize" type="number" value="0.5" min="0.1" max="1" step="0.1" style="width:50px;background:#0a0a16;border:1px solid #444;color:#ccc;padding:4px;border-radius:4px;">
+                <span style="color:#999;font-size:0.7em;">мм</span>
+                <label class="section-label">Магнит
+                <input type="checkbox" id="snapEnabled" style="margin-right:4px;"></label>
+                <label class="section-label">Группы
+                <input type="checkbox" id="groupsON" style="margin-right:4px;"></label>
+            </div>
+<div style="margin-top:6px; display:flex; align-items:center; gap:6px;">
+    <span style="font-size:0.7em; color:#999;">Край</span>
+    <input type="range" id="contactPriority" min="1" max="7" value="3" step="1" style="flex:1;">
+    <span style="font-size:0.7em; color:#999;">Фигура</span>
+</div>
+<div style="margin-top:6px; display:flex; align-items:center; gap:6px;">
+	<span style="font-size:0.7em; color:#999;">скорость</span>
+    <input type="range" id="speedPriority" min="1" max="5" value="3" step="1" style="flex:1;">
+    <span style="font-size:0.7em; color:#999;">точность</span>
+</div>
+        </div>
+
+        <!-- ===== СЕКЦИЯ 5: АВТО-СТЫКОВКА ===== -->
+        <div class="section">
+            <div class="section-label">🤖 Авто-стыковка</div>
+            <!-- НАСТРОЙКИ УМНОЙ РАСКЛАДКИ -->
+            <div style="margin-top:6px; display:flex; align-items:center; gap:4px;">
+                <span style="font-size:0.7em; color:#999;">Циклов:</span>
+                <input id="maxCyclesInput" type="number" value="5" min="1" max="10" style="width:50px;">
+                <label style="font-size:0.7em; color:#999; display:flex; align-items:center; gap:2px;">
+                    <input type="checkbox" id="stopIfAllPlaced">
+                    Остановить если все на листе
+                </label><button class="btn" id="btnLastLayouts" title="Варианты расклада">📋</button>
+            </div>
+            <button class="btn-success" id="btnAuto">✨ Умная раскладка</button>
+
+        </div>
+
+        <!-- ===== СЕКЦИЯ 6: РУЧНОЕ УПРАВЛЕНИЕ ===== -->
+        <div class="section">
+            <div class="section-label">🔧 Ручное</div>
+            <div class="btn-row" style="margin-bottom:4px;">
+                <button class="btn-outline" id="btnRotCW">↻90°</button>
+                <button class="btn-outline" id="btnRotCCW">↺90°</button>
+            </div>
+            <div class="btn-row">
+                <button class="btn-outline" id="btnDup">📋×2</button>
+                <button class="btn-outline" id="btnDel" style="color:#ff4444;">🗑️</button>
+            </div>
+        </div>
+
+        <!-- ===== СЕКЦИЯ 7: ИНФОРМАЦИЯ ===== -->
+        <div class="section">
+            <div class="section-label">📊 Информация</div>
+            <div class="stats">Фигур: <span id="statShapes">0</span> Наложений: <span id="statOverlaps">0</span></div>
+            <div class="stats">Площадь деталей: <span id="statArea">0</span> мм²</div>
+            <div class="stats">Размер материала: <span id="statSheetArea">0</span> мм</div>
+            <div class="stats">Заполнение: <span id="statFill">0</span>% 
+            </div>
+            <div class="stats">Квадратность: <span id="statSquareness">0</span>%
+            </div>
+			<button class="btn-warning" id="btnOptimize" style="margin-top:4px;">🔥 Оптимизация заполнения</button>
+            <button class="btn-outline" id="btnMerge" style="margin-top:4px;">🔗 Объединить фигуры</button>
+            <button class="btn-outline" id="btnCopy" style="margin-top:4px;">📋 Копировать SVG</button>
+            <button class="btn-outline" id="btnExport" style="margin-top:4px;">💾 Экспорт SVG</button>
+            
+        </div>
+        
+    </div>
+</div>
+<!-- ================== ХОЛСТ ================== -->
+<div class="canvas-container" id="canvasContainer">
+    <svg id="mainSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="zoom-indicator" id="zoomIndicator">100%</div>
+</div>
+<div class="toast" id="toast"></div>
+
+<!-- ================== МОДАЛЬНОЕ ОКНО КАМЕРЫ ================== -->
+<div id="cameraModal" class="modal-overlay" style="display: none;">
+    <div class="modal-content" style="width:90vw; max-width:1200px;">
+        <div style="display:flex; justify-content: space-between; align-items: center;">
+            <h3 id="modalTitle" style="color:#fff; font-size:1em;">📸 Лист</h3>
+            <button id="btnCloseModal" style="width:auto; background:transparent; color:#fff; font-size:1.2em; padding:0; border:none; cursor:pointer;">✕</button>
+        </div>
+        <div class="modal-video-container" id="modalVideoContainer">
+            <video id="cameraVideo" autoplay playsinline style="display:block;"></video>
+            <canvas id="cameraCanvas" style="display:none;"></canvas>
+        </div>
+        <!-- СПИСОК ОБЛАСТЕЙ -->
+        <div id="polygonList" style="display:none; max-height:120px; overflow-y:auto; margin-top:4px;">
+            <div style="font-size:0.7em; color:#999; margin-bottom:4px;">📋 Области и дырки:</div>
+            <div id="polygonListItems" style="display:flex; flex-wrap:wrap; gap:4px;"></div>
+        </div>
+        <div class="modal-controls" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+            <button class="btn-primary" id="btnTakePhoto">📸 Сделать снимок</button>
+			<button class="btn-outline" id="btnRetryCamera" style="display:none;">🔄 Повторить</button>
+            <button class="btn-outline" id="btnRetakePhoto" style="display:none;">🔄 Переснять</button>
+            <button class="btn-outline" id="btnDrawPolygon" style="display:none;">+ Добавить область</button>
+            <select id="polygonTypeSelect" style="display:none; background:#0a0a16; color:#ccc; border:1px solid #444; border-radius:4px; padding:4px; font-size:0.75em;">
+                <option value="area">🟢 Область</option>
+                <option value="hole">🔴 Дырка</option>
+            </select>
+            <button class="btn-success" id="btnApplyMask" style="display:none;">✅ Применить как лист</button>
+            <div style="flex:1;"></div>
+            <button class="btn-success" id="btnSaveCalib" style="display:none;">💾 Сохранить калибровку</button>
+        </div>
+        <div id="calibInputs" style="display:none; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px;">
+            <span style="font-size:0.8em;">Размер квадрата (мм):</span>
+            <input id="calibSizeMM" type="number" value="90" style="width:60px;">
+            <span style="font-size:0.8em;">×</span>
+            <input id="calibSizeMMY" type="number" value="90" style="width:60px;">
+            <span style="font-size:0.7em; color:#999;">Перетащите 4 маркера</span>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+// ================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ==================
+var NS = 'http://www.w3.org/2000/svg';
+var shapes = [];
+var selected = null;
+var sheet = { x: 0, y: 0, w: 800, h: 600 };
+var vx = 0, vy = 0, zm = 1;
+var panning = false, dragging = false;
+var dragStartX = 0, dragStartY = 0;
+var ds = { x: 0, y: 0 };
+var spacePressed = false, shiftPressed = false;
+var toast = document.getElementById('toast');
+var mainSvg = document.getElementById('mainSvg');
+var canvasContainer = document.getElementById('canvasContainer');
+var optimizeRunning = false;
+var maskLoaded = false;
+var SRRotate = 4;  // магнит при развороте
+var SRRelease = 3; // магнит при отпускании
+
+var occupancyGrid = null;      // Uint8Array: 0=свободно, 1=занято, 2=запрет
+var contactPoints = null;      // Uint32Array: упакованные координаты [x|y<<16]
+var contactCount = 0;          // количество активных точек контакта
+var contactCapacity = 0;       // ёмкость буфера contactPoints
+var gridW = 0, gridH = 0;      // размеры сетки
+var PERIMETER_DEPTH = 2;       // глубина периметра для поиска контакта
+var CHECKER_STEP = 2;          // шаг шахматной проверки (2 = каждый 2-й пиксель)
+var contactPriority = 5;
+var speedPriority = 3;
+var ps = { x: 0, y: 0 };
+var pvs = { x: 0, y: 0 };
+
+// Настройки
+var gapEnabledGlobal = false;
+var gapSizeGlobal = 0;
+var groupsEnabledGlobal = false;
+var snapEnabledGlobal = false;
+var connectionTolerance = 0.5;
+var edgeMarginGlobal = 1;
+var rasterRes = 0.1; // мм на пиксель
+
+// Растровый буфер для раскладки
+var rasterBuffer = null;
+var rasterW = 0, rasterH = 0;
+var wasDragging = false;
+
+var originalMask = null; 
+var baseMask = null;
+var rasterWithMargin = null;
+
+var maxCyclesGlobal = 5;
+var stopIfAllPlacedGlobal = false;
+var lastResults = null;
+var lastElapsed = null;
+
+var BUFFER_ZONE = 5;      // значение для буферной зоны контакта
+var BUFFER_WIDTH = 5;     // ширина буферной зоны в пикселях растра
+// ================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
+function showToast(msg, ok) {
+    toast.textContent = msg;
+    toast.className = 'toast' + (ok ? ' success' : '') + ' show';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function() { toast.classList.remove('show'); }, 2000);
+}
+
+// Переменные камеры
+var currentStream = null;
+var calibrationData = null;
+var calibrationPhotoURL = null;  
+var sheetPhotoURL = null; 
+var isCalibrationMode = false;
+var activeMarkerIndex = -1;
+var markers = [];
+
+// Переменные обводки
+var polygonGroups = [];       // [{ type: 'area' или 'hole', points: [...] }]
+var currentPolygon = null;   // текущий редактируемый полигон
+var polygonMarkers = [];     // DOM-маркеры текущего полигона
+var isDrawingMode = false;   // режим обводки
+var drawingType = 'area';    // 'area' или 'hole'
+
+// DOM-элементы
+var cameraSelect = document.getElementById('cameraSelect');
+var btnRefreshCameras = document.getElementById('btnRefreshCameras');
+var btnCapture = document.getElementById('btnCapture');
+var btnCalibrate = document.getElementById('btnCalibrate');
+var edgeMarginInput = document.getElementById('edgeMargin');
+var calibStatus = document.getElementById('calibStatus');
+var cameraModal = document.getElementById('cameraModal');
+var modalTitle = document.getElementById('modalTitle');
+var cameraVideo = document.getElementById('cameraVideo');
+var cameraCanvas = document.getElementById('cameraCanvas');
+var modalVideoContainer = document.getElementById('modalVideoContainer');
+var btnTakePhoto = document.getElementById('btnTakePhoto');
+var btnRetakePhoto = document.getElementById('btnRetakePhoto');
+var btnCloseModal = document.getElementById('btnCloseModal');
+var btnSaveCalib = document.getElementById('btnSaveCalib');
+var btnDrawPolygon = document.getElementById('btnDrawPolygon');
+var btnApplyMask = document.getElementById('btnApplyMask');
+var calibInputs = document.getElementById('calibInputs');
+var calibSizeMM = document.getElementById('calibSizeMM');
+var calibSizeMMY = document.getElementById('calibSizeMMY');
+var polygonTypeSelect = document.getElementById('polygonTypeSelect');
+
+// Загрузка настроек
+function loadCameraSettings() {
+    try {
+        var saved = localStorage.getItem('cameraCalibration');
+        if (saved) {
+            calibrationData = JSON.parse(saved);
+            calibStatus.textContent = '🟢 Калибровано';
+            calibStatus.className = 'status-badge calibrated';
+            if (btnApplyMask) btnApplyMask.disabled = false;
+        } else {
+            calibrationData = null;
+            calibStatus.textContent = '⚪ Калибровка не выполнена';
+            calibStatus.className = 'status-badge';
+            if (btnApplyMask) btnApplyMask.disabled = true;
+        }
+        edgeMarginGlobal = parseFloat(localStorage.getItem('edgeMargin') || '1');
+        edgeMarginInput.value = edgeMarginGlobal;
+        var deviceId = localStorage.getItem('cameraDeviceId');
+        if (deviceId) cameraSelect.value = deviceId;
+    } catch(e) {}
+}
+loadCameraSettings();
+
+function saveCameraSettings() {
+    if (calibrationData) localStorage.setItem('cameraCalibration', JSON.stringify(calibrationData));
+    localStorage.setItem('edgeMargin', edgeMarginGlobal);
+    localStorage.setItem('cameraDeviceId', cameraSelect.value);
+}
+
+// Камера
+async function refreshCameras() {
+    try {
+        var devices = await navigator.mediaDevices.enumerateDevices();
+        var videoDevices = devices.filter(function(d) { return d.kind === 'videoinput'; });
+        cameraSelect.innerHTML = '';
+        if (videoDevices.length === 0) {
+            cameraSelect.innerHTML = '<option>Нет камер</option>';
+        } else {
+            for (var i = 0; i < videoDevices.length; i++) {
+                var opt = document.createElement('option');
+                opt.value = videoDevices[i].deviceId;
+                opt.textContent = videoDevices[i].label || ('Камера ' + (i+1));
+                cameraSelect.appendChild(opt);
+            }
+            var savedId = localStorage.getItem('cameraDeviceId');
+            if (savedId && videoDevices.find(function(d) { return d.deviceId === savedId; })) {
+                cameraSelect.value = savedId;
+            }
+        }
+    } catch(e) {}
+}
+
+async function startCamera() {
+    stopCamera();
+    var deviceId = cameraSelect.value;
+    if (!deviceId || deviceId === 'Нет камер') return;
+    
+    try {
+        currentStream = await navigator.mediaDevices.getUserMedia({
+            video: { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+        });
+        cameraVideo.srcObject = currentStream;
+        cameraVideo.style.display = 'block';
+        cameraCanvas.style.display = 'none';
+        btnTakePhoto.style.display = 'block';
+        btnRetakePhoto.style.display = 'none';
+        btnDrawPolygon.style.display = 'none';
+        polygonTypeSelect.style.display = 'none';
+        btnApplyMask.style.display = 'none';
+        clearMarkers();
+    } catch(e) {
+        //console.error('Ошибка камеры:', e);
+        if (e.name === 'NotReadableError' || e.name === 'AbortError') {
+            showToast('Камера занята другим приложением. Закройте его и попробуйте снова.');
+        } else if (e.name === 'NotFoundError') {
+            showToast('Камера не найдена.');
+        } else {
+            showToast('Ошибка доступа к камере: ' + e.message);
+        }
+        // Показываем кнопку повтора
+        cameraVideo.style.display = 'none';
+        btnTakePhoto.style.display = 'none';
+        btnRetakePhoto.style.display = 'none';
+		btnRetryCamera.style.display = 'block';
+    }
+}
+
+function stopCamera() {
+    if (currentStream) { currentStream.getTracks().forEach(function(t) { t.stop(); }); currentStream = null; }
+    cameraVideo.srcObject = null;
+}
+
+// Маркеры калибровки
+function clearMarkers() {
+    for (var i = 0; i < markers.length; i++) { if (markers[i].parentNode) markers[i].remove(); }
+    markers = [];
+    activeMarkerIndex = -1;
+}
+
+function createMarkersSimple() {
+    clearMarkers();
+    for (var i = 0; i < 4; i++) {
+        var marker = document.createElement('div');
+        marker.className = 'calibration-marker';
+        marker.draggable = false;
+        marker.style.position = 'absolute';
+        marker.style.left = '0px';
+        marker.style.top = '0px';
+        modalVideoContainer.appendChild(marker);
+        (function(idx) {
+            marker.addEventListener('mousedown', function(e) {
+                if (!isCalibrationMode) return;
+                e.stopPropagation(); e.preventDefault();
+                activeMarkerIndex = idx;
+            });
+        })(i);
+        markers.push(marker);
+    }
+}
+
+function renderMaskOverlay() {
+    // Удаляем старую маску
+    var oldMask = document.getElementById('maskOverlay');
+    if (oldMask) oldMask.remove();
+    
+    if (!rasterBuffer || rasterW === 0 || rasterH === 0) return;
+    
+    // Создаём группу для маски
+    var maskGroup = document.createElementNS(NS, 'g');
+    maskGroup.id = 'maskOverlay';
+    
+    // Создаём временный canvas для всей маски
+    var tempCanvas = document.createElement('canvas');
+    tempCanvas.width = rasterW;
+    tempCanvas.height = rasterH;
+    var tempCtx = tempCanvas.getContext('2d');
+    
+    // Рисуем маску: белый = можно, чёрный = нельзя
+    var imageData = tempCtx.createImageData(rasterW, rasterH);
+    for (var i = 0; i < rasterBuffer.length; i++) {
+        var val = rasterBuffer[i] === 0 ? 255 : 0; // 0 = можно (белый), 3 = нельзя (чёрный)
+        imageData.data[i * 4] = val;
+        imageData.data[i * 4 + 1] = val;
+        imageData.data[i * 4 + 2] = val;
+        imageData.data[i * 4 + 3] = rasterBuffer[i] === 0 ? 40 : 180; // прозрачность
+    }
+    tempCtx.putImageData(imageData, 0, 0);
+    
+    // Создаём изображение из canvas
+    var img = document.createElementNS(NS, 'image');
+    img.setAttribute('width', sheet.w);
+    img.setAttribute('height', sheet.h);
+    img.setAttribute('preserveAspectRatio', 'none');
+    img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', tempCanvas.toDataURL());
+    
+    maskGroup.appendChild(img);
+    
+    // Вставляем маску перед фигурами
+    var shapesGroup = document.getElementById('shapes');
+    mainSvg.insertBefore(maskGroup, shapesGroup);
+}
+
+function clearMaskOverlay() {
+    var oldMask = document.getElementById('maskOverlay');
+    if (oldMask) oldMask.remove();
+}
+
+// Очистка маркеров полигона
+function clearPolygonMarkers() {
+    for (var i = 0; i < polygonMarkers.length; i++) {
+        if (polygonMarkers[i].parentNode) polygonMarkers[i].remove();
+    }
+    polygonMarkers = [];
+}
+
+function redrawAllPolygons() {
+    var canvas = cameraCanvas;
+    var ctx = canvas.getContext('2d');
+    if (!sheetPhotoURL) return;
+    
+    var img = new Image();
+    img.onload = function() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        var canvasRect = canvas.getBoundingClientRect();
+        var containerRect = modalVideoContainer.getBoundingClientRect();
+        var offsetX = canvasRect.left - containerRect.left;
+        var offsetY = canvasRect.top - containerRect.top;
+        var displayW = canvasRect.width;
+        var displayH = canvasRect.height;
+        var scaleX = canvas.width / displayW;
+        var scaleY = canvas.height / displayH;
+        
+        // Рисуем все группы
+        for (var g = 0; g < polygonGroups.length; g++) {
+            var group = polygonGroups[g];
+            var points = group.points;
+            if (points.length < 2) continue;
+            
+            var color = group.type === 'hole' ? '#ff4444' : '#2ed573';
+            var fillColor = group.type === 'hole' ? 'rgba(255,68,68,0.2)' : 'rgba(46,213,115,0.15)';
+            
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.fillStyle = fillColor;
+            ctx.setLineDash(group.type === 'hole' ? [4, 4] : [8, 4]);
+            ctx.beginPath();
+            
+            for (var i = 0; i < points.length; i++) {
+                var px = (points[i].x - offsetX) * scaleX;
+                var py = (points[i].y - offsetY) * scaleY;
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // Точки (только для текущего полигона)
+            if (g === polygonGroups.length - 1 && currentPolygon === group) {
+                for (var i = 0; i < points.length; i++) {
+                    var px = (points[i].x - offsetX) * scaleX;
+                    var py = (points[i].y - offsetY) * scaleY;
+                    ctx.fillStyle = color;
+                    ctx.beginPath();
+                    ctx.arc(px, py, 6, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            }
+        }
+    };
+    img.src = sheetPhotoURL;
+}
+
+function updatePolygonMarkers() {
+    if (!currentPolygon || currentPolygon.points.length === 0) return;
+    
+    var lastIndex = currentPolygon.points.length - 1;
+    
+    if (polygonMarkers[lastIndex] && polygonMarkers[lastIndex].parentNode) {
+        polygonMarkers[lastIndex].style.left = currentPolygon.points[lastIndex].x + 'px';
+        polygonMarkers[lastIndex].style.top = currentPolygon.points[lastIndex].y + 'px';
+        return;
+    }
+    
+    createOneMarker(lastIndex);
+}
+
+function rebuildAllMarkers() {
+    clearPolygonMarkers();
+    if (!currentPolygon) return;
+    
+    for (var i = 0; i < currentPolygon.points.length; i++) {
+        createOneMarker(i);
+    }
+}
+
+function createOneMarker(idx) {
+    if (!currentPolygon) return;
+    
+    var points = currentPolygon.points;
+    var color = drawingType === 'hole' ? '#ff4444' : '#2ed573';
+    
+    var marker = document.createElement('div');
+    marker.className = 'polygon-marker';
+    marker.textContent = idx + 1;
+    marker.style.cssText = 
+        'position:absolute;' +
+        'width:22px;height:22px;' +
+        'background:' + color + ';' +
+        'border:2px solid #fff;' +
+        'border-radius:50%;' +
+        'transform:translate(-50%,-50%);' +
+        'cursor:pointer;z-index:25;' +
+        'left:' + points[idx].x + 'px;' +
+        'top:' + points[idx].y + 'px;' +
+        'font-size:10px;color:#000;text-align:center;' +
+        'line-height:18px;font-weight:bold;';
+    
+    marker.addEventListener('mousedown', function(e) {
+        //if (isDrawingMode && currentPolygon && currentPolygon.points.length > 0) return;
+        
+        e.stopPropagation(); e.preventDefault();
+        wasDragging = false;
+        
+        var startX = e.clientX, startY = e.clientY;
+        var origX = points[idx].x, origY = points[idx].y;
+        
+        function onMove(ev) {
+            wasDragging = true;
+            var newX = origX + ev.clientX - startX;
+            var newY = origY + ev.clientY - startY;
+            var rect = modalVideoContainer.getBoundingClientRect();
+            newX = Math.max(0, Math.min(newX, rect.width));
+            newY = Math.max(0, Math.min(newY, rect.height));
+            points[idx] = { x: newX, y: newY };
+            marker.style.left = newX + 'px';
+            marker.style.top = newY + 'px';
+            redrawAllPolygons();
+        }
+        
+        function onUp() {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        }
+        
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    });
+    
+    marker.addEventListener('dblclick', function(e) {
+        e.stopPropagation(); e.preventDefault();
+        points.splice(idx, 1);
+        if (points.length === 0) {
+            // Удаляем пустую группу
+            polygonGroups = polygonGroups.filter(function(g) { return g !== currentPolygon; });
+            currentPolygon = null;
+            clearPolygonMarkers();
+        } else {
+            rebuildAllMarkers();
+        }
+        redrawAllPolygons();
+    });
+    
+    modalVideoContainer.appendChild(marker);
+    polygonMarkers.push(marker);
+}
+
+function redrawPolygon() {
+    updatePolygonMarkers();
+    redrawAllPolygons();
+    if (currentPolygon && currentPolygon.points.length >= 3) {
+        btnApplyMask.disabled = false;
+    }
+	updatePolygonList();
+}
+
+// Показать существующее фото
+function showExistingPhoto() {
+    var canvas = cameraCanvas, container = modalVideoContainer, ctx = canvas.getContext('2d');
+    var img = new Image();
+    img.onload = function() {
+        canvas.width = img.width; canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+        var containerW = container.clientWidth, containerH = container.clientHeight;
+        var ratio = img.width / img.height, containerRatio = containerW / containerH;
+        var cssW, cssH;
+        if (ratio > containerRatio) { cssW = containerW; cssH = containerW / ratio; }
+        else { cssH = containerH; cssW = containerH * ratio; }
+        canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
+        canvas.style.position = 'absolute'; canvas.style.top = '50%'; canvas.style.left = '50%';
+        canvas.style.transform = 'translate(-50%, -50%)';
+        cameraVideo.style.display = 'none'; canvas.style.display = 'block';
+        btnTakePhoto.style.display = 'none'; btnRetakePhoto.style.display = 'block';
+        btnDrawPolygon.style.display = 'block';
+        btnDrawPolygon.textContent = '+ Добавить область';
+        polygonTypeSelect.style.display = 'none';
+        btnApplyMask.style.display = 'block';
+        
+        if (polygonGroups.length > 0) {
+            btnApplyMask.disabled = false;
+            redrawAllPolygons();
+        } else {
+            btnApplyMask.disabled = true;
+        }
+        updatePolygonList();
+    };
+    img.src = sheetPhotoURL;
+}
+
+function updateSheetVisuals() {
+    var bg = mainSvg.querySelector('rect:first-child');
+    if (bg) {
+        bg.setAttribute('width', sheet.w);
+        bg.setAttribute('height', sheet.h);
+    }
+    addGrid();
+    vx = sheet.x; vy = sheet.y; zm = 1;
+    applyView();
+}
+// Гомография
+function computeHomography(points, sizeMM) {
+    // Простое масштабирование без перспективы
+    // Вычисляем масштаб по ширине и высоте отдельно
+    var photoW = Math.abs(points[1].x - points[0].x); // ширина в пикселях фото
+    var photoH = Math.abs(points[3].y - points[0].y); // высота в пикселях фото
+    
+    var scaleX = sizeMM.w / photoW; // мм на пиксель по X
+    var scaleY = sizeMM.h / photoH; // мм на пиксель по Y
+    
+    var offsetX = -points[0].x * scaleX;
+    var offsetY = -points[0].y * scaleY;
+    
+    return [
+        [scaleX, 0, offsetX],
+        [0, scaleY, offsetY],
+        [0, 0, 1]
+    ];
+}
+
+// ================== ОБРАБОТЧИКИ ==================
+var btnRetryCamera = document.getElementById('btnRetryCamera');
+
+btnRetryCamera.addEventListener('click', function() {
+    btnRetryCamera.style.display = 'none';
+    startCamera();
+});
+
+btnCapture.addEventListener('click', function() {
+    isCalibrationMode = false; isDrawingMode = false;
+    cameraModal.style.display = 'flex'; modalTitle.textContent = '📸 Снимок листа';
+    btnSaveCalib.style.display = 'none'; calibInputs.style.display = 'none';
+    if (sheetPhotoURL) showExistingPhoto(); else startCamera();
+});
+
+btnCalibrate.addEventListener('click', function() {
+    isCalibrationMode = true;
+    isDrawingMode = false;
+    cameraModal.style.display = 'flex';
+    modalTitle.textContent = '⚙️ Калибровка камеры';
+    btnSaveCalib.style.display = 'block';
+    calibInputs.style.display = 'flex';
+    btnDrawPolygon.style.display = 'none';
+    btnApplyMask.style.display = 'none';
+    
+    // Загружаем сохранённые размеры квадрата
+    if (calibrationData && calibrationData.sizeMM) {
+        calibSizeMM.value = calibrationData.sizeMM.w;
+        calibSizeMMY.value = calibrationData.sizeMM.h;
+    }
+    
+    startCamera();
+    
+    // Если есть сохранённое фото калибровки — показываем его с точками
+    if (calibrationData && calibrationData.photoURL) {
+        // Ждём готовности видео, потом показываем сохранённое фото
+        setTimeout(function() {
+            if (cameraVideo.style.display !== 'none') {
+                // Загружаем сохранённое фото
+                calibrationPhotoURL = calibrationData.photoURL;
+                var canvas = cameraCanvas;
+                var container = modalVideoContainer;
+                var ctx = canvas.getContext('2d');
+                var img = new Image();
+                img.onload = function() {
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+                    
+                    var containerW = container.clientWidth;
+                    var containerH = container.clientHeight;
+                    var ratio = img.width / img.height;
+                    var containerRatio = containerW / containerH;
+                    var cssW, cssH;
+                    if (ratio > containerRatio) { cssW = containerW; cssH = containerW / ratio; }
+                    else { cssH = containerH; cssW = containerH * ratio; }
+                    
+                    canvas.style.width = cssW + 'px';
+                    canvas.style.height = cssH + 'px';
+                    canvas.style.position = 'absolute';
+                    canvas.style.top = '50%';
+                    canvas.style.left = '50%';
+                    canvas.style.transform = 'translate(-50%, -50%)';
+                    
+                    cameraVideo.style.display = 'none';
+                    canvas.style.display = 'block';
+                    btnTakePhoto.style.display = 'none';
+                    btnRetakePhoto.style.display = 'block';
+                    
+                    // Показываем сохранённые точки калибровки
+                    requestAnimationFrame(function() {
+                        requestAnimationFrame(function() {
+                            createMarkersSimple();
+                            
+                            var cw = canvas.offsetWidth || cssW;
+                            var ch = canvas.offsetHeight || cssH;
+                            var ox = (containerW - cw) / 2;
+                            var oy = (containerH - ch) / 2;
+                            var scaleToDisplayX = cw / canvas.width;
+                            var scaleToDisplayY = ch / canvas.height;
+                            
+                            for (var i = 0; i < calibrationData.points.length && i < markers.length; i++) {
+                                markers[i].style.left = Math.round(ox + calibrationData.points[i].x * scaleToDisplayX) + 'px';
+                                markers[i].style.top = Math.round(oy + calibrationData.points[i].y * scaleToDisplayY) + 'px';
+                            }
+                        });
+                    });
+                };
+                img.src = calibrationData.photoURL;
+            }
+        }, 500);
+    }
+});
+
+
+btnCloseModal.addEventListener('click', function() {
+    cameraModal.style.display = 'none'; stopCamera();
+    isDrawingMode = false; isCalibrationMode = false;
+    clearMarkers(); clearPolygonMarkers();
+});
+
+btnTakePhoto.addEventListener('click', function() {
+    var video = cameraVideo, canvas = cameraCanvas, container = modalVideoContainer, ctx = canvas.getContext('2d');
+    if (!video.videoWidth || !video.videoHeight) { showToast('Видеопоток не готов'); return; }
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    var containerW = container.clientWidth, containerH = container.clientHeight;
+    var ratio = canvas.width / canvas.height, containerRatio = containerW / containerH;
+    var cssW, cssH;
+    if (ratio > containerRatio) { cssW = containerW; cssH = containerW / ratio; }
+    else { cssH = containerH; cssW = containerH * ratio; }
+    canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
+    canvas.style.position = 'absolute'; canvas.style.top = '50%'; canvas.style.left = '50%';
+    canvas.style.transform = 'translate(-50%, -50%)';
+    video.style.display = 'none'; canvas.style.display = 'block';
+    btnTakePhoto.style.display = 'none'; btnRetakePhoto.style.display = 'block';
+        if (isCalibrationMode) {
+        calibrationPhotoURL = canvas.toDataURL('image/png');
+    } else {
+        sheetPhotoURL = canvas.toDataURL('image/png');
+    }
+    
+    if (isCalibrationMode) {
+        clearMarkers();
+        btnDrawPolygon.style.display = 'none'; btnApplyMask.style.display = 'none';
+        requestAnimationFrame(function() {
+            requestAnimationFrame(function() {
+                createMarkersSimple();
+                var cw = canvas.offsetWidth || cssW, ch = canvas.offsetHeight || cssH;
+                var ox = (containerW - cw) / 2, oy = (containerH - ch) / 2, m = 0.15;
+                var pos = [
+                    { x: ox + cw * m, y: oy + ch * m },
+                    { x: ox + cw * (1-m), y: oy + ch * m },
+                    { x: ox + cw * (1-m), y: oy + ch * (1-m) },
+                    { x: ox + cw * m, y: oy + ch * (1-m) }
+                ];
+                for (var i = 0; i < markers.length; i++) {
+                    markers[i].style.left = Math.round(pos[i].x) + 'px';
+                    markers[i].style.top = Math.round(pos[i].y) + 'px';
+                }
+            });
+        });
+    } else {
+        clearMarkers(); 
+		clearPolygonMarkers(); 
+        polygonGroups = [];
+        currentPolygon = null;
+		updatePolygonList();
+        btnDrawPolygon.style.display = 'block'; 
+        btnDrawPolygon.textContent = '+ Добавить область';
+		polygonTypeSelect.style.display = 'none';
+        btnApplyMask.style.display = 'block'; 
+        btnApplyMask.disabled = true;
+    }
+});
+
+btnRetakePhoto.addEventListener('click', function() {
+    cameraVideo.style.display = 'block'; 
+	cameraCanvas.style.display = 'none';
+    btnTakePhoto.style.display = 'block'; 
+	btnRetakePhoto.style.display = 'none';
+	btnDrawPolygon.style.display = 'none';
+	polygonTypeSelect.style.display = 'none';
+	btnApplyMask.style.display = 'none';
+    clearMarkers(); clearPolygonMarkers();
+	polygonGroups = [];
+	currentPolygon = null;
+	isDrawingMode = false;
+    startCamera();
+});
+
+btnSaveCalib.addEventListener('click', function() {
+    if (markers.length !== 4) return;
+    
+    var canvas = cameraCanvas;
+    var container = modalVideoContainer;
+    var containerW = container.clientWidth;
+    var containerH = container.clientHeight;
+    var canvasW = canvas.offsetWidth;
+    var canvasH = canvas.offsetHeight;
+    var offsetX = (containerW - canvasW) / 2;
+    var offsetY = (containerH - canvasH) / 2;
+    var scaleX = canvas.width / canvasW;
+    var scaleY = canvas.height / canvasH;
+    
+    var points = [];
+    for (var i = 0; i < 4; i++) {
+        var left = parseFloat(markers[i].style.left) - offsetX;
+        var top = parseFloat(markers[i].style.top) - offsetY;
+        points.push({ x: left * scaleX, y: top * scaleY });
+    }
+    
+    calibrationData = {
+        points: points,
+        sizeMM: { w: parseFloat(calibSizeMM.value) || 90, h: parseFloat(calibSizeMMY.value) || 90 },
+        photoURL: calibrationPhotoURL
+    };
+    
+    saveCameraSettings();
+    calibStatus.textContent = '🟢 Калибровано';
+    calibStatus.className = 'status-badge calibrated';
+
+    if (btnApplyMask) btnApplyMask.disabled = false;
+    showToast('Калибровка сохранена', true);
+    cameraModal.style.display = 'none';
+    stopCamera();
+    clearMarkers();	
+});
+
+btnDrawPolygon.addEventListener('click', function() {
+    if (isDrawingMode && currentPolygon) {
+        closeCurrentPolygon();
+    } else if (!isDrawingMode && currentPolygon) {
+        // Завершаем редактирование
+        currentPolygon = null;
+        clearPolygonMarkers();
+        redrawAllPolygons();
+        updatePolygonList();
+        btnDrawPolygon.textContent = '+ Добавить область';
+        modalVideoContainer.style.cursor = '';
+        showToast('Редактирование завершено', true);
+    } else {
+        // Начинаем новую область с выбранным типом
+        drawingType = polygonTypeSelect.value;
+        startDrawingMode(drawingType);
+    }
+});
+polygonTypeSelect.addEventListener('change', function() {
+    drawingType = this.value;
+    if (currentPolygon) {
+        currentPolygon.type = drawingType;
+        redrawAllPolygons();
+        updatePolygonList();
+    }
+});
+function updatePolygonList() {
+    var listDiv = document.getElementById('polygonList');
+    var itemsDiv = document.getElementById('polygonListItems');
+    
+    if (!listDiv || !itemsDiv) return;
+    
+    if (polygonGroups.length === 0) {
+        listDiv.style.display = 'none';
+        return;
+    }
+    
+    listDiv.style.display = 'block';
+    itemsDiv.innerHTML = '';
+    
+    for (var g = 0; g < polygonGroups.length; g++) {
+        var group = polygonGroups[g];
+        var color = group.type === 'hole' ? '#ff4444' : '#2ed573';
+        var icon = group.type === 'hole' ? '🔴' : '🟢';
+        var name = group.type === 'hole' ? 'Дырка' : 'Область';
+        
+        var item = document.createElement('div');
+        item.style.cssText = 
+            'display:flex;align-items:center;gap:4px;' +
+            'background:#111122;border:1px solid #2a2a3a;' +
+            'border-radius:4px;padding:4px 8px;font-size:0.7em;';
+        
+        item.innerHTML = 
+            '<span style="color:' + color + ';">' + icon + ' ' + name + ' ' + (g+1) + '</span>' +
+            '<span style="color:#999;">(' + group.points.length + ' т.)</span>';
+        
+        // Кнопка редактировать
+        var editBtn = document.createElement('button');
+        editBtn.textContent = '✏️';
+        editBtn.style.cssText = 
+            'width:auto;padding:2px 6px;font-size:0.9em;' +
+            'background:transparent;border:1px solid #444;color:#ccc;' +
+            'border-radius:3px;cursor:pointer;';
+        editBtn.title = 'Редактировать';
+        (function(idx) {
+            editBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                editPolygonGroup(idx);
+            });
+        })(g);
+        
+        // Кнопка удалить
+        var delBtn = document.createElement('button');
+        delBtn.textContent = '🗑️';
+        delBtn.style.cssText = 
+            'width:auto;padding:2px 6px;font-size:0.9em;' +
+            'background:transparent;border:1px solid #444;color:#ff4444;' +
+            'border-radius:3px;cursor:pointer;';
+        delBtn.title = 'Удалить';
+        (function(idx) {
+            delBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                deletePolygonGroup(idx);
+            });
+        })(g);
+        
+        item.appendChild(editBtn);
+        item.appendChild(delBtn);
+        itemsDiv.appendChild(item);
+    }
+}
+
+function editPolygonGroup(index) {
+    if (isDrawingMode && currentPolygon) {
+        closeCurrentPolygonSilent();
+    }
+    
+    currentPolygon = polygonGroups[index];
+    drawingType = currentPolygon.type;
+    isDrawingMode = false;
+    
+    rebuildAllMarkers();
+    redrawAllPolygons();
+    updatePolygonList();
+    
+    btnDrawPolygon.textContent = '✅ Применить область';
+    polygonTypeSelect.style.display = 'inline-block';
+    polygonTypeSelect.value = drawingType;
+    
+    modalVideoContainer.style.cursor = '';
+    btnApplyMask.disabled = false;
+    showToast('Редактирование. Тяните точки.', true);
+}
+
+function deletePolygonGroup(index) {
+    polygonGroups.splice(index, 1);
+    
+    if (currentPolygon === polygonGroups[index]) {
+        currentPolygon = null;
+        clearPolygonMarkers();
+    }
+    
+    redrawAllPolygons();
+    updatePolygonList();
+    
+    if (polygonGroups.length === 0) {
+        btnApplyMask.disabled = true;
+    }
+}
+
+function closeCurrentPolygonSilent() {
+    if (!currentPolygon || currentPolygon.points.length < 3) return;
+    var first = currentPolygon.points[0];
+    var last = currentPolygon.points[currentPolygon.points.length - 1];
+    if (first.x !== last.x || first.y !== last.y) {
+        currentPolygon.points.push({ x: first.x, y: first.y });
+    }
+    currentPolygon = null;
+    clearPolygonMarkers();
+    isDrawingMode = false;
+}
+
+function closeCurrentPolygon() {
+    if (!currentPolygon || currentPolygon.points.length < 3) {
+        showToast('Нужно минимум 3 точки');
+        return;
+    }
+    closeCurrentPolygonSilent();
+    
+    btnDrawPolygon.textContent = '+ Добавить область';
+    polygonTypeSelect.style.display = 'none';
+    modalVideoContainer.style.cursor = '';
+    btnApplyMask.disabled = false;
+    redrawAllPolygons();
+    updatePolygonList();
+    showToast('Готово.', true);
+}
+
+function startDrawingMode(type) {
+    if (isDrawingMode && currentPolygon) {
+        closeCurrentPolygonSilent();
+    }
+    
+    drawingType = type;
+    isDrawingMode = true;
+    currentPolygon = { type: type, points: [] };
+    polygonGroups.push(currentPolygon);
+    clearPolygonMarkers();
+    
+    btnDrawPolygon.textContent = '✅ Применить область';
+    polygonTypeSelect.style.display = 'inline-block';
+    polygonTypeSelect.value = type;
+    
+    btnApplyMask.disabled = true;
+    modalVideoContainer.style.cursor = 'crosshair';
+    updatePolygonList();
+    showToast('Кликайте по контуру.', true);
+}
+
+
+btnApplyMask.addEventListener('click', function() {
+    if (!calibrationData) { showToast('Сначала калибровка'); return; }
+    if (polygonGroups.length === 0) { showToast('Обведите хотя бы одну область'); return; }
+    
+    // Закрываем текущий полигон если есть
+    if (isDrawingMode && currentPolygon && currentPolygon.points.length >= 3) {
+        closeCurrentPolygon();
+    }
+    
+    var canvas = cameraCanvas;
+    var canvasRect = canvas.getBoundingClientRect();
+    var containerRect = modalVideoContainer.getBoundingClientRect();
+    var offsetX = canvasRect.left - containerRect.left;
+    var offsetY = canvasRect.top - containerRect.top;
+    var displayW = canvasRect.width;
+    var displayH = canvasRect.height;
+    var scaleX = canvas.width / displayW;
+    var scaleY = canvas.height / displayH;
+    
+    var H = computeHomography(calibrationData.points, calibrationData.sizeMM);
+    
+    // Преобразуем все группы в мм
+    var allGroupsMM = [];
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    
+    for (var g = 0; g < polygonGroups.length; g++) {
+        var group = polygonGroups[g];
+        if (group.points.length < 3) continue;
+        
+        var mmPoints = [];
+        for (var i = 0; i < group.points.length; i++) {
+            var px = (group.points[i].x - offsetX) * scaleX;
+            var py = (group.points[i].y - offsetY) * scaleY;
+            var tz = H[2][0]*px + H[2][1]*py + H[2][2];
+            mmPoints.push({
+                x: (H[0][0]*px + H[0][1]*py + H[0][2]) / tz,
+                y: (H[1][0]*px + H[1][1]*py + H[1][2]) / tz
+            });
+        }
+        
+        for (var i = 0; i < mmPoints.length; i++) {
+            if (mmPoints[i].x < minX) minX = mmPoints[i].x;
+            if (mmPoints[i].y < minY) minY = mmPoints[i].y;
+            if (mmPoints[i].x > maxX) maxX = mmPoints[i].x;
+            if (mmPoints[i].y > maxY) maxY = mmPoints[i].y;
+        }
+        
+        allGroupsMM.push({ type: group.type, points: mmPoints });
+    }
+    
+    sheet.w = maxX - minX;
+    sheet.h = maxY - minY;
+    
+    var res = rasterRes;
+    rasterW = Math.ceil(sheet.w / res);
+    rasterH = Math.ceil(sheet.h / res);
+    
+    var tempCanvas = document.createElement('canvas');
+    tempCanvas.width = rasterW;
+    tempCanvas.height = rasterH;
+    var tempCtx = tempCanvas.getContext('2d');
+    
+    // Чёрный фон
+    tempCtx.fillStyle = '#000';
+    tempCtx.fillRect(0, 0, rasterW, rasterH);
+    
+    // Рисуем все области (area) белым
+    for (var g = 0; g < allGroupsMM.length; g++) {
+        var group = allGroupsMM[g];
+        if (group.type === 'hole') continue;
+        
+        tempCtx.fillStyle = '#fff';
+        tempCtx.beginPath();
+        for (var i = 0; i < group.points.length; i++) {
+            var px = (group.points[i].x - minX) / res;
+            var py = (group.points[i].y - minY) / res;
+            if (i === 0) tempCtx.moveTo(px, py);
+            else tempCtx.lineTo(px, py);
+        }
+        tempCtx.closePath();
+        tempCtx.fill();
+    }
+    
+    // Вычитаем дырки (hole) чёрным
+    for (var g = 0; g < allGroupsMM.length; g++) {
+        var group = allGroupsMM[g];
+        if (group.type !== 'hole') continue;
+        
+        tempCtx.fillStyle = '#000';
+        tempCtx.beginPath();
+        for (var i = 0; i < group.points.length; i++) {
+            var px = (group.points[i].x - minX) / res;
+            var py = (group.points[i].y - minY) / res;
+            if (i === 0) tempCtx.moveTo(px, py);
+            else tempCtx.lineTo(px, py);
+        }
+        tempCtx.closePath();
+        tempCtx.fill();
+    }
+    
+    var imageData = tempCtx.getImageData(0, 0, rasterW, rasterH);
+    rasterBuffer = new Uint8Array(rasterW * rasterH);
+    for (var i = 0; i < rasterBuffer.length; i++) {
+        rasterBuffer[i] = imageData.data[i * 4] > 128 ? 0 : 3;
+    }
+    
+    originalMask = new Uint8Array(rasterBuffer);
+    updateSheetVisuals();
+    renderMaskOverlay();
+    applyEdgeMarginToGrid();
+    baseMask = new Uint8Array(rasterBuffer);
+    
+    document.getElementById('sheetW').value = sheet.w.toFixed(1);
+    document.getElementById('sheetH').value = sheet.h.toFixed(1);
+    
+    maskLoaded = true;
+    cameraModal.style.display = 'none';
+    stopCamera();
+    updateStats();
+    showToast('Лист обновлён: ' + sheet.w.toFixed(1) + '×' + sheet.h.toFixed(1) + ' мм', true);
+});
+
+edgeMarginInput.addEventListener('input', function() {
+    edgeMarginGlobal = parseFloat(this.value) || 0;
+    saveCameraSettings();
+    
+    // Если маска уже есть — перестраиваем только отступ и зону 4
+    if (baseMask) {
+        // Восстанавливаем исходную маску (без отступа)
+        // Для этого нужно хранить исходную маску отдельно
+        if (originalMask) {
+            rasterBuffer = new Uint8Array(originalMask);
+            rasterW = Math.ceil(sheet.w / rasterRes);
+            rasterH = Math.ceil(sheet.h / rasterRes);
+            applyEdgeMargin();
+            baseMask = new Uint8Array(rasterBuffer);
+            
+        }
+    }
+});
+
+
+btnRefreshCameras.addEventListener('click', refreshCameras);
+cameraSelect.addEventListener('change', function() { if (cameraModal.style.display !== 'none') startCamera(); });
+
+// Клик по контейнеру для обводки
+modalVideoContainer.addEventListener('click', function(e) {
+    if (!isDrawingMode || !currentPolygon) return;
+    if (wasDragging) { wasDragging = false; return; }
+    if (e.target.classList.contains('polygon-marker')) return;
+    if (e.target !== modalVideoContainer && e.target !== cameraCanvas) return;
+    
+    var rect = modalVideoContainer.getBoundingClientRect();
+    currentPolygon.points.push({ 
+        x: e.clientX - rect.left, 
+        y: e.clientY - rect.top 
+    });
+    redrawPolygon();
+    if (currentPolygon.points.length >= 3) {
+        btnApplyMask.disabled = false;
+    }
+});
+
+// Перетаскивание маркеров калибровки
+document.addEventListener('mousemove', function(e) {
+    // 1. Перетаскивание маркеров калибровки (модуль камеры)
+    if (activeMarkerIndex >= 0 && markers[activeMarkerIndex]) {
+        var rect = modalVideoContainer.getBoundingClientRect();
+        if (rect.width > 0) {
+            markers[activeMarkerIndex].style.left = Math.max(0, Math.min(e.clientX - rect.left, rect.width)) + 'px';
+            markers[activeMarkerIndex].style.top = Math.max(0, Math.min(e.clientY - rect.top, rect.height)) + 'px';
+        }
+        return;
+    }
+    
+    // 2. Панорамирование холста
+    if (panning) { 
+        var current = screenToViewBox(e.clientX, e.clientY);
+        vx = pvs.x + (ps.x - current.x); 
+        vy = pvs.y + (ps.y - current.y); 
+        applyView(); 
+        return;
+    }
+    
+    // 3. Перетаскивание группы фигур
+    if (dragging && selected && selected.isGroup) {
+        var w = screenToViewBox(e.clientX, e.clientY);
+        selected.x = w.x - ds.x;
+        selected.y = w.y - ds.y;
+        applyTransform(selected);
+        updateStats();
+        return;
+    }
+    
+    // 4. Перетаскивание одиночной фигуры
+    if (dragging && selected) {
+        var w = screenToViewBox(e.clientX, e.clientY);
+        var newX = w.x - ds.x;
+        var newY = w.y - ds.y;
+        var dx = newX - selected.x;
+        var dy = newY - selected.y;
+        
+        if (draggingGroup && selected._groupOffsets) {
+            // Двигаем группу
+            for (var i = 0; i < shapes.length; i++) {
+                if (i === shapes.indexOf(selected)) {
+                    shapes[i].x = newX;
+                    shapes[i].y = newY;
+                } else if (selected._groupOffsets[i] !== undefined) {
+                    shapes[i].x = newX + selected._groupOffsets[i].x;
+                    shapes[i].y = newY + selected._groupOffsets[i].y;
+                }
+                updateCornersWorld(shapes[i]);
+                applyTransform(shapes[i]);
+            }
+        } else {
+            selected.x = newX;
+            selected.y = newY;
+            updateCornersWorld(selected);
+            applyTransform(selected);
+        }
+        updateStats();
+        return;
+    }
+});
+
+document.addEventListener('mouseup', function(e) {
+    // Сброс маркера калибровки
+    if (activeMarkerIndex >= 0) {
+        activeMarkerIndex = -1;
+        return;
+    }
+    
+    if (dragging && selected) {
+        var moved = Math.abs(selected.x - dragStartX) > 0.1 || 
+                    Math.abs(selected.y - dragStartY) > 0.1;
+        
+        if (moved && snapEnabledGlobal) {
+            snapShape(selected, SRRelease);
+        }
+        updateOccupiedStatus();
+        checkOverlapsRaster();
+        updateStats();
+        if (selected) delete selected._groupOffsets;
+    }
+    panning = false;
+    dragging = false;
+    draggingGroup = false;
+});
+
+refreshCameras();
+
+//1. Функции viewport/zoom
+function applyView() {
+    mainSvg.setAttribute('viewBox', vx + ' ' + vy + ' ' + (sheet.w/zm) + ' ' + (sheet.h/zm));
+    document.getElementById('zoomIndicator').textContent = Math.round(zm * 100) + '%';
+}
+function screenToViewBox(screenX, screenY) {
+    var svg = mainSvg;
+    var pt = svg.createSVGPoint();
+    pt.x = screenX;
+    pt.y = screenY;
+    var svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
+    return { x: svgP.x, y: svgP.y };
+}
+
+//2. Функции трансформации фигур
+function applyTransform(s) {
+    s.el.removeAttribute('transform');
+    
+    // Если есть поворот — вращаем вокруг геометрического центра
+    if (s.rot !== 0) {
+        var str = 'translate(' + s.x + ',' + s.y + ') ' +
+                  'translate(' + s.cx + ',' + s.cy + ') ' +
+                  'rotate(' + s.rot + ') ' +
+                  'translate(' + (-s.cx) + ',' + (-s.cy) + ')';
+        s.el.setAttribute('transform', str);
+    } else {
+        s.el.setAttribute('transform', 'translate(' + s.x + ',' + s.y + ')');
+    }
+    
+    if (s === selected) {
+        s.el.style.outline = '2px solid #ff6b6b';
+        s.el.style.outlineOffset = '2px';
+    }
+}
+
+function rotateShape(s, angle) {
+    var dir = angle > 0 ? 1 : -1;
+    s.activeVariant = (s.activeVariant + dir + 4) % 4;
+    s.rot = s.cornersBase[s.activeVariant].rot;
+    updateCornersWorld(s);
+    applyTransform(s);
+}
+function rotateGroup(shape, angle) {
+    updateOccupiedStatus();
+    
+    // Находим группу и сохраняем общие точки
+    var group = [shape];
+    var queue = [shape];
+    var visited = {};
+    visited[shapes.indexOf(shape)] = true;
+    
+    // Сохраняем пары соединённых точек до поворота
+    var connections = []; // [{shape1, corner1, shape2, corner2, worldX, worldY}]
+    
+    while (queue.length > 0) {
+        var current = queue.shift();
+        updateCornersWorld(current);
+        
+        for (var i = 0; i < shapes.length; i++) {
+            if (visited[i]) continue;
+            updateCornersWorld(shapes[i]);
+            
+            for (var ci = 0; ci < current.activeCorners.length; ci++) {
+                if (!current.activeCorners[ci].occupied) continue;
+                for (var cj = 0; cj < shapes[i].activeCorners.length; cj++) {
+                    if (!shapes[i].activeCorners[cj].occupied) continue;
+                    var dist = Math.hypot(current.activeCorners[ci].x - shapes[i].activeCorners[cj].x,
+                                          current.activeCorners[ci].y - shapes[i].activeCorners[cj].y);
+                    if (dist < connectionTolerance) {
+                        visited[i] = true;
+                        queue.push(shapes[i]);
+                        group.push(shapes[i]);
+                        connections.push({
+                            shape1: current, corner1: ci,
+                            shape2: shapes[i], corner2: cj,
+                            worldX: current.activeCorners[ci].x,
+                            worldY: current.activeCorners[ci].y
+                        });
+                        ci = current.activeCorners.length;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
+    if (group.length < 2) {
+        rotateShape(shape, angle);
+        return;
+    }
+    
+    // Поворачиваем каждую фигуру вокруг своей оси
+    for (var i = 0; i < group.length; i++) {
+        rotateShape(group[i], angle);
+    }
+    
+    // Сдвигаем фигуры чтобы восстановить соединения
+    for (var c = 0; c < connections.length; c++) {
+        var conn = connections[c];
+        updateCornersWorld(conn.shape1);
+        updateCornersWorld(conn.shape2);
+        
+        var newCorner1 = conn.shape1.activeCorners[conn.corner1];
+        var newCorner2 = conn.shape2.activeCorners[conn.corner2];
+        
+        // Сдвигаем shape2 чтобы его угол совпал с углом shape1
+        var dx = newCorner1.x - newCorner2.x;
+        var dy = newCorner1.y - newCorner2.y;
+        
+        conn.shape2.x += dx;
+        conn.shape2.y += dy;
+        updateCornersWorld(conn.shape2);
+        applyTransform(conn.shape2);
+    }
+    
+    updateOccupiedStatus();
+    updateStats();
+}
+
+function updateCornersWorld(s) { 
+var v=s.cornersBase[s.activeVariant];
+ s.activeCorners=[];
+ for (var i=0;i<v.corners.length;i++) { var c=v.corners[i];
+ s.activeCorners.push({x:c.x+s.x,y:c.y+s.y,occupied:c.occupied});
+ } }
+function buildCornersBase(s) {
+    var local = getLocalPolys(s.el); s.cornersBase = [];
+    for (var r=0;r<4;r++) { var rad=r*90*Math.PI/180,cos=Math.cos(rad),sin=Math.sin(rad),corners=[]; for (var i=0;i<local.length;i++) for (var j=0;j<local[i].length;j++) { var pt=local[i][j],dx=pt.x-s.cx,dy=pt.y-s.cy; corners.push({x:s.cx+dx*cos-dy*sin,y:s.cy+dx*sin+dy*cos,occupied:false}); } s.cornersBase.push({rot:r*90,corners:corners}); }
+    s.activeVariant=0; s.activeCorners=s.cornersBase[0].corners;
+}
+
+//3. Функции выделения
+
+function deselectAll() { if (selected) { selected.el.style.outline = ''; selected.el.style.outlineOffset = ''; } selected = null; updateStats(); }
+function selectShape(s) { if (selected === s) return; deselectAll(); selected = s; s.el.style.outline = '2px solid #ff6b6b'; s.el.style.outlineOffset = '2px'; s.el.parentNode.appendChild(s.el); updateStats(); }
+
+//4. Функции парсинга SVG
+
+function parsePathData(d) {
+    if (!d || !d.trim()) return [];
+    var s = d.replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
+    s = s.replace(/([MLCZmlcz])/g, ' $1 ').replace(/\s+/g, ' ').trim();
+    var tokens = s.split(' '), polys = [], cur = [], cx = 0, cy = 0, sx = 0, sy = 0, i = 0;
+    while (i < tokens.length) {
+        var tk = tokens[i];
+        if (/^[MLCZmlcz]$/.test(tk)) {
+            var up = tk.toUpperCase(), rel = tk === tk.toLowerCase(); i++;
+            if (up === 'M') { if (cur.length >= 3) polys.push(cur.slice()); cur = []; var x = +tokens[i], y = +tokens[i+1]; i += 2; if (rel) { x += cx; y += cy; } cx = x; cy = y; sx = x; sy = y; cur.push({x:cx,y:cy}); }
+            else if (up === 'L') { var x = +tokens[i], y = +tokens[i+1]; i += 2; if (rel) { x += cx; y += cy; } cx = x; cy = y; cur.push({x:cx,y:cy}); }
+            else if (up === 'Z') { if (cur.length && (cx !== sx || cy !== sy)) cur.push({x:sx,y:sy}); cx = sx; cy = sy; }
+        } else if (/^-?\d/.test(tk)) { cx = +tk; cy = +tokens[i+1]; i += 2; cur.push({x:cx,y:cy}); }
+        else i++;
+    }
+    if (cur.length >= 3) polys.push(cur);
+    return polys;
+}
+function getLocalPolys(el) {
+    var r = [], tag = el.tagName.toLowerCase();
+    
+    if (tag === 'path') {
+        var d = el.getAttribute('d');
+        if (d) {
+            var p = parsePathData(d);
+            for (var i = 0; i < p.length; i++) {
+                r.push(p[i]);
+            }
+        }
+    } else if (tag === 'rect') {
+        var x = +el.getAttribute('x')||0, y = +el.getAttribute('y')||0;
+        var w = +el.getAttribute('width')||0, h = +el.getAttribute('height')||0;
+        if (w>0 && h>0) r.push([{x:x,y:y},{x:x+w,y:y},{x:x+w,y:y+h},{x:x,y:y+h},{x:x,y:y}]);
+    } else if (tag === 'polygon') {
+        var pts = (el.getAttribute('points')||'').split(/[\s,]+/).map(Number);
+        var p = [];
+        for (var i = 0; i < pts.length-1; i+=2) p.push({x:pts[i],y:pts[i+1]});
+        if (p.length>=3) { p.push({x:p[0].x,y:p[0].y}); r.push(p); }
+    } else if (tag === 'g') {
+        for (var i = 0; i < el.children.length; i++) {
+            var cp = getLocalPolys(el.children[i]);
+            for (var j = 0; j < cp.length; j++) r.push(cp[j]);
+        }
+    }
+    
+    return r;
+}
+function getWorldPolys(s) {
+    var local = getLocalPolys(s.el), rot = s.rot * Math.PI / 180, cos = Math.cos(rot), sin = Math.sin(rot), r = [];
+    for (var i = 0; i < local.length; i++) { var wp = []; for (var j = 0; j < local[i].length; j++) { var pt = local[i][j], dx = pt.x - s.cx, dy = pt.y - s.cy; wp.push({x: s.cx + dx*cos - dy*sin + s.x, y: s.cy + dx*sin + dy*cos + s.y}); } r.push(wp); }
+    return r;
+}
+
+function parseSVG(text) {
+    var doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+    var svgEl = doc.querySelector('svg');
+    if (!svgEl) { showToast('SVG не найден'); return; }
+    
+    var vb = svgEl.getAttribute('viewBox');
+	if (vb) {
+		var p = vb.split(/[\s,]+/).map(Number);
+		sheet = { x: 0, y: 0, w: p[2] || 800, h: p[3] || 600 };
+	}
+    
+    if (shapes.length === 0) {
+        mainSvg.innerHTML = '';
+        mainSvg.setAttribute('viewBox', '0 0 ' + sheet.w + ' ' + sheet.h);
+        
+        var bg = document.createElementNS(NS, 'rect');
+        bg.setAttribute('x', 0);
+        bg.setAttribute('y', 0);
+        bg.setAttribute('width', sheet.w);
+        bg.setAttribute('height', sheet.h);
+        bg.setAttribute('fill', '#f5f5f0');
+        bg.setAttribute('stroke', '#ddd');
+        bg.setAttribute('stroke-width', '0.5');
+        bg.style.pointerEvents = 'none';
+        mainSvg.appendChild(bg);
+        addGrid();
+        
+        var g = document.createElementNS(NS, 'g');
+        g.id = 'shapes';
+        mainSvg.appendChild(g);
+    }
+    
+    var elements = [];
+	
+    function parseTransform(str) {
+        var r = { x: 0, y: 0, rot: 0 };
+        if (!str) return r;
+        var ms = str.match(/translate\(([^)]+)\)/g);
+        if (ms) {
+            for (var i = 0; i < ms.length; i++) {
+                var pp = ms[i].match(/translate\(([^)]+)\)/)[1].split(/[\s,]+/);
+                r.x += +pp[0] || 0;
+                r.y += +pp[1] || 0;
+            }
+        }
+        var rm = str.match(/rotate\(([^)]+)\)/);
+        if (rm) r.rot = +rm[1].split(/[\s,]+/)[0] || 0;
+        return r;
+    }
+    
+    function splitPath(d) {
+        if (!d) return [''];
+        var s = d.replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
+        s = s.replace(/([Mm])/g, '\n$1').trim();
+        return s.split('\n').filter(function(p) { return p.trim(); });
+    }
+    
+function collect(el, depth) {
+    if (depth === undefined) depth = parseInt(document.getElementById('parseDepth').value) || 0;
+    var tag = el.tagName.toLowerCase();
+    if (tag === 'defs' || tag === 'style' || tag === 'title' || tag === 'metadata') return;
+    
+    if (depth === 0) {
+        elements.push(el.cloneNode(true));
+        return;
+    }
+    
+    // Если это группа и есть глубина — разбираем
+    if (tag === 'g' && depth > 0) {
+        for (var i = 0; i < el.children.length; i++) {
+            collect(el.children[i], depth - 1);
+        }
+        return;
+    }
+    
+    // Групп больше нет, но глубина осталась — разбираем path
+    if (tag === 'path' && depth > 0) {
+        var d = el.getAttribute('d') || '';
+        var parts = splitPath(d);
+        var currentOuter = null;
+        var currentHoles = [];
+        
+        for (var i = 0; i < parts.length; i++) {
+            var polys = parsePathData(parts[i]);
+            var area = 0;
+            for (var pi = 0; pi < polys.length; pi++) area += polygonArea(polys[pi]);
+            
+            if (area > 0) {
+                if (currentOuter) {
+                    var c = el.cloneNode(true);
+                    c.setAttribute('d', currentOuter + ' ' + currentHoles.join(' '));
+                    elements.push(c);
+                }
+                currentOuter = parts[i];
+                currentHoles = [];
+            } else {
+                currentHoles.push(parts[i]);
+            }
+        }
+        if (currentOuter) {
+            var c = el.cloneNode(true);
+            c.setAttribute('d', currentOuter + ' ' + currentHoles.join(' '));
+            elements.push(c);
+        }
+        return;
+    }
+    
+    elements.push(el.cloneNode(true));
+}
+
+    for (var i = 0; i < svgEl.children.length; i++) {
+        collect(svgEl.children[i]);
+    }
+var g = document.getElementById('shapes');
+    for (var i = 0; i < elements.length; i++) {
+        var el = elements[i];
+        var trStr = el.getAttribute('transform') || '';
+        el.removeAttribute('transform');
+        el.style.cursor = 'pointer';
+        el.style.pointerEvents = 'all';
+        
+        var currentFill = el.getAttribute('fill');
+        g.appendChild(el);
+        
+        if (!currentFill || currentFill === 'none') {
+            el.style.fill = 'rgba(0,0,0,0.15)';
+        }
+        
+        var cx = 0, cy = 0, count = 0;
+        var allPolys = getLocalPolys(el);
+        var polys = [];
+        var maxArea = 0;
+        var bestPoly = null;
+        for (var pi = 0; pi < allPolys.length; pi++) {
+            var area = polygonArea(allPolys[pi]);
+            if (area > maxArea) {
+                maxArea = area;
+                bestPoly = allPolys[pi];
+            }
+        }
+        if (bestPoly) polys = [bestPoly];
+        for (var pi = 0; pi < polys.length; pi++) {
+            for (var pj = 0; pj < polys[pi].length; pj++) {
+                cx += polys[pi][pj].x;
+                cy += polys[pi][pj].y;
+                count++;
+            }
+        }
+        if (count > 0) { cx /= count; cy /= count; }
+
+        // Нормализация: сдвигаем локальные координаты к (0,0)
+        var minX = Infinity, minY = Infinity;
+        for (var pi = 0; pi < allPolys.length; pi++) {
+            for (var pj = 0; pj < allPolys[pi].length; pj++) {
+                if (allPolys[pi][pj].x < minX) minX = allPolys[pi][pj].x;
+                if (allPolys[pi][pj].y < minY) minY = allPolys[pi][pj].y;
+            }
+        }
+
+        // Сдвигаем d-path
+        if (minX !== 0 || minY !== 0) {
+            var dAttr = el.getAttribute('d');
+            if (dAttr) {
+                var newD = '';
+                var parts = dAttr.match(/[MLCZmlcz][^MLCZmlcz]*/g) || [dAttr];
+                for (var pi = 0; pi < parts.length; pi++) {
+                    var cmd = parts[pi][0];
+                    var nums = parts[pi].substring(1).trim().split(/[\s,]+/).filter(function(x) { return x !== ''; });
+                    newD += cmd;
+                    for (var ni = 0; ni < nums.length; ni++) {
+                        if (cmd === 'M' || cmd === 'L' || cmd === 'm' || cmd === 'l') {
+                            if (ni % 2 === 0) newD += (parseFloat(nums[ni]) - minX).toFixed(4);
+                            else newD += (parseFloat(nums[ni]) - minY).toFixed(4);
+                        } else {
+                            newD += nums[ni];
+                        }
+                        if (ni < nums.length - 1) newD += ' ';
+                    }
+                    newD += ' ';
+                }
+                el.setAttribute('d', newD.trim());
+            }
+        }
+
+        // Пересчитываем cx, cy после сдвига
+        cx = cx - minX;
+        cy = cy - minY;
+
+        var tr = parseTransform(trStr);
+        var s = { 
+            el: el, 
+            cx: cx, 
+            cy: cy, 
+            x: minX,
+            y: minY,
+            rot: tr.rot || 0, 
+            flipH: false, 
+            flipV: false 
+        };
+        
+        buildCornersBase(s);
+        updateCornersWorld(s);
+        applyTransform(s);
+        
+        (function(shape) {
+            el.addEventListener('mousedown', function(e) {
+				if (e.button !== 0) return;
+				e.stopPropagation();
+				e.preventDefault();
+				
+				dragStartX = shape.x;
+				dragStartY = shape.y;
+				
+				selectShape(shape);
+				dragging = true;
+				draggingGroup = e.shiftKey;
+				
+				var w = screenToViewBox(e.clientX, e.clientY);
+				ds = { x: w.x - shape.x, y: w.y - shape.y };
+                
+                if (draggingGroup) {
+					var gapEnabled = gapEnabledGlobal || false;
+					var gapSize = gapEnabled ? (gapSizeGlobal || 0) : 0;
+					
+                    updateOccupiedStatus();
+                    var group = [];
+                    var queue = [shape];
+                    var visited = {};
+                    visited[shapes.indexOf(shape)] = true;
+                    
+                    while (queue.length > 0) {
+                        var current = queue.shift();
+                        group.push(current);
+                        
+                        for (var j = 0; j < shapes.length; j++) {
+                            if (visited[j]) continue;
+                            var other = shapes[j];
+                            updateCornersWorld(current);
+                            updateCornersWorld(other);
+                            
+                            var connected = false;
+                            for (var ci = 0; ci < current.activeCorners.length && !connected; ci++) {
+                                if (!current.activeCorners[ci].occupied) continue;
+                                for (var cj = 0; cj < other.activeCorners.length && !connected; cj++) {
+                                    if (!other.activeCorners[cj].occupied) continue;
+                                    var dist = Math.hypot(
+                                        current.activeCorners[ci].x - other.activeCorners[cj].x,
+                                        current.activeCorners[ci].y - other.activeCorners[cj].y
+                                    );
+                                    if (dist < connectionTolerance) {
+                                        connected = true;
+                                        visited[j] = true;
+                                        queue.push(other);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    shape._groupOffsets = {};
+                    for (var j = 0; j < group.length; j++) {
+                        if (group[j] !== shape) {
+                            shape._groupOffsets[shapes.indexOf(group[j])] = {
+                                x: group[j].x - shape.x,
+                                y: group[j].y - shape.y
+                            };
+                        }
+                    }
+                }
+            });
+            
+            el.addEventListener('click', function(e) {
+                e.stopPropagation();
+                selectShape(shape);
+            });
+        })(s);
+        
+        shapes.push(s);
+    }
+    var maxCyclesInput = document.getElementById('maxCyclesInput');
+    if (maxCyclesInput) {
+        maxCyclesInput.max = shapes.length;
+        if (parseInt(maxCyclesInput.value) < shapes.length) {
+            maxCyclesInput.value = shapes.length;
+            maxCyclesGlobal = shapes.length;
+        }
+    }
+    
+    vx = 0; vy = 0; zm = 1;
+    //applyView();
+    updateStats();
+    showToast('Добавлено фигур: ' + elements.length, true);
+}
+//5. Функции геометрии
+
+function ptSegDist(px, py, x1, y1, x2, y2) { var dx = x2-x1, dy = y2-y1, ls = dx*dx+dy*dy; if (ls===0) return Math.hypot(px-x1,py-y1); var t = ((px-x1)*dx+(py-y1)*dy)/ls; t = Math.max(0,Math.min(1,t)); return Math.hypot(px-(x1+t*dx),py-(y1+t*dy)); }
+function pointInPoly(px, py, p) { var inside = false; for (var i=0,j=p.length-1; i<p.length; j=i++) { if ((p[i].y>py)!==(p[j].y>py) && px<(p[j].x-p[i].x)*(py-p[i].y)/(p[j].y-p[i].y)+p[i].x) inside=!inside; } return inside; }
+
+function polygonArea(poly) {
+    var area = 0;
+    for (var i = 0; i < poly.length; i++) {
+        var j = (i + 1) % poly.length;
+        area += poly[i].x * poly[j].y;
+        area -= poly[j].x * poly[i].y;
+    }
+    return area / 2;
+}
+
+function getShapeArea(s) {
+    var polys = getLocalPolys(s.el);
+    var area = 0;
+    for (var i = 0; i < polys.length; i++) {
+        area += polygonArea(polys[i]);
+    }
+    return area;
+}
+
+function getWorldBBox(s) {
+    var polys = getWorldPolys(s);
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (var i = 0; i < polys.length; i++) {
+        for (var j = 0; j < polys[i].length; j++) {
+            var p = polys[i][j];
+            if (p.x < minX) minX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y > maxY) maxY = p.y;
+        }
+    }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+function getTotalBBox(list) {
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (var i = 0; i < list.length; i++) {
+        var polys = getWorldPolys(list[i]);
+        for (var j = 0; j < polys.length; j++) {
+            for (var k = 0; k < polys[j].length; k++) {
+                var p = polys[j][k];
+                if (p.x < minX) minX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y > maxY) maxY = p.y;
+            }
+        }
+    }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+//6. Функции статистики и проверок
+
+function countOverlaps() {
+    return countOverlaps._cached || 0;
+}
+
+countOverlaps._cached = 0;
+
+function checkOverlapsRaster() {
+    if (shapes.length < 2) return 0;
+    
+    if (!occupancyGrid || occupancyGrid.length !== gridW * gridH) {
+        initGrid();
+    }
+    
+    for (var i = 0; i < shapes.length; i++) shapes[i].el.style.filter = '';
+    
+    var overlapCount = 0;
+    
+    // Очищаем сетку (кроме запретных зон)
+    for (var j = 0; j < occupancyGrid.length; j++) {
+        if (occupancyGrid[j] !== 2) occupancyGrid[j] = 0;
+    }
+    
+    // Проверяем попарно
+    for (var i = 0; i < shapes.length; i++) {
+        // Размечаем все предыдущие
+        for (var j = 0; j < i; j++) {
+            markShapeOnGrid(shapes[j], shapes[j].activeVariant, shapes[j].x, shapes[j].y, 0);
+        }
+        
+        // Проверяем i-ю
+        var checkerMask = buildCheckerMask(shapes[i], shapes[i].activeVariant);
+        var gridX = Math.floor(shapes[i].x / rasterRes);
+        var gridY = Math.floor(shapes[i].y / rasterRes);
+        
+		
+        if (checkCollisionFast(checkerMask, gridX, gridY) || 
+            checkCollisionPerimeter(shapes[i], shapes[i].activeVariant, shapes[i].x, shapes[i].y)) {
+            overlapCount++;
+            shapes[i].el.style.filter = 'drop-shadow(0 0 6px red)';
+        }
+        
+        // Размечаем i-ю для следующих
+        markShapeOnGrid(shapes[i], shapes[i].activeVariant, shapes[i].x, shapes[i].y, 0);
+    }
+    
+    countOverlaps._cached = overlapCount;
+    return overlapCount;
+}
+
+function updateStats() {
+    document.getElementById('statShapes').textContent = shapes.length;
+    var o = countOverlaps();
+    document.getElementById('statOverlaps').textContent = o;
+    document.getElementById('statOverlaps').style.color = o === 0 ? '#2ed573' : '#ff4444';
+    
+    var totalArea = 0;
+    for (var i = 0; i < shapes.length; i++) {
+        totalArea += getShapeArea(shapes[i]);
+    }
+    document.getElementById('statArea').textContent = totalArea.toFixed(0);
+    
+    if (shapes.length > 0) {
+        var bb = getTotalBBox(shapes);
+        document.getElementById('statSheetArea').textContent = bb.w.toFixed(1) + ' × ' + bb.h.toFixed(1);
+        
+        var fillPercent = (bb.w * bb.h) > 0 ? (totalArea / (bb.w * bb.h) * 100) : 0;
+        document.getElementById('statFill').textContent = fillPercent.toFixed(1);
+        
+        var ratio = Math.min(bb.w, bb.h) / Math.max(bb.w, bb.h);
+        document.getElementById('statSquareness').textContent = (ratio * 100).toFixed(1);
+    }
+}
+
+function updateOccupiedStatus() {
+    var TOL = 0.1;
+    
+    // Очищаем все occupied
+    for (var i = 0; i < shapes.length; i++) {
+        for (var v = 0; v < 4; v++) {
+            for (var j = 0; j < shapes[i].cornersBase[v].corners.length; j++) {
+                shapes[i].cornersBase[v].corners[j].occupied = false;
+            }
+        }
+        updateCornersWorld(shapes[i]);
+        for (var j = 0; j < shapes[i].activeCorners.length; j++) {
+            shapes[i].activeCorners[j].occupied = false;
+        }
+    }
+    
+    // 🔑 Ищем связи ВСЕГДА (для Shift)
+    for (var i = 0; i < shapes.length; i++) {
+        for (var j = i + 1; j < shapes.length; j++) {
+            updateCornersWorld(shapes[i]);
+            updateCornersWorld(shapes[j]);
+            
+            for (var ci = 0; ci < shapes[i].activeCorners.length; ci++) {
+                for (var cj = 0; cj < shapes[j].activeCorners.length; cj++) {
+                    var d = Math.hypot(
+                        shapes[i].activeCorners[ci].x - shapes[j].activeCorners[cj].x,
+                        shapes[i].activeCorners[ci].y - shapes[j].activeCorners[cj].y
+                    );
+                    
+                    if (d < connectionTolerance) {
+                        shapes[i].cornersBase[shapes[i].activeVariant].corners[ci].occupied = true;
+                        shapes[j].cornersBase[shapes[j].activeVariant].corners[cj].occupied = true;
+                        shapes[i].activeCorners[ci].occupied = true;
+                        shapes[j].activeCorners[cj].occupied = true;
+                    }
+                }
+            }
+        }
+    }
+}
+
+//7. Функции магнитной стыковки
+
+function snapShape(s, tol) {
+    if (!snapEnabledGlobal) return false;
+    if (shapes.length < 2) return false;
+
+    var gapPx = (gapEnabledGlobal) ? Math.ceil(gapSizeGlobal / rasterRes) : 0;
+    var marginPx = Math.ceil(tol / rasterRes) + gapPx;
+    
+    if (!occupancyGrid || occupancyGrid.length !== gridW * gridH) {
+        initGrid();
+    }
+    
+    // Очищаем сетку (кроме запретных зон)
+    for (var i = 0; i < occupancyGrid.length; i++) {
+        if (occupancyGrid[i] !== 2) occupancyGrid[i] = 0;
+    }
+    
+    // Размечаем все фигуры кроме s
+    for (var i = 0; i < shapes.length; i++) {
+        if (shapes[i] !== s) {
+            markShapeOnGrid(shapes[i], shapes[i].activeVariant, shapes[i].x, shapes[i].y, gapPx);
+        }
+    }
+    
+    // ===== БЫСТРАЯ ПРОВЕРКА: есть ли кто рядом? =====
+    var bb = getWorldBBox(s);
+    var x1 = Math.max(0, Math.floor((bb.x - tol) / rasterRes));
+    var y1 = Math.max(0, Math.floor((bb.y - tol) / rasterRes));
+    var x2 = Math.min(gridW - 1, Math.ceil((bb.x + bb.w + tol) / rasterRes));
+    var y2 = Math.min(gridH - 1, Math.ceil((bb.y + bb.h + tol) / rasterRes));
+    
+    var nearCount = 0;
+    for (var y = y1; y <= y2 && nearCount === 0; y++) {
+        for (var x = x1; x <= x2 && nearCount === 0; x++) {
+            if (occupancyGrid[y * gridW + x] === 1) nearCount++;
+        }
+    }
+    
+    if (nearCount === 0) return false; // никого рядом — выходим
+    // ===== КОНЕЦ БЫСТРОЙ ПРОВЕРКИ =====
+    
+    rebuildContactPerimeter();
+    
+    var checkerMasks = [];
+    for (var v = 0; v < 4; v++) {
+        checkerMasks.push(buildCheckerMask(s, v));
+    }
+    
+    // Этап 1: ближайшая позиция
+    var bestX = s.x, bestY = s.y;
+    var bestDist = Infinity;
+    var found = false;
+    var step = rasterRes * 2;
+    
+    for (var r = step; r <= tol; r += step) {
+        if (found) break;
+        
+        for (var dy = -r; dy <= r; dy += step) {
+            for (var dx = -r; dx <= r; dx += step) {
+                var dist = Math.hypot(dx, dy);
+                if (dist > r + step || dist < r - step) continue;
+                
+                var testX = s.x + dx;
+                var testY = s.y + dy;
+                var gridX = Math.floor(testX / rasterRes);
+                var gridY = Math.floor(testY / rasterRes);
+                
+                var sBB = getBBoxAt(s, s.activeVariant, testX, testY);
+                if (sBB.w === 0) continue;
+                if (sBB.x < edgeMarginGlobal || sBB.y < edgeMarginGlobal || 
+                    sBB.x + sBB.w > sheet.w - edgeMarginGlobal || 
+                    sBB.y + sBB.h > sheet.h - edgeMarginGlobal) continue;
+                
+                if (checkCollisionFast(checkerMasks[s.activeVariant], gridX, gridY)) continue;
+                if (checkCollisionPerimeter(s, s.activeVariant, testX, testY)) continue;
+                
+                var contact = countContactFromPerimeter(s, s.activeVariant, testX, testY);
+                
+                if (contact > 0 && dist < bestDist) {
+                    bestDist = dist;
+                    bestX = testX;
+                    bestY = testY;
+                    found = true;
+                }
+            }
+        }
+    }
+    
+    if (!found) return false;
+    
+    // Этап 2: уточнение
+	var refineRadius = 0.5; // 1 мм вокруг
+    var refineStep = rasterRes / 2;
+    var bestContact = countContactFromPerimeter(s, s.activeVariant, bestX, bestY);
+    
+    for (var dy = -refineRadius; dy <= refineRadius; dy += refineStep) {
+        for (var dx = -refineRadius; dx <= refineRadius; dx += refineStep) {
+            var testX = bestX + dx;
+            var testY = bestY + dy;
+            var gridX = Math.floor(testX / rasterRes);
+            var gridY = Math.floor(testY / rasterRes);
+            
+            var sBB = getBBoxAt(s, s.activeVariant, testX, testY);
+            if (sBB.w === 0) continue;
+            if (sBB.x < edgeMarginGlobal || sBB.y < edgeMarginGlobal || 
+                sBB.x + sBB.w > sheet.w - edgeMarginGlobal || 
+                sBB.y + sBB.h > sheet.h - edgeMarginGlobal) continue;
+            
+            if (checkCollisionFast(checkerMasks[s.activeVariant], gridX, gridY)) continue;
+            if (checkCollisionPerimeter(s, s.activeVariant, testX, testY)) continue;
+            
+            var contact = countContactFromPerimeter(s, s.activeVariant, testX, testY);
+            
+            if (contact > bestContact) {
+                bestContact = contact;
+                bestX = testX;
+                bestY = testY;
+            }
+        }
+    }
+    //showToast('✅ Притянуто', true);
+    s.x = bestX;
+    s.y = bestY;
+    updateCornersWorld(s);
+    applyTransform(s);
+    updateOccupiedStatus();
+    updateStats();
+    
+    return true;
+}
+
+function initGrid() {
+    gridW = Math.ceil(sheet.w / rasterRes);
+    gridH = Math.ceil(sheet.h / rasterRes);
+    var size = gridW * gridH;
+    
+    if (!occupancyGrid || occupancyGrid.length !== size) {
+        occupancyGrid = new Uint8Array(size);
+        contactCapacity = size; // худший случай — все пиксели
+        contactPoints = new Uint32Array(contactCapacity);
+    }
+    occupancyGrid.fill(0);
+    contactCount = 0;
+    
+    // Если есть маска листа — накладываем запретные зоны (3 -> 2)
+    if (maskLoaded && rasterBuffer) {
+        for (var i = 0; i < size && i < rasterBuffer.length; i++) {
+            if (rasterBuffer[i] === 3) occupancyGrid[i] = 2;
+        }
+    }
+    
+    // Применяем отступ от края
+    applyEdgeMarginToGrid();
+    
+    // Строим начальный contactPerimeter от запретных зон
+    rebuildContactPerimeter();
+}
+
+function rebuildContactPerimeter() {
+    contactCount = 0;
+    
+    for (var y = 0; y < gridH; y++) {
+        for (var x = 0; x < gridW; x++) {
+            var idx = y * gridW + x;
+            if (occupancyGrid[idx] !== 0) continue;
+            
+            // Проверяем только 4 соседей
+            var hasContact = false;
+            if (y > 0 && (occupancyGrid[(y-1) * gridW + x] === 1 || occupancyGrid[(y-1) * gridW + x] === 2)) hasContact = true;
+            else if (y < gridH-1 && (occupancyGrid[(y+1) * gridW + x] === 1 || occupancyGrid[(y+1) * gridW + x] === 2)) hasContact = true;
+            else if (x > 0 && (occupancyGrid[y * gridW + (x-1)] === 1 || occupancyGrid[y * gridW + (x-1)] === 2)) hasContact = true;
+            else if (x < gridW-1 && (occupancyGrid[y * gridW + (x+1)] === 1 || occupancyGrid[y * gridW + (x+1)] === 2)) hasContact = true;
+            
+            if (hasContact) {
+                contactPoints[contactCount++] = x | (y << 16);
+            }
+        }
+    }
+}
+
+// Обновление периметра только вокруг изменённой области (быстрее полной перестройки)
+function updateContactPerimeterLocal(minX, minY, maxX, maxY) {
+    // Расширяем область на PERIMETER_DEPTH
+    var x1 = Math.max(0, minX - PERIMETER_DEPTH);
+    var y1 = Math.max(0, minY - PERIMETER_DEPTH);
+    var x2 = Math.min(gridW - 1, maxX + PERIMETER_DEPTH);
+    var y2 = Math.min(gridH - 1, maxY + PERIMETER_DEPTH);
+    
+    // Удаляем старые точки в этой области (перестраиваем массив)
+    var newContact = new Uint32Array(contactCapacity);
+    var newCount = 0;
+    
+    for (var i = 0; i < contactCount; i++) {
+        var packed = contactPoints[i];
+        var px = packed & 0xFFFF;
+        var py = (packed >> 16) & 0xFFFF;
+        if (px >= x1 && px <= x2 && py >= y1 && py <= y2) continue;
+        newContact[newCount++] = packed;
+    }
+    
+    // Добавляем новые точки в этой области
+    for (var y = y1; y <= y2; y++) {
+        for (var x = x1; x <= x2; x++) {
+            var idx = y * gridW + x;
+            if (occupancyGrid[idx] !== 0) continue;
+            
+            var hasContact = false;
+            for (var ny = Math.max(0, y - PERIMETER_DEPTH); ny <= Math.min(gridH - 1, y + PERIMETER_DEPTH) && !hasContact; ny++) {
+                for (var nx = Math.max(0, x - PERIMETER_DEPTH); nx <= Math.min(gridW - 1, x + PERIMETER_DEPTH) && !hasContact; nx++) {
+                    if (nx === x && ny === y) continue;
+                    if (Math.abs(nx - x) + Math.abs(ny - y) <= PERIMETER_DEPTH) {
+                        if (occupancyGrid[ny * gridW + nx] === 1 || occupancyGrid[ny * gridW + nx] === 2) {
+                            hasContact = true;
+                        }
+                    }
+                }
+            }
+            if (hasContact) newContact[newCount++] = x | (y << 16);
+        }
+    }
+    
+    contactPoints = newContact;
+    contactCount = newCount;
+}
+
+
+function markShapeOnGrid(s, variant, posX, posY, gapPx) {
+    var polys = getWorldPolysFast(s, variant, posX, posY);
+    var localPolys = getLocalPolysFast(s, variant);
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    
+    // Разделяем на внешние и дырки
+    var outers = [];
+    var holes = [];
+    for (var i = 0; i < polys.length; i++) {
+        if (polygonArea(localPolys[i]) > 0) {
+            outers.push(polys[i]);
+        } else {
+            holes.push(polys[i]);
+        }
+    }
+    
+    // Закрашиваем внешние контуры
+    for (var i = 0; i < outers.length; i++) {
+        var poly = outers[i];
+        var pMinX = Infinity, pMaxX = -Infinity, pMinY = Infinity, pMaxY = -Infinity;
+        for (var j = 0; j < poly.length; j++) {
+            if (poly[j].x < pMinX) pMinX = poly[j].x;
+            if (poly[j].x > pMaxX) pMaxX = poly[j].x;
+            if (poly[j].y < pMinY) pMinY = poly[j].y;
+            if (poly[j].y > pMaxY) pMaxY = poly[j].y;
+        }
+        
+        var px1 = Math.max(0, Math.floor(pMinX / rasterRes));
+        var py1 = Math.max(0, Math.floor(pMinY / rasterRes));
+        var px2 = Math.min(gridW - 1, Math.ceil(pMaxX / rasterRes));
+        var py2 = Math.min(gridH - 1, Math.ceil(pMaxY / rasterRes));
+        
+        for (var py = py1; py <= py2; py++) {
+            for (var px = px1; px <= px2; px++) {
+                var wx = px * rasterRes + rasterRes / 2;
+                var wy = py * rasterRes + rasterRes / 2;
+                if (pointInPoly(wx, wy, poly)) {
+                    if (occupancyGrid[py * gridW + px] !== 2) {
+                        occupancyGrid[py * gridW + px] = 1;
+                    }
+                }
+            }
+        }
+        
+        if (pMinX < minX) minX = pMinX;
+        if (pMinY < minY) minY = pMinY;
+        if (pMaxX > maxX) maxX = pMaxX;
+        if (pMaxY > maxY) maxY = pMaxY;
+    }
+    
+    // Вырезаем дырки (возвращаем в 0)
+    for (var i = 0; i < holes.length; i++) {
+        var poly = holes[i];
+        var pMinX = Infinity, pMaxX = -Infinity, pMinY = Infinity, pMaxY = -Infinity;
+        for (var j = 0; j < poly.length; j++) {
+            if (poly[j].x < pMinX) pMinX = poly[j].x;
+            if (poly[j].x > pMaxX) pMaxX = poly[j].x;
+            if (poly[j].y < pMinY) pMinY = poly[j].y;
+            if (poly[j].y > pMaxY) pMaxY = poly[j].y;
+        }
+        
+        var px1 = Math.max(0, Math.floor(pMinX / rasterRes));
+        var py1 = Math.max(0, Math.floor(pMinY / rasterRes));
+        var px2 = Math.min(gridW - 1, Math.ceil(pMaxX / rasterRes));
+        var py2 = Math.min(gridH - 1, Math.ceil(pMaxY / rasterRes));
+        
+        for (var py = py1; py <= py2; py++) {
+            for (var px = px1; px <= px2; px++) {
+                var wx = px * rasterRes + rasterRes / 2;
+                var wy = py * rasterRes + rasterRes / 2;
+                if (pointInPoly(wx, wy, poly)) {
+                    if (occupancyGrid[py * gridW + px] === 1) {
+                        occupancyGrid[py * gridW + px] = 0;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Зазор только для внешних контуров
+    if (gapPx > 0 && outers.length > 0 && minX !== Infinity) {
+        var gx1 = Math.max(0, Math.floor(minX / rasterRes) - gapPx);
+        var gy1 = Math.max(0, Math.floor(minY / rasterRes) - gapPx);
+        var gx2 = Math.min(gridW - 1, Math.ceil(maxX / rasterRes) + gapPx);
+        var gy2 = Math.min(gridH - 1, Math.ceil(maxY / rasterRes) + gapPx);
+        
+        var copy = new Uint8Array(occupancyGrid);
+        for (var y = gy1; y <= gy2; y++) {
+            for (var x = gx1; x <= gx2; x++) {
+                if (copy[y * gridW + x] !== 1) continue;
+                for (var dy = -gapPx; dy <= gapPx; dy++) {
+                    for (var dx = -gapPx; dx <= gapPx; dx++) {
+                        if (Math.abs(dx) + Math.abs(dy) <= gapPx) {
+                            var nx = x + dx, ny = y + dy;
+                            if (nx >= 0 && nx < gridW && ny >= 0 && ny < gridH) {
+                                if (occupancyGrid[ny * gridW + nx] === 0 && occupancyGrid[ny * gridW + nx] !== 2) {
+                                    occupancyGrid[ny * gridW + nx] = 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    return { minX: minX, minY: minY, maxX: maxX, maxY: maxY };
+}
+
+// Создаёт шахматный паттерн для фигуры (только каждый CHECKER_STEP пиксель)
+function buildCheckerMask(s, variant) {
+    var polys = getLocalPolysFast(s, variant);
+    var checkerPixels = [];
+    
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (var i = 0; i < polys.length; i++) {
+        if (polygonArea(polys[i]) <= 0) continue;
+        for (var j = 0; j < polys[i].length; j++) {
+            if (polys[i][j].x < minX) minX = polys[i][j].x;
+            if (polys[i][j].x > maxX) maxX = polys[i][j].x;
+            if (polys[i][j].y < minY) minY = polys[i][j].y;
+            if (polys[i][j].y > maxY) maxY = polys[i][j].y;
+        }
+    }
+    
+    if (minX === Infinity) return checkerPixels;
+    
+    var px1 = Math.floor(minX / rasterRes);
+    var py1 = Math.floor(minY / rasterRes);
+    var px2 = Math.ceil(maxX / rasterRes);
+    var py2 = Math.ceil(maxY / rasterRes);
+    
+    for (var py = py1; py <= py2; py++) {
+        for (var px = px1; px <= px2; px++) {
+            if ((px + py) % CHECKER_STEP !== 0) continue;
+            
+            var wx = px * rasterRes + rasterRes / 2;
+            var wy = py * rasterRes + rasterRes / 2;
+            
+            var inside = false;
+            for (var i = 0; i < polys.length && !inside; i++) {
+                if (polygonArea(polys[i]) <= 0) continue;
+                if (pointInPoly(wx, wy, polys[i])) inside = true;
+            }
+            
+            if (inside) {
+                checkerPixels.push({ x: px, y: py });
+            }
+        }
+    }
+    
+    return checkerPixels;
+}
+
+// Проверка: не накладывается ли шахматный паттерн на занятые/запретные пиксели
+function checkCollisionFast(checkerMask, offsetX, offsetY) {
+    for (var i = 0; i < checkerMask.length; i++) {
+        var gx = checkerMask[i].x + offsetX;
+        var gy = checkerMask[i].y + offsetY;
+
+        if (gx < 0 || gx >= gridW || gy < 0 || gy >= gridH) continue;
+        
+        var val = occupancyGrid[gy * gridW + gx];
+        if (val === 1 || val === 2) {
+            //console.log('Коллизия fast: grid=' + gx + ',' + gy + ' val=' + val);
+            return true;
+        }
+    }
+    return false;
+}
+
+// Проверка коллизии по полному периметру (медленнее, но точнее)
+function checkCollisionPerimeter(s, variant, posX, posY) {
+    var polys = getWorldPolysFast(s, variant, posX, posY);
+    
+    for (var i = 0; i < polys.length; i++) {
+        if (polygonArea(polys[i]) <= 0) continue; // пропускаем дырки
+        
+        var poly = polys[i];
+        for (var j = 0; j < poly.length; j++) {
+            var p1 = poly[j], p2 = poly[(j+1) % poly.length];
+            var dx = p2.x - p1.x, dy = p2.y - p1.y;
+            var len = Math.hypot(dx, dy);
+            var steps = Math.ceil(len / rasterRes);
+            
+            for (var k = 0; k <= steps; k++) {
+                var t = k / steps;
+                var px = Math.floor((p1.x + dx * t) / rasterRes);
+                var py = Math.floor((p1.y + dy * t) / rasterRes);
+                
+                if (px < 0 || px >= gridW || py < 0 || py >= gridH) continue;
+                
+                var val = occupancyGrid[py * gridW + px];
+                if (val === 1 || val === 2) return true;
+            }
+        }
+    }
+    return false;
+}
+
+function countContactFromPerimeter(s, variant, posX, posY) {
+    var polys = getWorldPolysFast(s, variant, posX, posY);
+    var contactSet = {};
+    var edgeContact = 0;
+    var shapeContact = 0;
+    
+    for (var i = 0; i < polys.length; i++) {
+        if (polygonArea(polys[i]) <= 0) continue;
+        
+        var poly = polys[i];
+        for (var j = 0; j < poly.length; j++) {
+            var p1 = poly[j], p2 = poly[(j+1) % poly.length];
+            var dx = p2.x - p1.x, dy = p2.y - p1.y;
+            var len = Math.hypot(dx, dy);
+            var steps = Math.ceil(len / (rasterRes * 0.7));
+            
+            for (var k = 0; k <= steps; k++) {
+                var t = k / steps;
+                var px = Math.floor((p1.x + dx * t) / rasterRes);
+                var py = Math.floor((p1.y + dy * t) / rasterRes);
+                
+                var neighbors = [
+                    { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
+                    { dx: -1, dy: 0 }, { dx: 1, dy: 0 }
+                ];
+                
+                for (var n = 0; n < neighbors.length; n++) {
+                    var nx = px + neighbors[n].dx;
+                    var ny = py + neighbors[n].dy;
+                    
+                    if (nx >= 0 && nx < gridW && ny >= 0 && ny < gridH) {
+                        var nVal = occupancyGrid[ny * gridW + nx];
+                        var key = nx + '_' + ny;
+                        
+                        if (nVal === 2 && !contactSet[key]) {
+                            contactSet[key] = true;
+                            edgeContact++;
+                        } else if (nVal === 1 && !contactSet[key]) {
+                            contactSet[key] = true;
+                            shapeContact++;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    var wShape, wEdge;
+    switch (contactPriority) {
+        case 1: wShape = 1; wEdge = 1.5; break;   // край важнее
+        case 2: wShape = 1; wEdge = 1; break;   // равны
+        case 3: wShape = 1.25; wEdge = 1; break;
+        case 4: wShape = 1.5; wEdge = 1; break;
+        case 5: wShape = 1.75; wEdge = 1; break;
+		case 6: wShape = 2; wEdge = 1; break;
+		case 7: wShape = 5; wEdge = 1; break;   // фигура важнее
+        default: wShape = 1; wEdge = 1;
+    }
+    return shapeContact * wShape + edgeContact * wEdge;
+}
+
+function getLocalPolysFast(s, variant) {
+    var local = getLocalPolys(s.el);
+    var rot = s.cornersBase[variant].rot * Math.PI / 180;
+    var cos = Math.cos(rot), sin = Math.sin(rot);
+    var r = [];
+    
+    for (var i = 0; i < local.length; i++) { 
+        var wp = []; 
+        for (var j = 0; j < local[i].length; j++) { 
+            var pt = local[i][j];
+            var dx = pt.x - s.cx;
+            var dy = pt.y - s.cy; 
+            wp.push({
+                x: s.cx + dx * cos - dy * sin, 
+                y: s.cy + dx * sin + dy * cos
+            }); 
+        } 
+        r.push(wp); 
+    }
+    return r;
+}
+
+function getWorldPolysFast(s, v, x, y) {
+    // 🔑 Без кэша — всегда пересчитываем
+    var local = getLocalPolys(s.el);
+    var rot = s.cornersBase[v].rot * Math.PI / 180;
+    var cos = Math.cos(rot), sin = Math.sin(rot);
+    var r = [];
+    for (var i = 0; i < local.length; i++) { 
+        var wp = []; 
+        for (var j = 0; j < local[i].length; j++) { 
+            var pt = local[i][j], dx = pt.x - s.cx, dy = pt.y - s.cy; 
+            wp.push({x: s.cx + dx*cos - dy*sin + x, y: s.cy + dx*sin + dy*cos + y}); 
+        } 
+        r.push(wp); 
+    }
+    return r;
+}
+
+function getBBoxAt(s, variant, posX, posY) {
+    var polys = getWorldPolysFast(s, variant, posX, posY);
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    
+    for (var i = 0; i < polys.length; i++) {
+        if (polygonArea(polys[i]) <= 0) continue;
+        for (var j = 0; j < polys[i].length; j++) {
+            if (polys[i][j].x < minX) minX = polys[i][j].x;
+            if (polys[i][j].x > maxX) maxX = polys[i][j].x;
+            if (polys[i][j].y < minY) minY = polys[i][j].y;
+            if (polys[i][j].y > maxY) maxY = polys[i][j].y;
+        }
+    }
+    
+    if (minX === Infinity) return { x: 0, y: 0, w: 0, h: 0 };
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+function applyEdgeMarginToGrid() {
+    var marginPx = Math.ceil(edgeMarginGlobal / rasterRes);
+    if (marginPx <= 0) marginPx = 1; // Хотя бы 1 пиксель отступа
+    
+    // Все 4 стороны
+    for (var y = 0; y < gridH; y++) {
+        for (var x = 0; x < gridW; x++) {
+            if (x < marginPx || x >= gridW - marginPx || 
+                y < marginPx || y >= gridH - marginPx) {
+                if (occupancyGrid[y * gridW + x] === 0) {
+                    occupancyGrid[y * gridW + x] = 2;
+                }
+            }
+        }
+    }
+}
+
+//8. Функции авто-раскладки
+function calcScoreLocal(mode, fill, squareness, contact) {
+    if (mode === 'square') return (squareness * 70 + fill * 30) + contact;
+    if (mode === 'fill') return (fill * 70 + squareness * 30) + contact;
+    return (fill * 50 + squareness * 50) + contact; // combo
+}
+
+// Получение пикселей периметра фигуры (для привязки)
+function getPerimeterPixels(s, variant) {
+    var polys = getLocalPolysFast(s, variant);
+    var pixels = [];
+    var added = {};
+    
+    for (var i = 0; i < polys.length; i++) {
+        if (polygonArea(polys[i]) <= 0) continue;
+        
+        var poly = polys[i];
+        for (var j = 0; j < poly.length; j++) {
+            var p1 = poly[j], p2 = poly[(j+1) % poly.length];
+            var dx = p2.x - p1.x, dy = p2.y - p1.y;
+            var len = Math.hypot(dx, dy);
+            var steps = Math.ceil(len / (rasterRes * 2));
+            
+            for (var k = 0; k <= steps; k++) {
+                var t = k / steps;
+                var px = Math.floor((p1.x + dx * t) / rasterRes);
+                var py = Math.floor((p1.y + dy * t) / rasterRes);
+                var key = px + '_' + py;
+                if (!added[key] && px >= 0 && py >= 0) {
+                    added[key] = true;
+                    pixels.push({ x: px, y: py });
+                }
+            }
+        }
+    }
+    
+    return pixels;
+}
+
+function placeOneRaster(s, placedShapes) {
+    var gapPx = (gapEnabledGlobal) ? Math.ceil(gapSizeGlobal / rasterRes) : 0;
+
+    for (var i = 0; i < placedShapes.length; i++) {
+        markShapeOnGrid(placedShapes[i], placedShapes[i].activeVariant, placedShapes[i].x, placedShapes[i].y, gapPx);
+    }
+    
+    rebuildContactPerimeter();
+    
+    var checkerMasks = [];
+    var shapePerimeters = [];
+    for (var v = 0; v < 4; v++) {
+        checkerMasks.push(buildCheckerMask(s, v));
+        shapePerimeters.push(getPerimeterPixels(s, v));
+    }
+    
+    var bestX = 0, bestY = 0, bestV = 0, bestContact = -1;
+    var stepC = Math.max(1, Math.floor(contactCount /(speedPriority * 100)));
+    
+    for (var c = 0; c < contactCount; c += stepC) {
+        var packed = contactPoints[c];
+        var cx = packed & 0xFFFF;
+        var cy = (packed >> 16) & 0xFFFF;
+        var worldCX = cx * rasterRes + rasterRes / 2;
+        var worldCY = cy * rasterRes + rasterRes / 2;
+        
+        for (var v = 0; v < 4; v++) {
+            var perim = shapePerimeters[v];
+            var stepP = Math.max(1, Math.floor(perim.length / (speedPriority *10)));
+            
+            for (var p = 0; p < perim.length; p += stepP) {
+                var posX = worldCX - perim[p].x * rasterRes;
+                var posY = worldCY - perim[p].y * rasterRes;
+                var gridX = Math.floor(posX / rasterRes);
+                var gridY = Math.floor(posY / rasterRes);
+                
+                var sBB = getBBoxAt(s, v, posX, posY);
+                if (sBB.w === 0) continue;
+                if (sBB.x < edgeMarginGlobal || sBB.y < edgeMarginGlobal || 
+                    sBB.x + sBB.w > sheet.w - edgeMarginGlobal || 
+                    sBB.y + sBB.h > sheet.h - edgeMarginGlobal) continue;
+                
+                if (checkCollisionFast(checkerMasks[v], gridX, gridY)) continue;
+                if (checkCollisionPerimeter(s, v, posX, posY)) continue;
+                
+				var contact = countContactFromPerimeter(s, v, posX, posY);
+
+				// Бонус за близость к первой размещённой фигуре
+				var proximityBonus = 0;
+				if (placedShapes.length > 0 && groupsEnabledGlobal) {
+					var firstBB = getWorldBBox(placedShapes[0]);
+					var firstCX = firstBB.x + firstBB.w / 2;
+					var firstCY = firstBB.y + firstBB.h / 2;
+					var sBB = getBBoxAt(s, v, posX, posY);
+					var sCX = sBB.x + sBB.w / 2;
+					var sCY = sBB.y + sBB.h / 2;
+					var dist = Math.hypot(sCX - firstCX, sCY - firstCY);
+					proximityBonus = Math.max(0, (sheet.w - dist) / sheet.w * contact * 2); // до +50% контакта за близость
+				}
+
+				var adjustedContact = contact + proximityBonus;
+
+				if (adjustedContact > bestContact) {
+					bestContact = adjustedContact;
+					bestX = posX; bestY = posY; bestV = v;
+				}
+            }
+        }
+    }
+
+    if (bestContact < 0) {
+        var marginPx = Math.ceil(edgeMarginGlobal / rasterRes);
+        for (var v = 0; v < 4; v++) {
+            var sBB = getBBoxAt(s, v, 0, 0);
+            if (sBB.w === 0) continue;
+            var figW = Math.ceil(sBB.w / rasterRes);
+            var figH = Math.ceil(sBB.h / rasterRes);
+            
+            var found = false;
+            for (var gy = marginPx; gy <= gridH - figH - marginPx && !found; gy += 3) {
+                for (var gx = marginPx; gx <= gridW - figW - marginPx && !found; gx += 3) {
+                    if (checkCollisionFast(checkerMasks[v], gx, gy)) continue;
+                    
+                    var posX = gx * rasterRes - sBB.x;
+                    var posY = gy * rasterRes - sBB.y;
+                    
+                    if (checkCollisionPerimeter(s, v, posX, posY)) continue;
+                    
+                    bestContact = 0;
+                    bestX = posX; bestY = posY; bestV = v;
+                    found = true;
+                }
+            }
+            if (found) break;
+        }
+    }
+	if (bestContact > 0) {
+    var refineStep = rasterRes;
+    for (var dy = -1.0; dy <= 1.0; dy += refineStep/2) {
+        for (var dx = -1.0; dx <= 1.0; dx += refineStep/2) {
+            var tx = bestX + dx;
+            var ty = bestY + dy;
+            var gx = Math.floor(tx / rasterRes);
+            var gy = Math.floor(ty / rasterRes);
+            
+            if (checkCollisionFast(checkerMasks[bestV], gx, gy)) continue;
+            if (checkCollisionPerimeter(s, bestV, tx, ty)) continue;
+            
+            var contact = countContactFromPerimeter(s, bestV, tx, ty);
+            if (contact > bestContact) {
+                bestContact = contact;
+                bestX = tx; bestY = ty;
+            }
+        }
+    }
+}
+    return { x: bestX, y: bestY, v: bestV, contact: bestContact };
+}
+
+function rasterLayoutV2(shapesToPlace, progressCallback, doneCallback) {
+    var startTime = Date.now();
+    
+    var byArea = shapesToPlace.slice().sort(function(a, b) {
+        return getShapeArea(b) - getShapeArea(a);
+    });
+    
+    var topResults = [];
+    var actualCycles = Math.min(maxCyclesGlobal, byArea.length);
+    
+    var lastFirstKey = 'lastFirst_raster_' + shapesToPlace.length;
+    var lastFirstIdx = parseInt(localStorage.getItem(lastFirstKey) || '0');
+    var firstShapes = [];
+    for (var i = 0; i < actualCycles; i++) {
+        var idx = (lastFirstIdx + i) % byArea.length;
+        firstShapes.push(byArea[idx]);
+    }
+    localStorage.setItem(lastFirstKey, (lastFirstIdx + actualCycles) % byArea.length);
+    
+    var saved = shapesToPlace.map(function(s) {
+        return { shape: s, x: s.x, y: s.y, v: s.activeVariant, rot: s.rot };
+    });
+    
+    var currentCycle = 0;
+    var currentShapeIdx = 0;
+    var placed = [];
+    var notPlaced = [];
+    var sorted = [];
+    var totalShapes = byArea.length * actualCycles;
+    var processedShapes = 0;
+    
+    function processNextShape() {
+        if (currentCycle >= actualCycles) {
+            finishAll();
+            return;
+        }
+        
+        if (currentShapeIdx === 0) {
+            // Начало нового цикла
+            for (var i = 0; i < shapesToPlace.length; i++) {
+                shapesToPlace[i].x = 0;
+                shapesToPlace[i].y = 0;
+                shapesToPlace[i].activeVariant = 0;
+                shapesToPlace[i].rot = 0;
+                updateCornersWorld(shapesToPlace[i]);
+            }
+            initGrid();
+            
+            sorted = [firstShapes[currentCycle]];
+            for (var i = 0; i < byArea.length; i++) {
+                if (byArea[i] !== firstShapes[currentCycle]) sorted.push(byArea[i]);
+            }
+            placed = [];
+            notPlaced = [];
+        }
+        
+if (currentShapeIdx < sorted.length) {
+    var s = sorted[currentShapeIdx];
+    var result = placeOneRaster(s, placed);
+    
+    if (result.contact >= 0) {
+        s.x = result.x;
+        s.y = result.y;
+        s.activeVariant = result.v;
+        s.rot = s.cornersBase[result.v].rot;
+        s._pendingTransform = true; 
+        
+        var gapPx = (gapEnabledGlobal) ? Math.ceil(gapSizeGlobal / rasterRes) : 0;
+        var updated = markShapeOnGrid(s, result.v, result.x, result.y, gapPx);
+        updateContactPerimeterLocal(
+            Math.floor(updated.minX / rasterRes) - 1,
+            Math.floor(updated.minY / rasterRes) - 1,
+            Math.ceil(updated.maxX / rasterRes) + 1,
+            Math.ceil(updated.maxY / rasterRes) + 1
+        );
+        placed.push(s);
+    } else {
+        notPlaced.push(s);
+    }
+    
+    currentShapeIdx++;
+    setTimeout(processNextShape, 0); // 0 мс — максимально быстро
+} else {
+            // Конец цикла
+            var offX = sheet.w + 10, offY = 0;
+    for (var i = 0; i < placed.length; i++) {
+        if (placed[i]._pendingTransform) {
+            updateCornersWorld(placed[i]);
+            applyTransform(placed[i]);
+            delete placed[i]._pendingTransform;
+        }
+    }
+    
+    processedShapes += sorted.length;
+    if (progressCallback) {
+        progressCallback(Math.round(processedShapes / totalShapes * 100));
+    }
+            
+            var bb = placed.length > 0 ? getTotalBBox(placed) : { w: 0, h: 0 };
+            var area = 0;
+            for (var i = 0; i < placed.length; i++) area += getShapeArea(placed[i]);
+            var fill = (bb.w * bb.h) > 0 ? (area / (bb.w * bb.h)) * 100 : 0;
+            var ratio = Math.min(bb.w, bb.h) / Math.max(bb.w, bb.h);
+            
+var isDuplicate = false;
+for (var t = 0; t < topResults.length; t++) {
+    if (topResults[t].positions.length === placed.length) {
+        var same = true;
+        for (var p = 0; p < placed.length; p++) {
+            if (Math.abs(topResults[t].positions[p].x - placed[p].x) > 0.5 ||
+                Math.abs(topResults[t].positions[p].y - placed[p].y) > 0.5) {
+                same = false;
+                break;
+            }
+        }
+        if (same) { isDuplicate = true; break; }
+    }
+}
+
+			if (!isDuplicate) {
+				topResults.push({
+					cycle: currentCycle + 1,
+					fill: fill,
+					squareness: ratio * 100,
+					placedCount: placed.length,
+					notPlacedCount: notPlaced.length,
+					positions: placed.map(function(s) { return { shape: s, x: s.x, y: s.y, v: s.activeVariant, rot: s.rot }; }),
+					notPlaced: notPlaced.slice()
+				});
+			}
+            
+            if (notPlaced.length === 0 && stopIfAllPlacedGlobal) {
+                finishAll();
+                return;
+            }
+            
+            currentCycle++;
+            currentShapeIdx = 0;
+            setTimeout(processNextShape, 1);
+        }
+    }
+    
+    function finishAll() {
+        topResults.sort(function(a, b) { return b.placedCount - a.placedCount; });
+        var best = topResults[0];
+        
+        for (var i = 0; i < best.positions.length; i++) {
+            var p = best.positions[i];
+            p.shape.x = p.x; p.shape.y = p.y;
+            p.shape.activeVariant = p.v; p.shape.rot = p.rot;
+            updateCornersWorld(p.shape);
+            applyTransform(p.shape);
+        }
+        
+        updateOccupiedStatus();
+        checkOverlapsRaster();
+        updateStats();
+        
+        var elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+lastResults = topResults;
+lastElapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+
+        if (best.notPlacedCount === 0 && topResults.length === 1) {
+            showToast('✅ ' + best.placedCount + ' фигур (' + elapsed + 'с)', true);
+        } else {
+            showChoiceDialog(topResults, elapsed);
+        }
+        
+        if (progressCallback) progressCallback(100);
+		if (doneCallback) doneCallback();
+if (lastResults && lastResults.length > 1) {
+    document.getElementById('btnLastLayouts').style.display = 'inline-block';
+}
+    }
+    
+    processNextShape();
+}
+
+function autoLayout(callback) {
+    if (shapes.length < 2) { showToast('Нужно минимум 2 фигуры'); return; }
+    showToast('Оптимизация...', true);
+    
+    var startTime = Date.now();
+    var gapPx = (gapEnabledGlobal) ? Math.ceil(gapSizeGlobal / rasterRes) : 0;
+    
+    function getBBoxArea() {
+        var bb = getTotalBBox(shapes);
+        return bb.w * bb.h;
+    }
+    
+    var bestArea = getBBoxArea();
+    var noImprovementCount = 0;
+    var totalAttempts = 0;
+    var maxAttempts = shapes.length * 20;
+    var lastPercent = 0;
+	
+    function tryImprove() {
+        if (!optimizeRunning || noImprovementCount >= shapes.length * 2 || totalAttempts >= maxAttempts) {
+            finish();
+            return;
+        }
+        
+        totalAttempts++;
+        
+        var idx = Math.floor(Math.random() * shapes.length);
+        var s = shapes[idx];
+        var others = [];
+        for (var i = 0; i < shapes.length; i++) {
+            if (i !== idx) others.push(shapes[i]);
+        }
+        
+        var oldX = s.x, oldY = s.y, oldV = s.activeVariant, oldRot = s.rot;
+        var oldArea = getBBoxArea();
+        var oldContact = countContactFromPerimeter(s, oldV, oldX, oldY);
+        
+        initGrid();
+        for (var i = 0; i < others.length; i++) {
+            markShapeOnGrid(others[i], others[i].activeVariant, others[i].x, others[i].y, gapPx);
+        }
+        rebuildContactPerimeter();
+        
+        var checkerMasks = [];
+        var shapePerimeters = [];
+        for (var v = 0; v < 4; v++) {
+            checkerMasks.push(buildCheckerMask(s, v));
+            shapePerimeters.push(getPerimeterPixels(s, v));
+        }
+        
+        var cx = 0, cy = 0;
+        if (others.length > 0) {
+            var bb = getTotalBBox(others);
+            cx = bb.x + bb.w / 2;
+            cy = bb.y + bb.h / 2;
+        }
+        
+        var sBB = getWorldBBox(s);
+        var oldDist = Math.hypot((sBB.x + sBB.w/2) - cx, (sBB.y + sBB.h/2) - cy);
+        
+        var bestX = oldX, bestY = oldY, bestV = oldV;
+        var bestDist = oldDist;
+        var found = false;
+        
+        var stepC = Math.max(1, Math.floor(contactCount / (speedPriority *100)));
+        
+        for (var c = 0; c < contactCount; c += stepC) {
+            var packed = contactPoints[c];
+            var pcx = packed & 0xFFFF;
+            var pcy = (packed >> 16) & 0xFFFF;
+            var worldCX = pcx * rasterRes + rasterRes / 2;
+            var worldCY = pcy * rasterRes + rasterRes / 2;
+            
+            for (var v = 0; v < 4; v++) {
+                var perim = shapePerimeters[v];
+                var stepP = Math.max(1, Math.floor(perim.length / (speedPriority * 10)));
+                
+                for (var p = 0; p < perim.length; p += stepP) {
+                    var posX = worldCX - perim[p].x * rasterRes;
+                    var posY = worldCY - perim[p].y * rasterRes;
+                    var gridX = Math.floor(posX / rasterRes);
+                    var gridY = Math.floor(posY / rasterRes);
+                    
+                    var testBB = getBBoxAt(s, v, posX, posY);
+                    if (testBB.w === 0) continue;
+                    if (testBB.x < edgeMarginGlobal || testBB.y < edgeMarginGlobal || 
+                        testBB.x + testBB.w > sheet.w - edgeMarginGlobal || 
+                        testBB.y + testBB.h > sheet.h - edgeMarginGlobal) continue;
+                    
+                    if (checkCollisionFast(checkerMasks[v], gridX, gridY)) continue;
+                    if (checkCollisionPerimeter(s, v, posX, posY)) continue;
+                    
+                    var contact = countContactFromPerimeter(s, v, posX, posY);
+                    if (contact === 0) continue;
+                    
+                    var fx = posX + testBB.w / 2;
+                    var fy = posY + testBB.h / 2;
+                    var dist = Math.hypot(fx - cx, fy - cy);
+                    
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestX = posX; bestY = posY; bestV = v;
+                        found = true;
+                    }
+                }
+            }
+        }
+        
+        if (found && bestDist < oldDist - 0.01) {
+            s.x = bestX; s.y = bestY;
+            s.activeVariant = bestV; s.rot = s.cornersBase[bestV].rot;
+            updateCornersWorld(s);
+            
+            var newArea = getBBoxArea();
+            var newContact = countContactFromPerimeter(s, bestV, bestX, bestY);
+            
+            if (newArea < oldArea - 0.01 || newContact > oldContact) {
+                applyTransform(s);
+                if (newArea < bestArea) bestArea = newArea;
+                noImprovementCount = 0;
+            } else {
+                s.x = oldX; s.y = oldY;
+                s.activeVariant = oldV; s.rot = oldRot;
+                updateCornersWorld(s);
+                applyTransform(s);
+                noImprovementCount++;
+            }
+        } else {
+            noImprovementCount++;
+        }
+        totalAttempts++;
+        var percent = Math.min(99, Math.round(totalAttempts / maxAttempts * 100));
+        if (percent !== lastPercent) {
+            lastPercent = percent;
+            document.getElementById('btnOptimize').textContent = '⏳ ' + percent + '%';
+        }
+        setTimeout(tryImprove, 5);
+    }
+    
+    function finish() {
+        updateOccupiedStatus();
+        checkOverlapsRaster();
+        updateStats();
+        var elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+        showToast('✅ Оптимизация (' + elapsed + 'с)', true);
+        optimizeRunning = false;
+        document.getElementById('btnOptimize').textContent = '🔥 Оптимизация заполнения';
+		document.getElementById('btnOptimize').disabled = false;
+        if (callback) callback();
+    }
+    
+    tryImprove();
+}
+
+function showChoiceDialog(results, elapsed) {
+    var html = '';
+    
+    // Заголовок
+    html += '<div style="font-size:0.8em;color:#777;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px;">📊 '+results.length+'  вариантов  за ' + elapsed + 'c</div>';
+    
+    // Информация о текущем просмотре
+    html += '<div id="choiceInfo" style="color:#2ed573;font-size:0.7em;margin-bottom:8px;min-height:16px;">&nbsp;</div>';
+    
+    // Список вариантов
+    for (var i = 0; i < results.length; i++) {
+        var r = results[i];
+        
+        // Вычисляем заполнение и квадратность для этого варианта
+        var savedPositions = shapes.map(function(s) {
+            return { shape: s, x: s.x, y: s.y, rot: s.rot, v: s.activeVariant };
+        });
+        
+        // Временно применяем вариант
+        for (var j = 0; j < r.positions.length; j++) {
+            var p = r.positions[j];
+            p.shape.x = p.x; p.shape.y = p.y;
+            p.shape.activeVariant = p.v; p.shape.rot = p.rot;
+            updateCornersWorld(p.shape);
+        }
+        
+        var bb = getTotalBBox(shapes);
+        var totalArea = 0;
+        for (var j = 0; j < shapes.length; j++) {
+            totalArea += getShapeArea(shapes[j]);
+        }
+        var fill = (bb.w * bb.h) > 0 ? (totalArea / (bb.w * bb.h)) * 100 : 0;
+        var ratio = Math.min(bb.w, bb.h) / Math.max(bb.w, bb.h);
+        var sq = ratio * 100;
+        
+        // Восстанавливаем
+        for (var j = 0; j < savedPositions.length; j++) {
+            savedPositions[j].shape.x = savedPositions[j].x;
+            savedPositions[j].shape.y = savedPositions[j].y;
+            savedPositions[j].shape.activeVariant = savedPositions[j].v;
+            savedPositions[j].shape.rot = savedPositions[j].rot;
+            updateCornersWorld(savedPositions[j].shape);
+        }
+        
+        var fillColor = fill > 70 ? '#2ed573' : fill > 50 ? '#ffa502' : '#ff4444';
+        var sqColor = sq > 80 ? '#2ed573' : sq > 60 ? '#ffa502' : '#ff4444';
+        
+        html += '<button class="view-btn" data-index="' + i + '" ' +
+                'style="' +
+                'width:100%;' +
+                'padding:7px 10px;' +
+                'margin:2px 0;' +
+                'background:#111122;' +
+                'border:1px solid #2a2a3a;' +
+                'border-radius:6px;' +
+                'color:#d0d0d0;' +
+                'cursor:pointer;' +
+                'font-size:0.75em;' +
+                'font-weight:600;' +
+                'text-align:left;' +
+                'transition:all 0.2s;' +
+                '"' +
+                ' onmouseover="this.style.background=\'#1a1a2e\';this.style.borderColor=\'#ff4444\';"' +
+                ' onmouseout="this.style.background=\'#111122\';this.style.borderColor=\'#2a2a3a\';"' +
+                '>' +
+                '<span style="color:' + fillColor + ';">📦 ' + fill.toFixed(1) + '%</span> ' +
+                '<span style="color:' + sqColor + ';margin-left:8px;">📐 ' + sq.toFixed(1) + '%</span> ' +
+                '<span style="color:#777;margin-left:8px;font-size:0.8em;">#' + (i+1) + '</span>' +
+                '</button>';
+    }
+    
+    // Кнопка закрытия
+    html += '<button class="close-btn" ' +
+            'style="' +
+            'width:100%;' +
+            'padding:7px 10px;' +
+            'margin-top:8px;' +
+            'background:transparent;' +
+            'border:1px solid #ff4444;' +
+            'border-radius:6px;' +
+            'color:#ff4444;' +
+            'cursor:pointer;' +
+            'font-size:0.75em;' +
+            'font-weight:600;' +
+            'transition:all 0.2s;' +
+            '"' +
+            ' onmouseover="this.style.background=\'#ff4444\';this.style.color=\'#fff\';"' +
+            ' onmouseout="this.style.background=\'transparent\';this.style.color=\'#ff4444\';"' +
+            '>✕ Закрыть</button>';
+    
+    // Создаём контейнер диалога
+    var dialog = document.createElement('div');
+    dialog.id = 'choiceDialog';
+    dialog.style.cssText = 
+        'position:fixed;' +
+        'top:0%;' +
+        'left:0%;' +
+        'background:#161622;' +
+        'padding:16px;' +
+        'border-radius:8px;' +
+        'border:1px solid #2a2a3a;' +
+        'z-index:2000;' +
+        'color:#d0d0d0;' +
+        'width:360px;' +
+        'max-height:80vh;' +
+        'overflow-y:auto;' +
+        'box-shadow:0 8px 32px rgba(0,0,0,0.5);';
+    
+    dialog.innerHTML = html;
+    document.body.appendChild(dialog);
+    
+    // Обработчики кнопок
+    var buttons = dialog.querySelectorAll('.view-btn');
+    for (var b = 0; b < buttons.length; b++) {
+        buttons[b].addEventListener('click', function() {
+            var index = parseInt(this.getAttribute('data-index'));
+            var r = results[index];
+            
+            // Применяем выбранный вариант
+            for (var i = 0; i < r.positions.length; i++) {
+                var p = r.positions[i];
+                p.shape.x = p.x; 
+                p.shape.y = p.y;
+                p.shape.rot = p.rot;
+                p.shape.activeVariant = p.v;
+                updateCornersWorld(p.shape);
+                applyTransform(p.shape);
+            }
+            // Применяем неразмещённые (справа от листа)
+            if (r.notPlaced) {
+                var offsetX = sheet.w + 10, offsetY = 0;
+                for (var i = 0; i < r.notPlaced.length; i++) {
+                    r.notPlaced[i].x = offsetX;
+                    r.notPlaced[i].y = offsetY;
+                    r.notPlaced[i].activeVariant = 0;
+                    r.notPlaced[i].rot = 0;
+                    updateCornersWorld(r.notPlaced[i]);
+                    applyTransform(r.notPlaced[i]);
+                    offsetY += getWorldBBox(r.notPlaced[i]).h + 5;
+                }
+            }
+                        
+            updateStats();
+            
+            // Обновляем информацию
+            var bb = getTotalBBox(shapes);
+            var totalArea = 0;
+            for (var i = 0; i < shapes.length; i++) {
+                totalArea += getShapeArea(shapes[i]);
+            }
+            var fill = (bb.w * bb.h) > 0 ? (totalArea / (bb.w * bb.h)) * 100 : 0;
+            var ratio = Math.min(bb.w, bb.h) / Math.max(bb.w, bb.h);
+            var sq = ratio * 100;
+            
+            document.getElementById('choiceInfo').innerHTML = 
+                '✅ Вариант #' + (index+1) + 
+                ' | 📦 ' + fill.toFixed(1) + '%' +
+                ' | 📐 ' + sq.toFixed(1) + '%';
+            
+            // Подсвечиваем активную кнопку
+            var allButtons = dialog.querySelectorAll('.view-btn');
+            for (var j = 0; j < allButtons.length; j++) {
+                allButtons[j].style.background = '#111122';
+                allButtons[j].style.borderColor = '#2a2a3a';
+            }
+            this.style.background = '#1a0a0a';
+            this.style.borderColor = '#ff4444';
+        });
+    }
+    
+    dialog.querySelector('.close-btn').addEventListener('click', function() {
+        dialog.remove();
+    });
+    
+    // Закрытие по Escape
+    var escHandler = function(e) {
+        if (e.key === 'Escape') {
+            dialog.remove();
+            document.removeEventListener('keydown', escHandler);
+        }
+    };
+    document.addEventListener('keydown', escHandler);
+	    var firstButton = dialog.querySelector('.view-btn');
+    if (firstButton) {
+        firstButton.click(); // имитируем клик — применит вариант и покажет надпись
+    }
+}
+
+function getPermutations(arr) {
+    if (arr.length <= 1) return [arr.slice()];
+    var result = [];
+    for (var i = 0; i < arr.length; i++) {
+        var first = arr[i];
+        var rest = arr.slice(0, i).concat(arr.slice(i + 1));
+        var perms = getPermutations(rest);
+        for (var j = 0; j < perms.length; j++) {
+            result.push([first].concat(perms[j]));
+        }
+    }
+    return result;
+}
+
+
+//9. Функции интерфейса
+
+function addGrid() {
+// Удаляем старую сетку
+var oldGrid = document.getElementById('grid');
+if (oldGrid) oldGrid.remove();
+
+// Создаём новую сетку
+var gridGroup = document.createElementNS(NS, 'g');
+gridGroup.id = 'grid';
+gridGroup.style.pointerEvents = 'none';
+var gridStep = 10;
+var gridStepM = 1;
+
+for (var gx = sheet.x; gx <= sheet.x + sheet.w; gx += gridStepM) {
+    var line = document.createElementNS(NS, 'line');
+    line.setAttribute('x1', gx);
+    line.setAttribute('y1', sheet.y);
+    line.setAttribute('x2', gx);
+    line.setAttribute('y2', sheet.y + sheet.h);
+    line.setAttribute('stroke', '#F9F9F4');
+    line.setAttribute('stroke-width', '0.1');
+    gridGroup.appendChild(line);
+}
+for (var gy = sheet.y; gy <= sheet.y + sheet.h; gy += gridStepM) {
+    var line = document.createElementNS(NS, 'line');
+    line.setAttribute('x1', sheet.x);
+    line.setAttribute('y1', gy);
+    line.setAttribute('x2', sheet.x + sheet.w);
+    line.setAttribute('y2', gy);
+    line.setAttribute('stroke', '#F9F9F4');
+    line.setAttribute('stroke-width', '0.1');
+    gridGroup.appendChild(line);
+}
+for (var gx = sheet.x; gx <= sheet.x + sheet.w; gx += gridStep) {
+    var line = document.createElementNS(NS, 'line');
+    line.setAttribute('x1', gx);
+    line.setAttribute('y1', sheet.y);
+    line.setAttribute('x2', gx);
+    line.setAttribute('y2', sheet.y + sheet.h);
+    line.setAttribute('stroke', '#e0e0d0');
+    line.setAttribute('stroke-width', '0.1');
+    gridGroup.appendChild(line);
+}
+for (var gy = sheet.y; gy <= sheet.y + sheet.h; gy += gridStep) {
+    var line = document.createElementNS(NS, 'line');
+    line.setAttribute('x1', sheet.x);
+    line.setAttribute('y1', gy);
+    line.setAttribute('x2', sheet.x + sheet.w);
+    line.setAttribute('y2', gy);
+    line.setAttribute('stroke', '#e0e0d0');
+    line.setAttribute('stroke-width', '0.1');
+    gridGroup.appendChild(line);
+}
+
+var shapesGroup = document.getElementById('shapes');
+mainSvg.insertBefore(gridGroup, shapesGroup);
+};
+
+function mergeAll() {
+    if (shapes.length < 2) { showToast('Нужно минимум 2 фигуры'); return; }
+    deselectAll();
+    updateOccupiedStatus();
+    
+    var groups = [];
+    var visited = {};
+    
+    for (var i = 0; i < shapes.length; i++) {
+        if (visited[i]) continue;
+        
+        var group = [];
+        var queue = [shapes[i]];
+        visited[i] = true;
+        
+        while (queue.length > 0) {
+            var s = queue.shift();
+            group.push(s);
+            updateCornersWorld(s);
+            
+            for (var j = 0; j < shapes.length; j++) {
+                if (visited[j]) continue;
+                updateCornersWorld(shapes[j]);
+                
+                for (var ci = 0; ci < s.activeCorners.length; ci++) {
+                    if (!s.activeCorners[ci].occupied) continue;
+                    for (var cj = 0; cj < shapes[j].activeCorners.length; cj++) {
+                        if (!shapes[j].activeCorners[cj].occupied) continue;
+                        if (Math.hypot(s.activeCorners[ci].x - shapes[j].activeCorners[cj].x,
+                                       s.activeCorners[ci].y - shapes[j].activeCorners[cj].y) < 0.5) {
+                            visited[j] = true;
+                            queue.push(shapes[j]);
+                            ci = s.activeCorners.length;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        groups.push(group);
+    }
+    
+    var newShapes = [];
+    
+    for (var g = 0; g < groups.length; g++) {
+        if (groups[g].length === 1) {
+            newShapes.push(groups[g][0]);
+            continue;
+        }
+		var oldSharedD = '';
+		for (var s = 0; s < groups[g].length; s++) {
+			if (groups[g][s].isGroup) {
+				var sharedChild = groups[g][s].el.querySelector('path:not(:first-child)');
+				if (sharedChild) {
+					oldSharedD += sharedChild.getAttribute('d') + ' ';
+				}
+			}
+		}
+        // Собираем все рёбра
+        var allEdges = [];
+        for (var s = 0; s < groups[g].length; s++) {
+            var polys = getWorldPolys(groups[g][s]);
+            for (var p = 0; p < polys.length; p++) {
+                for (var i = 0; i < polys[p].length; i++) {
+                    var a = polys[p][i];
+                    var b = polys[p][(i + 1) % polys[p].length];
+                    allEdges.push({ a: a, b: b });
+                }
+            }
+        }
+        
+        // Находим общие и уникальные рёбра
+        var sharedEdges = [];
+        var uniqueEdges = allEdges.slice();
+        
+        for (var i = 0; i < uniqueEdges.length; i++) {
+            for (var j = i + 1; j < uniqueEdges.length; j++) {
+                var same = (Math.abs(uniqueEdges[i].a.x - uniqueEdges[j].a.x) < 0.1 && 
+                            Math.abs(uniqueEdges[i].a.y - uniqueEdges[j].a.y) < 0.1 &&
+                            Math.abs(uniqueEdges[i].b.x - uniqueEdges[j].b.x) < 0.1 && 
+                            Math.abs(uniqueEdges[i].b.y - uniqueEdges[j].b.y) < 0.1) ||
+                           (Math.abs(uniqueEdges[i].a.x - uniqueEdges[j].b.x) < 0.1 && 
+                            Math.abs(uniqueEdges[i].a.y - uniqueEdges[j].b.y) < 0.1 &&
+                            Math.abs(uniqueEdges[i].b.x - uniqueEdges[j].a.x) < 0.1 && 
+                            Math.abs(uniqueEdges[i].b.y - uniqueEdges[j].a.y) < 0.1);
+                if (same) {
+                    sharedEdges.push(uniqueEdges[i]);
+                    uniqueEdges.splice(j, 1);
+                    uniqueEdges.splice(i, 1);
+                    i--;
+                    break;
+                }
+            }
+        }
+        
+        // Строим path из уникальных + общие как линии стыка
+        var used = {};
+        var contours = [];
+        
+        for (var start = 0; start < uniqueEdges.length; start++) {
+            if (used[start]) continue;
+            
+            var contour = [uniqueEdges[start].a, uniqueEdges[start].b];
+            used[start] = true;
+            
+            var extended = true;
+            while (extended) {
+                extended = false;
+                var last = contour[contour.length - 1];
+                for (var i = 0; i < uniqueEdges.length; i++) {
+                    if (used[i]) continue;
+                    if (Math.abs(uniqueEdges[i].a.x - last.x) < 0.1 && 
+                        Math.abs(uniqueEdges[i].a.y - last.y) < 0.1) {
+                        contour.push(uniqueEdges[i].b);
+                        used[i] = true;
+                        extended = true;
+                        break;
+                    } else if (Math.abs(uniqueEdges[i].b.x - last.x) < 0.1 && 
+                               Math.abs(uniqueEdges[i].b.y - last.y) < 0.1) {
+                        contour.push(uniqueEdges[i].a);
+                        used[i] = true;
+                        extended = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (contour.length >= 3) contours.push(contour);
+        }
+        
+        var contourD = '';
+        for (var c = 0; c < contours.length; c++) {
+            for (var pt = 0; pt < contours[c].length; pt++) {
+                contourD += (pt === 0 ? 'M' : 'L') + 
+                        contours[c][pt].x.toFixed(4) + ' ' + 
+                        contours[c][pt].y.toFixed(4) + ' ';
+            }
+            contourD += 'Z ';
+        }
+        
+        // Линии стыка — ВСЕ общие рёбра
+		var sharedD = oldSharedD;
+		for (var s = 0; s < sharedEdges.length; s++) {
+			sharedD += 'M' + sharedEdges[s].a.x.toFixed(4) + ' ' + sharedEdges[s].a.y.toFixed(4) + 
+					  'L' + sharedEdges[s].b.x.toFixed(4) + ' ' + sharedEdges[s].b.y.toFixed(4) + ' ';
+		}
+        
+        // Удаляем старые
+        for (var s = 0; s < groups[g].length; s++) {
+            groups[g][s].el.remove();
+        }
+        
+        var gEl = document.createElementNS(NS, 'g');
+        
+        var contourEl = document.createElementNS(NS, 'path');
+        contourEl.setAttribute('d', contourD.trim());
+        contourEl.setAttribute('fill', 'rgba(0,0,0,0.1)');
+        contourEl.setAttribute('stroke', '#000');
+        contourEl.setAttribute('stroke-width', '0.12');
+        gEl.appendChild(contourEl);
+        
+        if (sharedD.trim()) {
+            var sharedEl = document.createElementNS(NS, 'path');
+            sharedEl.setAttribute('d', sharedD.trim());
+            sharedEl.setAttribute('fill', 'none');
+            sharedEl.setAttribute('stroke', '#000');
+            sharedEl.setAttribute('stroke-width', '0.12');
+            gEl.appendChild(sharedEl);
+        }
+        
+        gEl.style.cursor = 'pointer';
+        mainSvg.querySelector('#shapes').appendChild(gEl);
+        
+        var newShape = {
+            el: gEl,
+            x: 0, y: 0, rot: 0,
+            flipH: false, flipV: false,
+            isGroup: true
+        };
+        
+        applyTransform(newShape);
+        
+        gEl.addEventListener('mousedown', function(e) {
+            if (e.button !== 0) return;
+            e.stopPropagation(); e.preventDefault();
+            selectShape(newShape);
+            dragging = true;
+            var w = screenToViewBox(e.clientX, e.clientY);
+            ds = { x: w.x - newShape.x, y: w.y - newShape.y };
+        });
+        gEl.addEventListener('click', function(e) {
+            e.stopPropagation();
+            selectShape(newShape);
+        });
+        
+var allPolys = getLocalPolys(contourEl);
+
+// Оставляем только контур с максимальной площадью (внешний)
+var polys = [];
+var maxArea = 0;
+var bestPoly = null;
+for (var i = 0; i < allPolys.length; i++) {
+    var area = polygonArea(allPolys[i]);
+    if (area > maxArea) {
+        maxArea = area;
+        bestPoly = allPolys[i];
+    }
+}
+if (bestPoly) polys = [bestPoly];
+        
+        var cx = 0, cy = 0, cnt = 0;
+        for (var i = 0; i < polys.length; i++) {
+            for (var j = 0; j < polys[i].length; j++) {
+                cx += polys[i][j].x;
+                cy += polys[i][j].y;
+                cnt++;
+            }
+        }
+        if (cnt > 0) { cx /= cnt; cy /= cnt; }
+        
+        newShape.cx = cx;
+        newShape.cy = cy;
+        
+        // Фильтруем углы — только внешние
+        var filteredCorners = [];
+        for (var i = 0; i < polys.length; i++) {
+            for (var j = 0; j < polys[i].length; j++) {
+                var pt = polys[i][j];
+                var isOnShared = false;
+                for (var k = 0; k < sharedEdges.length; k++) {
+                    var d = ptSegDist(pt.x, pt.y, sharedEdges[k].a.x, sharedEdges[k].a.y, sharedEdges[k].b.x, sharedEdges[k].b.y);
+                    if (d < 0.15) { isOnShared = true; break; }
+                }
+                if (!isOnShared) {
+                    filteredCorners.push(pt);
+                }
+            }
+        }
+        
+        newShape.cornersBase = [];
+        for (var r = 0; r < 4; r++) {
+            var rad = r * 90 * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+            var corners = [];
+            for (var i = 0; i < filteredCorners.length; i++) {
+                var pt = filteredCorners[i];
+                var dx = pt.x - cx, dy = pt.y - cy;
+                corners.push({
+                    x: cx + dx * cos - dy * sin,
+                    y: cy + dx * sin + dy * cos,
+                    occupied: false
+                });
+            }
+            newShape.cornersBase.push({ rot: r * 90, corners: corners });
+        }
+        
+        newShape.activeVariant = 0;
+        newShape.activeCorners = newShape.cornersBase[0].corners;
+        updateCornersWorld(newShape);
+        newShapes.push(newShape);
+    }
+    
+    shapes = newShapes;
+    updateStats();
+    showToast('Объединено в ' + shapes.length + ' групп', true);
+}
+
+
+// Кнопки
+
+document.getElementById('btnAuto').addEventListener('click', function() {
+    var btn = document.getElementById('btnAuto');
+    var originalText = btn.textContent;
+    btn.textContent = '⏳ 0%';
+    btn.disabled = true;
+    
+    gridW = Math.ceil(sheet.w / rasterRes);
+    gridH = Math.ceil(sheet.h / rasterRes);
+    initGrid();
+    
+    function onProgress(percent) {
+        btn.textContent = '⏳ ' + percent + '%';
+    }
+    
+    function onDone() {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+    
+    setTimeout(function() {
+        rasterLayoutV2(shapes, onProgress, onDone);
+    }, 50);
+});
+
+document.getElementById('btnRotCW').addEventListener('click', function() {
+    if (!selected) return;
+    rotateShape(selected, 90);
+    snapShape(selected, SRRotate);
+    updateOccupiedStatus();
+    updateStats();
+});
+document.getElementById('btnRotCCW').addEventListener('click', function() {
+    if (!selected) return;
+    rotateShape(selected, -90);
+    snapShape(selected, SRRotate);
+    updateOccupiedStatus();
+    updateStats();
+});
+document.getElementById('btnDup').addEventListener('click', function() {
+if (!selected) return;
+    
+    if (selected.isGroup) {
+        // Дублируем группу
+        var gEl = selected.el.cloneNode(true);
+        gEl.style.outline = '';
+        gEl.style.filter = '';
+        gEl.style.pointerEvents = 'all';
+        
+        mainSvg.querySelector('#shapes').appendChild(gEl);
+        
+        var ns = {
+            el: gEl,
+            cx: selected.cx,
+            cy: selected.cy,
+            x: selected.x + 15,
+            y: selected.y + 15,
+            rot: selected.rot,
+            flipH: false,
+            flipV: false,
+            isGroup: true,
+            cornersBase: selected.cornersBase,
+            activeVariant: selected.activeVariant,
+            activeCorners: selected.activeCorners
+        };
+        
+        updateCornersWorld(ns);
+        applyTransform(ns);
+        
+        gEl.addEventListener('mousedown', function(e) {
+            if (e.button !== 0) return;
+            e.stopPropagation();
+            e.preventDefault();
+            selectShape(ns);
+            dragging = true;
+            draggingGroup = e.shiftKey;
+            var w = screenToViewBox(e.clientX, e.clientY);
+            ds = { x: w.x - ns.x, y: w.y - ns.y };
+        });
+        gEl.addEventListener('click', function(e) {
+            e.stopPropagation();
+            selectShape(ns);
+        });
+        
+        shapes.push(ns);
+        selectShape(ns);
+    } else {
+        // Дублируем обычную фигуру
+        var c = selected.el.cloneNode(true);
+        c.style.outline = '';
+        c.style.filter = '';
+        
+        var ns = {
+            el: c,
+            cx: selected.cx,
+            cy: selected.cy,
+            x: selected.x + 15,
+            y: selected.y + 15,
+            rot: selected.rot,
+            flipH: false,
+            flipV: false
+        };
+        
+        buildCornersBase(ns);
+        updateCornersWorld(ns);
+        mainSvg.querySelector('#shapes').appendChild(c);
+        applyTransform(ns);
+        
+        (function(shape) {
+			c.addEventListener('mousedown', function(e) {
+				if (e.button !== 0) return;
+				e.stopPropagation();
+				e.preventDefault();
+				selectShape(ns);
+				dragging = true;
+				draggingGroup = e.shiftKey;
+				
+				var w = screenToViewBox(e.clientX, e.clientY);
+				ds = { x: w.x - ns.x, y: w.y - ns.y };
+
+				if (draggingGroup) {
+					updateOccupiedStatus();
+					var group = [];
+					var queue = [ns];
+					var visited2 = {};
+					visited2[shapes.indexOf(ns)] = true;
+					
+					while (queue.length > 0) {
+						var current = queue.shift();
+						group.push(current);
+						updateCornersWorld(current);
+						
+						for (var i = 0; i < shapes.length; i++) {
+							if (visited2[i]) continue;
+							var other = shapes[i];
+							updateCornersWorld(other);
+							
+							var connected = false;
+							for (var j = 0; j < current.activeCorners.length && !connected; j++) {
+								if (!current.activeCorners[j].occupied) continue;
+								for (var k = 0; k < other.activeCorners.length && !connected; k++) {
+									if (!other.activeCorners[k].occupied) continue;
+									if (Math.hypot(current.activeCorners[j].x - other.activeCorners[k].x,
+												   current.activeCorners[j].y - other.activeCorners[k].y) < 0.5) {
+										connected = true;
+										visited2[i] = true;
+										queue.push(other);
+									}
+								}
+							}
+						}
+					}
+					
+					ns._groupOffsets = {};
+					for (var i = 0; i < group.length; i++) {
+						if (group[i] !== ns) {
+							ns._groupOffsets[shapes.indexOf(group[i])] = {
+								x: group[i].x - ns.x,
+								y: group[i].y - ns.y
+							};
+						}
+					}
+				}
+			});
+            c.addEventListener('click', function(e) {
+                e.stopPropagation();
+                selectShape(shape);
+            });
+        })(ns);
+        
+        shapes.push(ns);
+        selectShape(ns);
+    }
+    
+    // Обновить максимум циклов
+    var maxCyclesInput = document.getElementById('maxCyclesInput');
+    if (maxCyclesInput) {
+        maxCyclesInput.max = shapes.length;
+        if (parseInt(maxCyclesInput.value) < shapes.length) {
+            maxCyclesInput.value = shapes.length;
+            maxCyclesGlobal = shapes.length;
+        }
+    }
+    
+    updateStats();
+});
+
+document.getElementById('btnDel').addEventListener('click', function() { 
+    if (!selected) return; 
+    selected.el.remove(); 
+    shapes = shapes.filter(function(s) { return s !== selected; }); 
+    deselectAll(); 
+    
+    // Обновить максимум циклов
+    var maxCyclesInput = document.getElementById('maxCyclesInput');
+    if (maxCyclesInput) {
+        maxCyclesInput.max = shapes.length;
+        if (parseInt(maxCyclesInput.value) > shapes.length) {
+            maxCyclesInput.value = shapes.length;
+            maxCyclesGlobal = shapes.length;
+        }
+    }
+    
+    updateStats(); 
+});
+
+document.getElementById('btnExport').addEventListener('click', function() {
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('xmlns', NS);
+    svg.setAttribute('viewBox', sheet.x + ' ' + sheet.y + ' ' + sheet.w + ' ' + sheet.h);
+    svg.setAttribute('width', sheet.w + 'mm');
+    svg.setAttribute('height', sheet.h + 'mm');
+    
+    for (var i = 0; i < shapes.length; i++) {
+        var s = shapes[i];
+        var c = s.el.cloneNode(true);
+        // НЕ трогаем s.el!
+        var str = 'translate(' + s.x + ',' + s.y + ')';
+        if (s.rot) str += ' translate(' + s.cx + ',' + s.cy + ') rotate(' + s.rot + ') translate(' + (-s.cx) + ',' + (-s.cy) + ')';
+        c.setAttribute('transform', str);
+        c.style.outline = '';
+        c.style.filter = '';
+        c.style.cursor = '';
+        svg.appendChild(c);
+    }
+    
+    var b = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(b);
+    a.download = 'laser-cut.svg';
+    a.click();
+    showToast('Экспортировано', true);
+});
+
+document.getElementById('btnClear').addEventListener('click', function() { 
+    shapes = [];
+    deselectAll();
+    mainSvg.innerHTML = '';
+    
+    sheet.w = parseFloat(document.getElementById('sheetW').value) || 100;
+    sheet.h = parseFloat(document.getElementById('sheetH').value) || 100;
+    sheet.x = 0; sheet.y = 0;
+    
+    mainSvg.setAttribute('viewBox', '0 0 ' + sheet.w + ' ' + sheet.h);
+    
+    var bg = document.createElementNS(NS, 'rect'); 
+    bg.setAttribute('x', 0); bg.setAttribute('y', 0);
+    bg.setAttribute('width', sheet.w); bg.setAttribute('height', sheet.h);
+    bg.setAttribute('fill', '#f5f5f0'); bg.setAttribute('stroke', '#ddd');
+    bg.setAttribute('stroke-width', '0.5'); 
+    mainSvg.appendChild(bg); 
+    
+    var g = document.createElementNS(NS, 'g'); g.id = 'shapes';
+    mainSvg.appendChild(g); 
+    
+    addGrid();
+    vx = 0; vy = 0; zm = 1; applyView(); updateStats();
+    clearMaskOverlay();
+    showToast('Лист очищен', true);
+});
+
+document.getElementById('btnLoadSvg').addEventListener('click', function(){ try{parseSVG(document.getElementById('svgInput').value.trim());}catch(e){showToast('Ошибка парсинга');} });
+document.getElementById('btnFileLoad').addEventListener('click', function(){ document.getElementById('fileInput').click(); });
+document.getElementById('fileInput').addEventListener('change', function(e){ var f=e.target.files[0];if(!f)return; var r=new FileReader(); r.onload=function(ev){document.getElementById('svgInput').value=ev.target.result;parseSVG(ev.target.result);}; r.readAsText(f); });
+mainSvg.addEventListener('click', function(e){ if(e.target===mainSvg||e.target.id==='shapes'||e.target.tagName==='rect')deselectAll(); });
+
+document.addEventListener('keydown', function(e) { 
+    if (e.key === 'Shift') {
+        shiftPressed = true;
+    }
+    if (e.key === 'Control' || e.key === 'Meta') {
+        ctrlPressed = true;
+    }
+    if (e.code === 'Space') { 
+        e.preventDefault();
+        spacePressed = true;
+        canvasContainer.style.cursor = 'grab';
+    }
+    if(!selected || e.target.tagName==='TEXTAREA') return;
+    
+    // Определяем шаг: Ctrl=0.1, Shift=10, обычно=1
+    var step;
+    if (e.ctrlKey || e.metaKey) {
+        step = 0.1;
+    } else if (e.shiftKey) {
+        step = 10;
+    } else {
+        step = 1;
+    }
+    
+    switch(e.key){ 
+        case 'ArrowLeft': selected.x -= step; break;
+        case 'ArrowRight': selected.x += step; break;
+        case 'ArrowUp': selected.y -= step; break;
+        case 'ArrowDown': selected.y += step; break; 
+        case 'r':
+        case 'R':
+        case 'к':
+        case 'К':
+            if (shiftPressed) {
+                rotateGroup(selected, 90);
+            } else {
+                rotateShape(selected, 90);
+            }
+            snapShape(selected, SRRotate);
+            updateOccupiedStatus();
+            updateStats();
+            return;
+        case 'Delete':
+        case 'Backspace':
+            selected.el.remove();
+            shapes=shapes.filter(function(s){return s!==selected;});
+            deselectAll();
+            updateStats();
+            return;
+        case 'Escape':
+            deselectAll();
+            return;
+    }
+    e.preventDefault(); 
+    updateCornersWorld(selected); 
+    applyTransform(selected); 
+    updateStats();
+});
+document.addEventListener('keyup', function(e) {
+    if (e.key === 'Shift') {
+        shiftPressed = false;
+    }
+    if (e.key === 'Control' || e.key === 'Meta') {
+        ctrlPressed = false;
+    }
+    if (e.code === 'Space') {
+        e.preventDefault();
+        spacePressed = false;
+        canvasContainer.style.cursor = '';
+    }
+});
+
+document.getElementById('btnMerge').addEventListener('click', mergeAll);
+document.getElementById('btnResize').addEventListener('click', function() {
+    var newW = parseFloat(document.getElementById('sheetW').value) || 72;
+    var newH = parseFloat(document.getElementById('sheetH').value) || 54;
+    
+    rasterBuffer = null;
+    rasterWithMargin = null;
+    baseMask = null;
+    originalMask = null;
+    maskLoaded = false;
+    clearMaskOverlay();
+    
+    sheet.x = 0;
+    sheet.y = 0;
+    sheet.w = newW;
+    sheet.h = newH;
+    
+    mainSvg.setAttribute('viewBox', '0 0 ' + sheet.w + ' ' + sheet.h);
+    
+    var bg = mainSvg.querySelector('rect');
+    if (bg) {
+        bg.setAttribute('x', 0);
+        bg.setAttribute('y', 0);
+        bg.setAttribute('width', sheet.w);
+        bg.setAttribute('height', sheet.h);
+    }
+    
+    addGrid();
+    applyView();
+    updateStats();
+    showToast('Лист: ' + sheet.w + '×' + sheet.h + ' мм', true);
+});
+document.getElementById('btnCopy').addEventListener('click', function() {
+    if (shapes.length === 0) { showToast('Нет фигур'); return; }
+    
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('xmlns', NS);
+    svg.setAttribute('viewBox', sheet.x + ' ' + sheet.y + ' ' + sheet.w + ' ' + sheet.h);
+    svg.setAttribute('width', sheet.w + 'mm');
+    svg.setAttribute('height', sheet.h + 'mm');
+    
+    for (var i = 0; i < shapes.length; i++) {
+        var s = shapes[i];
+        var c = s.el.cloneNode(true);
+        var str = 'translate(' + s.x + ',' + s.y + ')';
+        if (s.rot) str += ' translate(' + s.cx + ',' + s.cy + ') rotate(' + s.rot + ') translate(' + (-s.cx) + ',' + (-s.cy) + ')';
+        c.setAttribute('transform', str);
+        c.style.outline = '';
+        c.style.filter = '';
+        c.style.cursor = '';
+        svg.appendChild(c);
+    }
+    
+    var svgText = new XMLSerializer().serializeToString(svg);
+    
+    navigator.clipboard.writeText(svgText).then(function() {
+        showToast('SVG скопирован', true);
+    });
+});
+
+canvasContainer.addEventListener('mousedown', function(e) {
+    if (e.button === 1 || (e.button === 0 && e.altKey) || (e.button === 0 && spacePressed)) { 
+        e.preventDefault(); 
+        panning = true; 
+        ps = screenToViewBox(e.clientX, e.clientY);
+        pvs = { x: vx, y: vy };
+        canvasContainer.style.cursor = 'grabbing';
+    }
+});
+canvasContainer.addEventListener('wheel', function(e) {
+    if (e.shiftKey && selected) { 
+        e.preventDefault(); 
+        rotateShape(selected, e.deltaY > 0 ? 90 : -90); 
+        return; 
+    }
+    e.preventDefault();
+    
+    var before = screenToViewBox(e.clientX, e.clientY);
+    zm = Math.max(0.05, Math.min(15, zm * (e.deltaY > 0 ? 0.9 : 1.1)));
+    applyView();
+    var after = screenToViewBox(e.clientX, e.clientY);
+    vx += before.x - after.x;
+    vy += before.y - after.y;
+    applyView();
+}, { passive: false });
+document.getElementById('btnLastLayouts').addEventListener('click', function() {
+    if (lastResults && lastResults.length > 0) {
+        showChoiceDialog(lastResults, lastElapsed);
+    }
+});
+// 🔑 Добавляем обработчики на изменение
+document.getElementById('gapEnabled')?.addEventListener('change', updateGlobalSettings);
+document.getElementById('gapSize')?.addEventListener('input', updateGlobalSettings);
+document.getElementById('groupsON')?.addEventListener('change', updateGlobalSettings);
+document.getElementById('snapEnabled')?.addEventListener('change', updateGlobalSettings);
+document.getElementById('maxCyclesInput')?.addEventListener('input', updateGlobalSettings);
+document.getElementById('stopIfAllPlaced')?.addEventListener('change', updateGlobalSettings);
+document.getElementById('contactPriority').addEventListener('input', updateGlobalSettings);
+document.getElementById('speedPriority').addEventListener('input', updateGlobalSettings);
+
+function updateGlobalSettings() {
+	speedPriority = parseInt(document.getElementById('speedPriority')?.value);
+    contactPriority = parseInt(document.getElementById('contactPriority')?.value);
+	stopIfAllPlacedGlobal = document.getElementById('stopIfAllPlaced')?.checked;
+	maxCyclesGlobal = document.getElementById('maxCyclesInput')?.value || 5;
+    gapEnabledGlobal = document.getElementById('gapEnabled')?.checked || false;
+    gapSizeGlobal = gapEnabledGlobal ? (parseFloat(document.getElementById('gapSize')?.value) || 0) : 0;
+    groupsEnabledGlobal = document.getElementById('groupsON')?.checked || false;
+    snapEnabledGlobal = document.getElementById('snapEnabled')?.checked || false;
+	connectionTolerance = gapEnabledGlobal ?  Math.max (0.5,gapSizeGlobal + 0.3): 0.5;
+}
+
+//кнопка оптимизация
+document.getElementById('btnOptimize').addEventListener('click', function() {
+    if (optimizeRunning) {
+        optimizeRunning = false;
+        document.getElementById('btnOptimize').textContent = '🔥 Оптимизация заполнения';
+        updateStats();
+        return;
+    }
+    if (shapes.length < 2) { showToast('Нужно минимум 2 фигуры'); return; }
+    optimizeRunning = true;
+    document.getElementById('btnOptimize').textContent = '⏹ Стоп';
+    autoLayout(function() {
+        optimizeRunning = false;
+        document.getElementById('btnOptimize').textContent = '🔥 Оптимизация заполнения';
+    });
+});
+
+// ================== ИНИЦИАЛИЗАЦИЯ ==================
+var bg = document.createElementNS(NS, 'rect');
+bg.setAttribute('x', sheet.x);
+bg.setAttribute('y', sheet.y);
+bg.setAttribute('width', sheet.w);
+bg.setAttribute('height', sheet.h);
+bg.setAttribute('fill', '#f5f5f0');
+bg.setAttribute('stroke', '#ddd');
+bg.setAttribute('stroke-width', '0.5');
+mainSvg.appendChild(bg);
+var g = document.createElementNS(NS, 'g');
+g.id = 'shapes';
+mainSvg.appendChild(g);
+applyView();
+updateStats();
+setTimeout(updateGlobalSettings, 100);
+//updateGlobalSettings();
+
+
+var demoSVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 54" width="72mm" height="54mm"><path d="M24,3L27,3L30,3L30,6L30,9L33,9L33,12L33,15L30,15L30,12L27,12L27,15L24,15L24,12L24,9L21,9L21,6L24,6L24,3Z M9,21L12,21L15,21L15,24L12,24L12,27L12,30L12,33L9,33L9,30L6,30L3,30L3,27L6,27L6,24L9,24L9,21Z M27,21L30,21L30,24L33,24L33,27L30,27L30,30L30,33L27,33L27,30L24,30L24,33L21,33L21,30L21,27L21,24L24,24L27,24L27,21Z M45,21L48,21L51,21L51,24L48,24L48,27L48,30L48,33L45,33L45,30L42,30L42,33L39,33L39,30L39,27L42,27L42,24L45,24L45,21Z M66,21L69,21L69,24L69,27L66,27L66,30L69,30L69,33L66,33L63,33L63,30L60,30L57,30L57,27L57,24L60,24L63,24L66,24L66,21Z M24,39L27,39L27,42L30,42L33,42L33,45L30,45L30,48L33,48L33,51L30,51L27,51L27,48L24,48L21,48L21,45L24,45L24,42L24,39Z" fill="none" stroke="#ff4444" stroke-width="0.12" stroke-linejoin="round"/></svg>';
+
+var inputValue = document.getElementById('svgInput').value.trim();
+if (!inputValue) {
+    document.getElementById('svgInput').value = demoSVG;
+    try {
+        parseSVG(demoSVG);
+    } catch(e) {}
+} else {
+    try {
+        parseSVG(inputValue);
+    } catch(e) {}
+}
+})();
+</script>
+</body>
+</html>

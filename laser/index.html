@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Лазерная резка — инструменты</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
+        body {
+            background: #0a0a16;
+            color: #d0d0d0;
+            min-height: 100vh;
+        }
+        .container { max-width: 1000px; margin: 0 auto; padding: 20px; }
+        
+        header {
+            text-align: center;
+            padding: 30px 20px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-radius: 12px;
+            margin-bottom: 40px;
+            border: 1px solid #2a2a3a;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        .logo i { font-size: 48px; color: #ff6b6b; }
+        .logo h1 { font-size: 32px; font-weight: 600; }
+        .tagline { color: #999; font-size: 16px; max-width: 600px; margin: 0 auto; }
+
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+            margin-bottom: 50px;
+        }
+        
+        .tool-card {
+            background: #111122;
+            border-radius: 12px;
+            padding: 28px 24px;
+            border: 1px solid #2a2a3a;
+            transition: all 0.3s;
+            display: flex;
+            flex-direction: column;
+        }
+        .tool-card:hover {
+            transform: translateY(-4px);
+            border-color: #ff6b6b;
+            box-shadow: 0 8px 24px rgba(255,107,107,0.15);
+        }
+        .tool-icon { font-size: 44px; text-align: center; margin-bottom: 16px; }
+        .tool-card h3 { font-size: 20px; color: #fff; margin-bottom: 10px; text-align: center; }
+        .tool-card p { font-size: 14px; color: #999; margin-bottom: 16px; flex-grow: 1; line-height: 1.6; }
+        .tool-features { list-style: none; margin-bottom: 20px; }
+        .tool-features li {
+            padding: 4px 0 4px 22px;
+            position: relative;
+            font-size: 13px;
+            color: #ccc;
+        }
+        .tool-features li::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #2ed573;
+            font-weight: bold;
+        }
+        .btn {
+            display: block;
+            color: #fff;
+            text-decoration: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-align: center;
+            transition: all 0.3s;
+            font-size: 15px;
+        }
+        .btn-outline {
+            background: transparent;
+            border: 1px solid #ff6b6b;
+            color: #ff6b6b;
+            margin-top: 8px;
+        }
+        .btn-outline:hover { background: #ff6b6b; color: #fff; }
+
+        .workflow {
+            background: #111122;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 40px;
+            border: 1px solid #2a2a3a;
+        }
+        .workflow h2 { color: #ff6b6b; margin-bottom: 20px; font-size: 22px; }
+        .steps { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 15px; }
+        .step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            max-width: 140px;
+        }
+        .step-num {
+            background: #ff6b6b;
+            color: #fff;
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        .step-text { font-size: 13px; color: #aaa; }
+        .arrow { color: #ff6b6b; font-size: 20px; }
+
+        footer {
+            text-align: center;
+            padding: 20px;
+            border-top: 1px solid #2a2a3a;
+            color: #666;
+            font-size: 13px;
+        }
+
+        @media (max-width: 768px) {
+            .tools-grid { grid-template-columns: 1fr; }
+            .steps { flex-direction: column; }
+            .arrow { transform: rotate(90deg); }
+            .logo h1 { font-size: 24px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <i class="fas fa-fire"></i>
+                <h1>Инструменты для лазерной резки</h1>
+            </div>
+            <p class="tagline">
+                Раскладка деталей на листе и генераторы параметрических моделей для фанеры. Всё в браузере, без сервера.
+            </p>
+        </header>
+
+        <div class="tools-grid">
+
+            <!-- Куб-головоломка -->
+            <div class="tool-card">
+			<a href="laserCub.html" class="btn">
+                <div class="tool-icon">🧊</div>
+                <h3>Куб-головоломка</h3>
+                <p>
+                    Проектирование развёртки куба-пазла. Синхронизация граней: изменение на одной
+                    автоматически отражается на смежных. 3D-предпросмотр.
+                </p>
+				<br>
+				<br>
+                <ul class="tool-features">
+                    <li>Сетка от 3×3 до 20×20</li>
+                    <li>Авто-синхронизация смежных граней</li>
+                    <li>3D-предпросмотр куба</li>
+                    <li>Проверка связности деталей</li>
+                    <li>Сохранение состояний в память</li>
+                    <li>Экспорт и копирование SVG</li>
+                </ul>
+                
+                    <i class="fas fa-external-link-alt"></i> Открыть редактор
+                </a>
+            </div>
+			
+            <!-- Генератор кубиков -->
+            <div class="tool-card">
+			<a href="laserBOX.html" class="btn">
+                <div class="tool-icon">📦</div>
+                <h3>Генератор кубиков</h3>
+                <p>
+                    Параметрическая генерация деталей для многогранников: октаэдр, куб, додекаэдр.
+                    С шип-паз соединением по всем граням.
+                </p>
+				<br>
+				<br>
+                <ul class="tool-features">
+                    <li>3 фигуры: треугольник, квадрат, пятиугольник</li>
+                    <li>Настройка стороны и толщины фанеры</li>
+                    <li>Шип-паз с выбором начала</li>
+                    <li>Экспорт чистого SVG</li>
+                    <li>Копирование в буфер обмена</li>
+                </ul>
+                <br>
+                    <i class="fas fa-external-link-alt"></i> Открыть генератор
+                </a>
+            </div>
+            <!-- Раскладка -->
+
+            <div class="tool-card">
+			<a href="laserset.html" class="btn">
+                <div class="tool-icon">📐</div>
+                <h3>Раскладка на листе</h3>
+                <p>
+                    Загрузка SVG-деталей, автоматическая раскладка с максимизацией контакта, учёт дырок и зазоров.
+                    Ручное перемещение с магнитной стыковкой. Калибровка по камере.
+                </p>
+                <ul class="tool-features">
+                    <li>Авто-раскладка с настройкой приоритетов</li>
+                    <li>Магнитная стыковка фигур</li>
+                    <li>Учёт дырок — размещение внутри</li>
+                    <li>Зазоры и отступы от края</li>
+                    <li>Калибровка листа через камеру</li>
+                    <li>Экспорт SVG для LightBurn</li>
+                </ul>
+                
+                    <i class="fas fa-external-link-alt"></i> Открыть раскладку
+                </a>
+            </div>
+
+        </div>
+
+        <div class="workflow">
+            <h2>💡 Рекомендуемый процесс</h2>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-num">1</div>
+                    <div class="step-text">Сгенерируйте детали в Генераторе коробок или Куб-головоломке</div>
+                </div>
+                <div class="arrow">→</div>
+                <div class="step">
+                    <div class="step-num">2</div>
+                    <div class="step-text">Скопируйте SVG или сохраните в файл</div>
+                </div>
+                <div class="arrow">→</div>
+                <div class="step">
+                    <div class="step-num">3</div>
+                    <div class="step-text">Загрузите в Раскладку на листе, настройте лист</div>
+                </div>
+                <div class="arrow">→</div>
+                <div class="step">
+                    <div class="step-num">4</div>
+                    <div class="step-text">Авто-раскладка → Экспорт → LightBurn → резка!</div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Инструменты для лазерной резки фанеры. Все вычисления в браузере, без отправки данных.</p>
+            <p style="margin-top:6px;">Рекомендуемые браузеры: Chrome, Firefox, Edge</p>
+        </footer>
+    </div>
+</body>
+</html>

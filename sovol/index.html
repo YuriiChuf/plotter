@@ -1,0 +1,547 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Инструменты для векторной графики и плоттера</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: #1e1e2e;
+            color: #cdd6f4;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            padding: 30px 20px;
+            background: linear-gradient(135deg, #585b70 0%, #313244 100%);
+            border-radius: 12px;
+            margin-bottom: 40px;
+            border: 1px solid #45475a;
+        }
+
+        .grid {
+            display: grid;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .logo i {
+            font-size: clamp(36px, 5vw, 48px);
+            color: #89b4fa;
+        }
+
+        .logo h1 {
+            font-size: clamp(24px, 4vw, 36px);
+            font-weight: 600;
+            line-height: 1.2;
+        }
+
+        .tagline {
+            font-size: clamp(14px, 2vw, 18px);
+            color: #a6adc8;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 10px 0;
+        }
+
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 25px;
+            margin-bottom: 50px;
+        }
+
+        .tool-card {
+            background-color: #181825;
+            border-radius: 12px;
+            padding: clamp(20px, 3vw, 25px);
+            border: 1px solid #45475a;
+            transition: all 0.3s ease;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .tool-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            border-color: #89b4fa;
+        }
+
+        .tool-icon {
+            font-size: clamp(32px, 5vw, 40px);
+            color: #89b4fa;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .tool-title {
+            font-size: clamp(18px, 2.5vw, 22px);
+            color: #89b4fa;
+            margin-bottom: 15px;
+            text-align: center;
+            line-height: 1.3;
+        }
+
+        .tool-description {
+            font-size: clamp(13px, 1.8vw, 15px);
+            color: #a6adc8;
+            margin-bottom: 20px;
+            flex-grow: 1;
+        }
+
+        .tool-features {
+            list-style-type: none;
+            margin-bottom: 25px;
+        }
+
+        .tool-features li, .tool-features linh {
+            padding: 5px 0 5px 25px;
+            position: relative;
+            color: #cdd6f4;
+            font-size: clamp(12px, 1.6vw, 14px);
+        }
+
+        .tool-features li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #a6e3a1;
+            font-weight: bold;
+        }
+
+        .tool-features linh:before {
+            content: "✗";
+            position: absolute;
+            left: 0;
+            color: #FF8080;
+            font-weight: bold;
+        }
+
+        .btn {
+            display: inline-block;
+            background-color: #89b4fa;
+            color: #1e1e2e;
+            text-decoration: none;
+            padding: clamp(10px, 1.5vw, 12px) clamp(16px, 2vw, 24px);
+            border-radius: 8px;
+            font-weight: 600;
+            text-align: center;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            width: 100%;
+            font-size: clamp(13px, 1.5vw, 16px);
+            white-space: nowrap;
+        }
+
+        .btn:hover {
+            background-color: #74c7ec;
+            transform: translateY(-2px);
+        }
+
+        .btn-secondary {
+            background-color: #45475a;
+            color: #cdd6f4;
+            font-size: clamp(11px, 1.3vw, 14px);
+        }
+
+        .btn-secondary:hover {
+            background-color: #585b70;
+        }
+
+        .info-section {
+            background-color: #181825;
+            border-radius: 12px;
+            padding: clamp(20px, 3vw, 30px);
+            margin-top: 40px;
+            border: 1px solid #45475a;
+        }
+
+        .info-section h2 {
+            color: #89b4fa;
+            margin-bottom: 20px;
+            font-size: clamp(20px, 2.5vw, 26px);
+        }
+
+        .info-section p, .info-section ol {
+            margin-bottom: 15px;
+            font-size: clamp(13px, 1.8vw, 16px);
+        }
+
+        .info-section ol {
+            padding-left: 25px;
+            margin-bottom: 20px;
+        }
+
+        .info-section ol li {
+            padding: 3px 0;
+        }
+
+        .workflow {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin: 40px 0;
+        }
+
+        .workflow-step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            max-width: 150px;
+            text-align: center;
+        }
+
+        .step-number {
+            background-color: #89b4fa;
+            color: #1e1e2e;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .step-description {
+            font-size: clamp(12px, 1.5vw, 14px);
+            color: #a6adc8;
+        }
+
+        .arrow {
+            color: #a6adc8;
+            font-size: 24px;
+        }
+
+        footer {
+            text-align: center;
+            padding: 30px 20px;
+            margin-top: 50px;
+            border-top: 1px solid #313244;
+            color: #a6adc8;
+            font-size: clamp(12px, 1.5vw, 14px);
+        }
+
+        /* Планшеты и средние экраны */
+        @media (max-width: 1024px) {
+            .tools-grid {
+                grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                gap: 20px;
+            }
+
+            header {
+                padding: 25px 15px;
+            }
+        }
+
+        /* Телефоны */
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            header {
+                padding: 20px 10px;
+                margin-bottom: 20px;
+            }
+
+            .grid {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+
+            .logo {
+                margin-bottom: 15px;
+            }
+
+            .tools-grid {
+                grid-template-columns: 1fr;
+                max-width: 400px;
+                margin: 0 auto 40px;
+            }
+
+            .tool-card:hover {
+                transform: none;
+            }
+
+            .workflow {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .arrow {
+                transform: rotate(90deg);
+                font-size: 20px;
+            }
+
+            .btn {
+                font-size: 14px;
+                padding: 10px 16px;
+            }
+
+            .btn-secondary {
+                font-size: 12px;
+            }
+
+            .info-section ol {
+                padding-left: 20px;
+            }
+        }
+
+        /* Очень маленькие экраны */
+        @media (max-width: 480px) {
+            header {
+                padding: 15px 8px;
+            }
+
+            .logo {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .logo i {
+                font-size: 32px;
+            }
+
+            .logo h1 {
+                font-size: 20px;
+                text-align: center;
+            }
+
+            .tools-grid {
+                gap: 15px;
+            }
+
+            .tool-card {
+                padding: 15px;
+            }
+
+            .info-section {
+                padding: 15px;
+            }
+
+            footer {
+                padding: 20px 10px;
+            }
+        }
+
+        /* Устройства с высоким разрешением */
+        @media (min-width: 1440px) {
+            .container {
+                max-width: 1400px;
+            }
+
+            .tools-grid {
+                gap: 30px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <i class="fas fa-pen-fancy"></i>
+                <h1>Инструменты для векторной графики</h1>
+            </div>
+            <div class="grid">
+                <p class="tagline">
+                    Полный набор инструментов для работы с векторной графикой, создания шрифтов и подготовки G-кода для плоттера Sovol SO-1.
+                    Все инструменты работают в браузере и не требуют установки дополнительного ПО.
+                </p>
+            </div>
+        </header>
+
+        <div class="tools-grid">
+            <!-- Инструмент 1: Конвертер в G-код -->
+            <div class="tool-card">
+                <div class="tool-icon">
+                    <i class="fas fa-code"></i>
+                </div>
+                <h3 class="tool-title">Конвертер в G-код</h3>
+                <p class="tool-description">
+                    Конвертер изображений в G-код для плоттера Sovol SO-1 с расширенными настройками автоматической трассировки.
+                </p>
+                <ul class="tool-features">
+                    <li>Поддержка JPEG, PNG, SVG</li>
+                    <li>Настройки трассировки изображений</li>
+                    <li>Оптимизация путей для плоттера</li>
+                    <li>Предпросмотр векторов</li>
+                    <li>Экспорт в SVG формат</li>
+                    <li>Генерация G-кода для Sovol SO-1</li>
+                </ul>
+                <a href="gui_gkode.html" class="btn">
+                    <i class="fas fa-external-link-alt"></i> Открыть конвертер
+                </a>
+            </div>
+
+            <!-- Инструмент 2: Векторный редактор -->
+            <div class="tool-card">
+                <div class="tool-icon">
+                    <i class="fas fa-draw-polygon"></i>
+                </div>
+                <h3 class="tool-title">Векторный редактор</h3>
+                <p class="tool-description">
+                    Простой векторный редактор для создания и редактирования векторных изображений с поддержкой кривых Безье.<br>Простое рисование.
+                </p>
+                <ul class="tool-features">
+                    <li>Рисование линий, прямоугольников, кругов</li>
+                    <li>Инструмент "Перо" для кривых Безье</li>
+                    <li>Загрузка фото как подложки</li>
+                    <li>Инструменты "Ластик" и "Выталкивание"</li>
+                    <li>Быстрый переход пкм между последними действиями</li>
+                    <li>Экспорт в SVG формат</li>
+                    <linh>Без генерации G-кода</linh>
+                </ul>
+                <a href="VectorImageTracer.html" class="btn">
+                    <i class="fas fa-external-link-alt"></i> Открыть редактор
+                </a>
+            </div>
+
+            <!-- Инструмент 3: Редактор текста для плоттера -->
+            <div class="tool-card">
+                <div class="tool-icon">
+                    <i class="fas fa-text-height"></i>
+                </div>
+                <h3 class="tool-title">Редактор текста для плоттера</h3>
+                <p class="tool-description">
+                    Инструмент для компоновки текста и векторных элементов перед отправкой на плоттер.
+                    <br><br>
+                </p>
+                <ul class="tool-features">
+                    <li>Работа с текстом и SVG элементами</li>
+                    <li>Загрузка SVG шрифтов</li>
+                    <li>Настройка размеров листа</li>
+                    <li>Фоновая подложка для точности</li>
+                    <li>Экспорт в SVG и G-код</li>
+                </ul>
+                
+                <!-- Ссылка на папку со шрифтами на GitHub -->
+                <a href="https://github.com/YuriiChuf/plotter/tree/main/fonts" 
+                   target="_blank" 
+                   class="btn btn-secondary" 
+                   style="margin-bottom: 10px;">
+                    <i class="fab fa-github"></i> SVG шрифты на GitHub
+                </a>
+                
+                <!-- Основная кнопка открытия редактора -->
+                <a href="TextTOplot.html" class="btn">
+                    <i class="fas fa-external-link-alt"></i> Открыть редактор текста
+                </a>
+            </div>
+
+            <!-- Инструмент 4: Редактор SVG шрифтов -->
+            <div class="tool-card">
+                <div class="tool-icon">
+                    <i class="fas fa-font"></i>
+                </div>
+                <h3 class="tool-title">Редактор SVG шрифтов</h3>
+                <p class="tool-description">
+                    Мощный редактор для создания и редактирования векторных шрифтов в формате SVG.
+                </p>
+                <ul class="tool-features">
+                    <li>Создание и редактирование глифов</li>
+                    <li>Загрузка системных шрифтов как подложки</li>
+                    <li>Направляющие для точного позиционирования</li>
+                    <li>Инструменты зеркалирования и отражения</li>
+                    <li>Сохранение и загрузка SVG шрифтов</li>
+                </ul>
+                <a href="Redactorsvg.html" class="btn">
+                    <i class="fas fa-external-link-alt"></i> Открыть редактор шрифтов
+                </a>
+            </div>
+        </div>
+
+        <div class="info-section">
+            <h2>О наборе инструментов</h2>
+            <p>
+                Этот набор инструментов предназначен для полного цикла работы с векторной графикой - от создания векторных изображений и шрифтов до подготовки файлов для плоттера Sovol SO-1.
+            </p>
+            <p>
+                Все инструменты работают полностью в браузере и не требуют отправки данных на сервер. Ваши файлы обрабатываются локально на вашем компьютере, что обеспечивает конфиденциальность и скорость работы.
+            </p>
+            <p>
+                <strong>Рекомендуемый рабочий процесс:</strong>
+            </p>
+            <ol>
+                <li>Создайте векторное изображение в <strong>Векторном редакторе</strong> или загрузите готовое</li>
+                <li>При необходимости создайте или отредактируйте шрифт в <strong>Редакторе SVG шрифтов</strong></li>
+                <li>Скомпонуйте текст и изображения в <strong>Редакторе текста для плоттера</strong></li>
+                <li>Сгенерируйте G-код в <strong>Конвертере в G-код</strong> для печати на плоттере Sovol SO-1</li>
+            </ol>
+            <p>
+                Для корректной работы инструментов рекомендуется использовать современные браузеры: Chrome, Firefox, Edge или Safari.
+            </p>
+        </div>
+
+        <footer>
+            <p>Набор инструментов для векторной графики и работы с плоттером &copy; 2023</p>
+            <p style="margin-top: 10px;">
+                Все инструменты работают в браузере. Для сохранения файлов используйте функцию экспорта в каждом инструменте.
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        // Простой скрипт для улучшения пользовательского опыта
+        document.addEventListener('DOMContentLoaded', function() {
+            // Анимация при наведении на карточки (только для десктопов)
+            const cards = document.querySelectorAll('.tool-card');
+            
+            // Проверяем, что это не сенсорное устройство
+            if (!('ontouchstart' in window)) {
+                cards.forEach(card => {
+                    card.addEventListener('mouseenter', function() {
+                        this.style.transform = 'translateY(-5px)';
+                    });
+                    
+                    card.addEventListener('mouseleave', function() {
+                        this.style.transform = 'translateY(0)';
+                    });
+                });
+            }
+            
+            // Информация о совместимости
+            const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
+            const isFirefox = typeof InstallTrigger !== 'undefined';
+            const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+            const isEdge = /Edg/.test(navigator.userAgent);
+            
+            if (!isChrome && !isFirefox && !isSafari && !isEdge) {
+                console.log('Рекомендуется использовать современный браузер для лучшей работы инструментов');
+            }
+        });
+    </script>
+</body>
+</html>
