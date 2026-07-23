@@ -53,12 +53,30 @@
             background: white; text-align: center; transition: 0.2s; outline: none;
         }
         .input-group select {
-            width: 200px; cursor: pointer; appearance: none;
+            width: 100%; cursor: pointer; appearance: none;
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%235b5b55'/%3E%3C/svg%3E");
             background-repeat: no-repeat; background-position: right 0.5rem center; padding-right: 1.5rem;
         }
         .input-group input:focus, .input-group select:focus {
             border-color: #b8875b; box-shadow: 0 0 0 3px rgba(184,135,91,0.2);
+        }
+        .checkbox-group {
+			display: grid;
+			gap: 0.7rem;
+			position: relative;
+			top: -11px;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        .checkbox-group label {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: #4b4b45;
+            cursor: pointer;
+            white-space: nowrap;
         }
         .workspace {
             display: flex;
@@ -107,11 +125,14 @@
             align-items: center;
             gap: 0.5rem;
         }
-        .preview-container svg {
-            display: block;
+        .preview-3d {
             width: 100%;
-            height: auto;
-            max-width: 200px;
+            height: 200px;
+            border-radius: 1rem;
+            cursor: grab;
+        }
+        .preview-3d:active {
+            cursor: grabbing;
         }
         .preview-label {
             font-size: 0.75rem;
@@ -125,11 +146,11 @@
             text-align: center;
             margin-top: -0.3rem;
         }
-        .btn-row { 
-            display: flex; 
-            gap: 0.4rem; 
-            flex-wrap: wrap; 
-            justify-content: center; 
+        .btn-row {
+            display: flex;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+            justify-content: center;
         }
         button {
             background: #1f1f1d; border: 1px solid #3f3f3b; color: white;
@@ -168,50 +189,50 @@
             z-index: 999; opacity: 0; transition: opacity 0.3s; pointer-events: none;
         }
         .toast.show { opacity: 1; }
-			.info-tooltip {
-	  position: fixed;
-	  top: 50%;
-	  left: 50%;
-	  transform: translate(-50%, -50%);
-	  background: white;
-	  border-radius: 1rem;
-	  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-	  padding: 1.5rem;
-	  max-width: 320px;
-	  width: 90%;
-	  z-index: 1000;
-	  font-size: 0.85rem;
-	  line-height: 1.5;
-	}
-		.info-tooltip h3 {
-	  margin: 0 0 0.5rem 0;
-	  font-size: 1rem;
-	  color: #1a1a2e;
-	}
-	.info-tooltip p {
-	  margin: 0.3rem 0;
-	  color: #555;
-	}
-	.info-tooltip .close-btn {
-	  position: absolute;
-	  top: 0.5rem;
-	  right: 0.5rem;
-	  background: none;
-	  border: none;
-	  font-size: 1.2rem;
-	  cursor: pointer;
-	  color: #999;
-	  width: 28px;
-	  height: 28px;
-	  border-radius: 50%;
-	  display: flex;
-	  align-items: center;
-	  justify-content: center;
-	}
-	.info-tooltip .close-btn:hover {
-	  background: #f0f0f0;
-	  color: #333;
-	}
+        .info-tooltip {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 1.5rem;
+            max-width: 320px;
+            width: 90%;
+            z-index: 1000;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+        .info-tooltip h3 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1rem;
+            color: #1a1a2e;
+        }
+        .info-tooltip p {
+            margin: 0.3rem 0;
+            color: #555;
+        }
+        .info-tooltip .close-btn {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            background: none;
+            border: none;
+            font-size: 1.2rem;
+            cursor: pointer;
+            color: #999;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .info-tooltip .close-btn:hover {
+            background: #f0f0f0;
+            color: #333;
+        }
     </style>
 </head>
 <body>
@@ -245,7 +266,11 @@
                 <option value="gap">с паза</option>
             </select>
         </div>
-		
+        <div class="checkbox-group" title= "закрасить шипы">
+            <label for="fillSpikesCheckbox" >🎨</label>
+			<input type="checkbox" id="fillSpikesCheckbox">
+        </div>
+
         <button id="generateBtn" class="primary-btn">↻</button>
     </div>
 
@@ -257,320 +282,539 @@
             <div class="preview-container" id="previewContainer">
                 <div class="preview-label" id="previewLabel">Октаэдр</div>
                 <div class="preview-sub" id="previewSub">8 треугольников</div>
-                <div id="previewSVGContainer"></div>
+                <div class="preview-3d" id="preview3D"></div>
             </div>
             <div class="btn-row">
                 <button id="saveBtn" class="secondary">💾 сохранить SVG</button>
                 <button id="copyBtn" class="secondary">📋 копировать SVG</button>
-				<button id="infoBtn" class="secondary"  >ℹ️ Информация</button>
+                <button id="infoBtn" class="secondary">ℹ️ Информация</button>
             </div>
         </div>
     </div>
 
-    <div class="info-text">
-        📐 сторона: <span id="sideDisplay">20</span> мм ·
-        🪵 толщина: <span id="thickDisplay">2.4</span> мм ·
-        📏 шип/паз: <span class="highlight" id="spikeWidthDisplay">3.33</span> мм ·
-        📐 габариты: <span class="highlight" id="dimensionsDisplay">—</span> ·
-        📦 <span id="totalDisplay">8 шт</span>
+    <div class="info-text" id="infoBar">
+        <span>📐 сторона: <strong id="sideDisplay">20</strong> мм</span>
+        <span>🪵 толщина: <strong id="thickDisplay">2.4</strong> мм</span>
+        <span>📏 шип/паз: <span class="highlight" id="spikeWidthDisplay">3.33</span> мм</span>
+        <span>📐 габариты: <span class="highlight" id="dimensionsDisplay">—</span></span>
+        <span>📦 <strong id="totalDisplay">8 шт</strong></span>
     </div>
 </div>
 <div class="toast" id="toast"></div>
 
-<script>
-    (function() {
-        const SVG_NS = "http://www.w3.org/2000/svg";
-        const shapeSelect = document.getElementById('shapeSelect');
-        const sideInput = document.getElementById('sideInput');
-        const thicknessInput = document.getElementById('thicknessInput');
-        const pairsInput = document.getElementById('pairsInput');
-        const startSelect = document.getElementById('startSelect');
-        const generateBtn = document.getElementById('generateBtn');
-        const saveBtn = document.getElementById('saveBtn');
-        const copyBtn = document.getElementById('copyBtn');
-        const svgContainer = document.getElementById('svgContainer');
-        const previewContainer = document.getElementById('previewContainer');
-        const previewLabel = document.getElementById('previewLabel');
-        const sideDisplay = document.getElementById('sideDisplay');
-        const thickDisplay = document.getElementById('thickDisplay');
-        const spikeWidthDisplay = document.getElementById('spikeWidthDisplay');
-        const dimensionsDisplay = document.getElementById('dimensionsDisplay');
-        const totalDisplay = document.getElementById('totalDisplay');
-        const toast = document.getElementById('toast');
-
-        let currentCleanSVG = '';
-
-        function showToast(msg) {
-            toast.textContent = msg;
-            toast.classList.add('show');
-            setTimeout(() => toast.classList.remove('show'), 2000);
+<script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
         }
+    }
+</script>
 
-        function getTotalPieces(sides) {
-            return { 3: 8, 4: 6, 5: 12 }[sides] || 0;
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    
+    // DOM элементы
+    const shapeSelect = document.getElementById('shapeSelect');
+    const sideInput = document.getElementById('sideInput');
+    const thicknessInput = document.getElementById('thicknessInput');
+    const pairsInput = document.getElementById('pairsInput');
+    const startSelect = document.getElementById('startSelect');
+    const fillSpikesCheckbox = document.getElementById('fillSpikesCheckbox');
+    const generateBtn = document.getElementById('generateBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const copyBtn = document.getElementById('copyBtn');
+    const svgContainer = document.getElementById('svgContainer');
+    const preview3D = document.getElementById('preview3D');
+    const previewLabel = document.getElementById('previewLabel');
+    const previewSub = document.getElementById('previewSub');
+    const sideDisplay = document.getElementById('sideDisplay');
+    const thickDisplay = document.getElementById('thickDisplay');
+    const spikeWidthDisplay = document.getElementById('spikeWidthDisplay');
+    const dimensionsDisplay = document.getElementById('dimensionsDisplay');
+    const totalDisplay = document.getElementById('totalDisplay');
+    const toast = document.getElementById('toast');
+
+    let currentCleanSVG = '';
+    let scene, camera, renderer, controls, modelGroup;
+
+    // Инициализация Three.js
+    function initThreeJS() {
+        const container = preview3D;
+        
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color('#fafaf8');
+        
+        camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 1000);
+        camera.position.set(25, 20, 30);
+        camera.lookAt(0, 0, 0);
+        
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+        
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 2;
+        controls.minDistance = 5;
+        controls.maxDistance = 100;
+        
+        // Освещение
+        const ambientLight = new THREE.AmbientLight('#ffffff', 2.5);
+        scene.add(ambientLight);
+        
+        const directionalLight1 = new THREE.DirectionalLight('#ffffff', 3);
+        directionalLight1.position.set(10, 15, 10);
+        scene.add(directionalLight1);
+        
+        const directionalLight2 = new THREE.DirectionalLight('#ffffff', 2);
+        directionalLight2.position.set(-10, -5, -10);
+        scene.add(directionalLight2);
+        
+        // Группа для модели
+        modelGroup = new THREE.Group();
+        scene.add(modelGroup);
+        
+        animate();
+    }
+    
+    function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+    }
+    
+    // Создание трёхмерной модели
+    function create3DModel(sides) {
+        // Очищаем предыдущую модель
+        while(modelGroup.children.length > 0) {
+            modelGroup.remove(modelGroup.children[0]);
         }
-
-        function getPolyhedronInfo(sides) {
-            return {
-                3: { name: 'Октаэдр', sub: '8 треугольников' },
-                4: { name: 'Куб', sub: '6 квадратов' },
-                5: { name: 'Додекаэдр', sub: '12 пятиугольников' }
-            }[sides] || { name: '', sub: '' };
-        }
-
-        // Схема: многогранник из отдельных граней
-        function getAssemblySVG(sides) {
-            if (sides === 3) {
-                return `<svg xmlns="${SVG_NS}" viewBox="120 140 100 130" width="150" height="180">
-            <polygon points="60,130 110,55 10,55" fill="#e8d5c0" fill-opacity="0.4" stroke="#b8875b" stroke-width="1.2" transform="matrix(0.79255437,0.11909167,-0.12420642,0.826593,125.48168,145.27608)"/>
-            <path style="fill:#e8d5c0;fill-opacity:0.4;stroke:#b8875b;stroke-width:0.397" d="m 126.57588,191.92961 46.15879,-18.88769 33.09664,30.79686 z"/>
-            <path style="fill:#e8d5c0;fill-opacity:0.4;stroke:#b8875b;stroke-width:0.397" d="m 126.57587,191.92961 30.31224,67.94906 -27.91202,-32.297 z"/>
-            <path style="fill:#e8d5c0;fill-opacity:0.4;stroke:#b8875b;stroke-width:0.397" d="m 156.88811,259.87867 48.9432,-56.03989 -4.67593,31.23692 z"/>
-            <text x="175" y="290" text-anchor="middle" font-size="6" fill="#999">8 треугольников</text>
-        </svg>`;
-            } else if (sides === 4) {
-                return `<svg xmlns="${SVG_NS}" viewBox="15 10 110 110" width="150" height="150">
-            <polygon points="20,30 70,15 100,50 50,65" fill="#e8d5c0" fill-opacity="0.4" stroke="#b8875b" stroke-width="1.2"/>
-            <polygon points="20,30 50,65 50,105 20,70" fill="#f0e0d0" fill-opacity="0.4" stroke="#b8875b" stroke-width="1.2"/>
-            <polygon points="50,65 100,50 100,90 50,105" fill="#dcc8b0" fill-opacity="0.4" stroke="#b8875b" stroke-width="1.2"/>
-            <text x="60" y="125" text-anchor="middle" font-size="6" fill="#999">6 квадратов</text>
-        </svg>`;
-            } else if (sides === 5) {
-                return `<svg xmlns="${SVG_NS}" viewBox="87 90 35 28" width="200" height="180">
-            <polygon points="103.26,111.71 93.18,105.31 95.48,95.63 109.37,95.02 112.64,104.46" fill="#f0e0d0" fill-opacity="0.4" stroke="#b8875b" stroke-width="0.2mm"/>
-            <polygon points="103.26,111.71 112.55,103.70 114.91,106.98 111.16,114.07 103.50,115.11" fill="#dcc8b0" fill-opacity="0.4" stroke="#b8875b" stroke-width="0.1mm"/>
-            <polygon points="112.55,103.70 109.38,95.03 111.48,95.45 114.22,100.34 114.91,106.98" fill="#dcc8b0" fill-opacity="0.4" stroke="#b8875b" stroke-width="0.1mm"/>
-            <polygon points="93.18,105.31 103.26,111.71 103.50,115.11 95.35,114.73 91.09,108.96" fill="#e0d0c0" fill-opacity="0.4" stroke="#b8875b" stroke-width="0.1mm"/>
-            <polygon points="95.48,95.63 93.18,105.31 91.09,108.96 91.38,101.94 93.26,96.84" fill="#e0d0c0" fill-opacity="0.4" stroke="#b8875b" stroke-width="0.1mm"/>
-        </svg>`;
-            }
-            return '';
-        }
-
-        function getPolygonVertices(sides, sideLength) {
-            const vertices = [];
-            const radius = sideLength / (2 * Math.sin(Math.PI / sides));
-
-            let startAngle = -Math.PI / 2;
-            if (sides === 4) {
-                startAngle = -Math.PI / 4; // -45 градусов
-            }
-            for (let i = 0; i < sides; i++) {
-                const angle = startAngle + (2 * Math.PI * i) / sides;
-                vertices.push({ x: radius * Math.cos(angle), y: radius * Math.sin(angle) });
-            }
-            return vertices;
-        }
-
-        function generatePartPath(vertices, thicknessMM, numPairs, startWithSpike) {
-            const t = thicknessMM;
-            const v = vertices;
-            const sideLen = Math.sqrt(Math.pow(v[1].x-v[0].x,2) + Math.pow(v[1].y-v[0].y,2));
-            const fw = sideLen / (numPairs * 2);
-
-            function buildSide(p1, p2) {
-                const dx=p2.x-p1.x, dy=p2.y-p1.y, len=Math.sqrt(dx*dx+dy*dy);
-                if(len<0.001) return [`L ${p2.x} ${p2.y}`];
-                const ux=dx/len, uy=dy/len;
-                const mx=(p1.x+p2.x)/2, my=(p1.y+p2.y)/2;
-                const ml=Math.sqrt(mx*mx+my*my), nx=mx/(ml||1), ny=my/(ml||1);
-                const pt=d=>({x:p1.x+ux*d, y:p1.y+uy*d});
-
-                const spike = d => {
-                    const bl=pt(d), br=pt(d+fw);
-                    return [
-                        `L ${bl.x.toFixed(3)} ${bl.y.toFixed(3)}`,
-                        `L ${(bl.x+nx*t).toFixed(3)} ${(bl.y+ny*t).toFixed(3)}`,
-                        `L ${(br.x+nx*t).toFixed(3)} ${(br.y+ny*t).toFixed(3)}`,
-                        `L ${br.x.toFixed(3)} ${br.y.toFixed(3)}`
-                    ];
-                };
-                const gap = d => {
-                    const g1=pt(d), g2=pt(d+fw);
-                    return [`L ${g1.x.toFixed(3)} ${g1.y.toFixed(3)}`, `L ${g2.x.toFixed(3)} ${g2.y.toFixed(3)}`];
-                };
-
-                const cmds=[]; let cur=0, isSp=startWithSpike;
-                for(let i=0;i<numPairs*2;i++){ cmds.push(...(isSp?spike(cur):gap(cur))); cur+=fw; isSp=!isSp; }
-                return cmds;
-            }
-
-            let d = `M ${v[0].x.toFixed(3)} ${v[0].y.toFixed(3)}`;
-            for(let i=0;i<v.length;i++) d += ' '+buildSide(v[i], v[(i+1)%v.length]).join(' ');
-            return d + ' Z';
-        }
-
-        function getBounds(pathD) {
-            const nums = pathD.match(/[-\d.]+/g).map(Number);
-            let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
-            for(let i=0;i<nums.length;i+=2){ 
-                if(!isNaN(nums[i])){ minX=Math.min(minX,nums[i]); maxX=Math.max(maxX,nums[i]); }
-                if(!isNaN(nums[i+1])){ minY=Math.min(minY,nums[i+1]); maxY=Math.max(maxY,nums[i+1]); }
-            }
-            return { minX, minY, maxX, maxY, w: maxX-minX, h: maxY-minY };
-        }
-
-        function buildDisplaySVG(pathD, bounds) {
-            const pad = Math.max(bounds.w, bounds.h) * 0.12;
-            const vb = `${(bounds.minX-pad).toFixed(2)} ${(bounds.minY-pad).toFixed(2)} ${(bounds.w+pad*2).toFixed(2)} ${(bounds.h+pad*2).toFixed(2)}`;
-            return `<svg xmlns="${SVG_NS}" viewBox="${vb}">
-			<path style="stroke:#000;stroke-width:0.25mm;fill:none;stroke-linejoin:round;stroke-linecap:round" d="${pathD}"/>
-		</svg>`;
-				}
-
-		function shiftPathToPositive(pathD) {
-			const nums = pathD.match(/[-\d.]+/g).map(Number);
-			let minX = Infinity, minY = Infinity;
-			for (let i = 0; i < nums.length; i += 2) {
-				if (!isNaN(nums[i])) minX = Math.min(minX, nums[i]);
-				if (!isNaN(nums[i + 1])) minY = Math.min(minY, nums[i + 1]);
-			}
-			
-			const offsetX = Math.abs(minX) + 2;
-			const offsetY = Math.abs(minY) + 2;
-			
-			// Смещаем все координаты в path
-			let shifted = pathD.replace(/([-\d.]+)\s+([-\d.]+)/g, (match, x, y) => {
-				const newX = (parseFloat(x) + offsetX).toFixed(3);
-				const newY = (parseFloat(y) + offsetY).toFixed(3);
-				return `${newX} ${newY}`;
-			});
-			
-			return shifted;
-		}
-
-		function getBoundsPositive(pathD) {
-			const nums = pathD.match(/[-\d.]+/g).map(Number);
-			let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-			for (let i = 0; i < nums.length; i += 2) {
-				if (!isNaN(nums[i])) {
-					minX = Math.min(minX, nums[i]);
-					maxX = Math.max(maxX, nums[i]);
-				}
-				if (!isNaN(nums[i + 1])) {
-					minY = Math.min(minY, nums[i + 1]);
-					maxY = Math.max(maxY, nums[i + 1]);
-				}
-			}
-			return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
-		}
-
-		function buildCleanSVG(pathD, bounds) {
-			// Смещаем в положительные координаты
-			const shiftedPath = shiftPathToPositive(pathD);
-			const posBounds = getBoundsPositive(shiftedPath);
-			
-			const pad = 2;
-			const w = (posBounds.w + pad * 2).toFixed(3);
-			const h = (posBounds.h + pad * 2).toFixed(3);
-			const vb = `${(posBounds.minX - pad).toFixed(3)} ${(posBounds.minY - pad).toFixed(3)} ${w} ${h}`;
-			
-			return `<?xml version="1.0" encoding="UTF-8"?>
-		<svg xmlns="${SVG_NS}" width="${w}mm" height="${h}mm" viewBox="${vb}">
-			<path style="stroke:#000000;stroke-width:0.05mm;fill:none" d="${shiftedPath}"/>
-		</svg>`;
-		}
-
-        function update() {
-            const sides = parseInt(shapeSelect.value);
-            let side = parseFloat(sideInput.value);
-            let thick = parseFloat(thicknessInput.value);
-            let pairs = parseInt(pairsInput.value);
-            const startSpike = startSelect.value === 'spike';
-
-            if(isNaN(side)||side<5) side=20;
-            if(isNaN(thick)||thick<0.3) thick=2.4;
-            if(isNaN(pairs)||pairs<1) pairs=1;
-
-            const verts = getPolygonVertices(sides, side);
-            const sideLen = Math.sqrt(Math.pow(verts[1].x-verts[0].x,2)+Math.pow(verts[1].y-verts[0].y,2));
-            const fw = sideLen/(pairs*2);
-            if(fw<0.5){ pairs=Math.floor(sideLen/1); if(pairs<1) pairs=1; }
-            if(pairs>20) pairs=20;
-
-            sideInput.value=side.toFixed(1);
-            thicknessInput.value=thick.toFixed(1);
-            pairsInput.value=pairs;
-
-            const pathD = generatePartPath(verts, thick, pairs, startSpike);
-            const bounds = getBounds(pathD);
-            const actualFW = sideLen/(pairs*2);
-            const info = getPolyhedronInfo(sides);
-
-            svgContainer.innerHTML = buildDisplaySVG(pathD, bounds);
-            currentCleanSVG = buildCleanSVG(pathD, bounds);
-
-            // Обновляем превью
-            const existingSvg = previewContainer.querySelector('svg');
-            if (existingSvg) existingSvg.remove();
-            const assemblySvg = getAssemblySVG(sides);
-            previewContainer.insertAdjacentHTML('afterbegin', assemblySvg);
-            previewLabel.textContent = info.name;
-            // Обновляем подпись
-            const subEl = previewContainer.querySelector('.preview-sub');
-            if (subEl) subEl.textContent = info.sub;
-
-            sideDisplay.textContent = side.toFixed(1);
-            thickDisplay.textContent = thick.toFixed(1);
-            spikeWidthDisplay.textContent = actualFW.toFixed(2);
-            dimensionsDisplay.textContent = `${bounds.w.toFixed(1)} × ${bounds.h.toFixed(1)} мм`;
-            totalDisplay.textContent = `${getTotalPieces(sides)} шт`;
-        }
-		document.getElementById('infoBtn').addEventListener('click', () => {
-		  let thick = parseFloat(thicknessInput.value);
-		  const recommendedThickness = (thick + 0.1).toFixed(1);
-		  
-		  const overlay = document.createElement('div');
-		  overlay.className = 'info-overlay';
-		  
-		  const tooltip = document.createElement('div');
-		  tooltip.className = 'info-tooltip';
-		  tooltip.innerHTML = `
-			<button class="close-btn">✕</button>
-			<h3>💡 Настройки для лазерной резки</h3>
-			<p>📏 
-			  При толщине фанеры <b>${thick.toFixed(1)} мм</b><br>
-			  и вы не измеряли её штангенциркулем то фанера скорее всего больше, установите <b>${recommendedThickness} мм</b> тогда сторона не будет вылезать за грань. И при резке 
-			 установите смещение<b> 0.04-0.06 мм</b> наружу, для жескости соединения.
-			</p>
-		  `;
-		  
-		  document.body.appendChild(overlay);
-		  document.body.appendChild(tooltip);
-		  
-		  const close = () => {
-			overlay.remove();
-			tooltip.remove();
-		  };
-		  
-		  tooltip.querySelector('.close-btn').addEventListener('click', close);
-		  overlay.addEventListener('click', close);
-		});
-
-        saveBtn.addEventListener('click', ()=>{
-            if(!currentCleanSVG) return;
-            const blob = new Blob([currentCleanSVG], {type:'image/svg+xml'});
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = 'detal.svg';
-            a.click();
-            URL.revokeObjectURL(a.href);
-            showToast('Сохранено!');
+        
+        const material = new THREE.MeshPhongMaterial({
+            color: '#e8d5c0',
+            specular: '#ffffff',
+            shininess: 30,
+            transparent: true,
+            opacity: 0.85,
+            side: THREE.DoubleSide
         });
+        
+        const edgeMaterial = new THREE.LineBasicMaterial({ color: '#b8875b' });
+        
+        let geometry;
+        
+        if (sides === 3) {
+            geometry = new THREE.OctahedronGeometry(10, 0);
+        } else if (sides === 4) {
+            geometry = new THREE.BoxGeometry(14.14, 14.14, 14.14);
+        } else if (sides === 5) {
+            geometry = new THREE.DodecahedronGeometry(10, 0);
+        }
+        
+        const mesh = new THREE.Mesh(geometry, material);
+        modelGroup.add(mesh);
+        
+        // Добавляем рёбра
+        const edgesGeometry = new THREE.EdgesGeometry(geometry);
+        const edges = new THREE.LineSegments(edgesGeometry, edgeMaterial);
+        modelGroup.add(edges);
+    }
+    
+    // Обработка изменения размера окна
+    window.addEventListener('resize', () => {
+        if (renderer && preview3D) {
+            camera.aspect = preview3D.clientWidth / preview3D.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(preview3D.clientWidth, preview3D.clientHeight);
+        }
+    });
 
-        copyBtn.addEventListener('click', ()=>{
-            if(!currentCleanSVG) return;
-            navigator.clipboard.writeText(currentCleanSVG).then(()=>showToast('SVG скопирован!')).catch(()=>showToast('Ошибка'));
+    function showToast(msg) {
+        toast.textContent = msg;
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 2000);
+    }
+
+    function getTotalPieces(sides) {
+        return { 3: 8, 4: 6, 5: 12 }[sides] || 0;
+    }
+
+    function getPolyhedronInfo(sides) {
+        return {
+            3: { name: 'Октаэдр', sub: '8 треугольников' },
+            4: { name: 'Куб', sub: '6 квадратов' },
+            5: { name: 'Додекаэдр', sub: '12 пятиугольников' }
+        }[sides] || { name: '', sub: '' };
+    }
+
+    function getPolygonVertices(sides, sideLength) {
+        const vertices = [];
+        const radius = sideLength / (2 * Math.sin(Math.PI / sides));
+
+        let startAngle = -Math.PI / 2;
+        if (sides === 4) {
+            startAngle = -Math.PI / 4;
+        }
+        for (let i = 0; i < sides; i++) {
+            const angle = startAngle + (2 * Math.PI * i) / sides;
+            vertices.push({ x: radius * Math.cos(angle), y: radius * Math.sin(angle) });
+        }
+        return vertices;
+    }
+
+    function generatePartPath(vertices, thicknessMM, numPairs, startWithSpike) {
+        const t = thicknessMM;
+        const v = vertices;
+        const sideLen = Math.sqrt(Math.pow(v[1].x-v[0].x,2) + Math.pow(v[1].y-v[0].y,2));
+        const fw = sideLen / (numPairs * 2);
+
+        function buildSide(p1, p2) {
+            const dx=p2.x-p1.x, dy=p2.y-p1.y, len=Math.sqrt(dx*dx+dy*dy);
+            if(len<0.001) return [`L ${p2.x} ${p2.y}`];
+            const ux=dx/len, uy=dy/len;
+            const mx=(p1.x+p2.x)/2, my=(p1.y+p2.y)/2;
+            const ml=Math.sqrt(mx*mx+my*my), nx=mx/(ml||1), ny=my/(ml||1);
+            const pt=d=>({x:p1.x+ux*d, y:p1.y+uy*d});
+
+            const spike = d => {
+                const bl=pt(d), br=pt(d+fw);
+                return [
+                    `L ${bl.x.toFixed(3)} ${bl.y.toFixed(3)}`,
+                    `L ${(bl.x+nx*t).toFixed(3)} ${(bl.y+ny*t).toFixed(3)}`,
+                    `L ${(br.x+nx*t).toFixed(3)} ${(br.y+ny*t).toFixed(3)}`,
+                    `L ${br.x.toFixed(3)} ${br.y.toFixed(3)}`
+                ];
+            };
+            const gap = d => {
+                const g1=pt(d), g2=pt(d+fw);
+                return [`L ${g1.x.toFixed(3)} ${g1.y.toFixed(3)}`, `L ${g2.x.toFixed(3)} ${g2.y.toFixed(3)}`];
+            };
+
+            const cmds=[]; let cur=0, isSp=startWithSpike;
+            for(let i=0;i<numPairs*2;i++){ cmds.push(...(isSp?spike(cur):gap(cur))); cur+=fw; isSp=!isSp; }
+            return cmds;
+        }
+
+        let d = `M ${v[0].x.toFixed(3)} ${v[0].y.toFixed(3)}`;
+        for(let i=0;i<v.length;i++) d += ' '+buildSide(v[i], v[(i+1)%v.length]).join(' ');
+        return d + ' Z';
+    }
+
+    // Функция для создания пути с закрашенными шипами
+    function generatePartPathWithFill(vertices, thicknessMM, numPairs, startWithSpike, fillSpikes) {
+        if (!fillSpikes) {
+            return generatePartPath(vertices, thicknessMM, numPairs, startWithSpike);
+        }
+        
+        const t = thicknessMM;
+        const v = vertices;
+        const sideLen = Math.sqrt(Math.pow(v[1].x-v[0].x,2) + Math.pow(v[1].y-v[0].y,2));
+        const fw = sideLen / (numPairs * 2);
+        
+        // Собираем все шипы для закраски
+        let spikePaths = [];
+        
+        function buildSide(p1, p2) {
+            const dx=p2.x-p1.x, dy=p2.y-p1.y, len=Math.sqrt(dx*dx+dy*dy);
+            if(len<0.001) return [`L ${p2.x} ${p2.y}`];
+            const ux=dx/len, uy=dy/len;
+            const mx=(p1.x+p2.x)/2, my=(p1.y+p2.y)/2;
+            const ml=Math.sqrt(mx*mx+my*my), nx=mx/(ml||1), ny=my/(ml||1);
+            const pt=d=>({x:p1.x+ux*d, y:p1.y+uy*d});
+
+            const spike = d => {
+                const bl=pt(d), br=pt(d+fw);
+                const spikePath = `M ${bl.x.toFixed(3)} ${bl.y.toFixed(3)} L ${(bl.x+nx*t).toFixed(3)} ${(bl.y+ny*t).toFixed(3)} L ${(br.x+nx*t).toFixed(3)} ${(br.y+ny*t).toFixed(3)} L ${br.x.toFixed(3)} ${br.y.toFixed(3)} Z`;
+                spikePaths.push(spikePath);
+                return [
+                    `L ${bl.x.toFixed(3)} ${bl.y.toFixed(3)}`,
+                    `L ${(bl.x+nx*t).toFixed(3)} ${(bl.y+ny*t).toFixed(3)}`,
+                    `L ${(br.x+nx*t).toFixed(3)} ${(br.y+ny*t).toFixed(3)}`,
+                    `L ${br.x.toFixed(3)} ${br.y.toFixed(3)}`
+                ];
+            };
+            const gap = d => {
+                const g1=pt(d), g2=pt(d+fw);
+                return [`L ${g1.x.toFixed(3)} ${g1.y.toFixed(3)}`, `L ${g2.x.toFixed(3)} ${g2.y.toFixed(3)}`];
+            };
+
+            const cmds=[]; let cur=0, isSp=startWithSpike;
+            for(let i=0;i<numPairs*2;i++){ cmds.push(...(isSp?spike(cur):gap(cur))); cur+=fw; isSp=!isSp; }
+            return cmds;
+        }
+
+        let mainPath = `M ${v[0].x.toFixed(3)} ${v[0].y.toFixed(3)}`;
+        for(let i=0;i<v.length;i++) mainPath += ' '+buildSide(v[i], v[(i+1)%v.length]).join(' ');
+        mainPath += ' Z';
+        
+        return { mainPath, spikePaths };
+    }
+
+    function getBounds(pathD) {
+        const nums = pathD.match(/[-\d.]+/g).map(Number);
+        let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+        for(let i=0;i<nums.length;i+=2){
+            if(!isNaN(nums[i])){ minX=Math.min(minX,nums[i]); maxX=Math.max(maxX,nums[i]); }
+            if(!isNaN(nums[i+1])){ minY=Math.min(minY,nums[i+1]); maxY=Math.max(maxY,nums[i+1]); }
+        }
+        return { minX, minY, maxX, maxY, w: maxX-minX, h: maxY-minY };
+    }
+
+function buildDisplaySVG(pathData, bounds, fillSpikes) {
+    const pad = Math.max(bounds.w, bounds.h) * 0.12;
+    const vb = `${(bounds.minX-pad).toFixed(2)} ${(bounds.minY-pad).toFixed(2)} ${(bounds.w+pad*2).toFixed(2)} ${(bounds.h+pad*2).toFixed(2)}`;
+    
+    let svgContent = '';
+    
+    if (fillSpikes && pathData.spikePaths) {
+        // Сначала рисуем закрашенные шипы с прозрачностью
+        svgContent += pathData.spikePaths.map(spikePath => 
+            `<path style="fill:#ff4444;fill-opacity:0.5;" d="${spikePath}"/>`
+        ).join('\n');
+        
+        // Затем основной контур
+        svgContent += `<path style="stroke:#000;stroke-width:0.25mm;fill:none;stroke-linejoin:round;stroke-linecap:round" d="${pathData.mainPath}"/>`;
+    } else {
+        const pathD = typeof pathData === 'string' ? pathData : pathData.mainPath || pathData;
+        svgContent = `<path style="stroke:#000;stroke-width:0.25mm;fill:none;stroke-linejoin:round;stroke-linecap:round" d="${pathD}"/>`;
+    }
+    
+    return `<svg xmlns="${SVG_NS}" viewBox="${vb}">${svgContent}</svg>`;
+}
+
+function shiftPathToPositive(pathD) {
+    const nums = pathD.match(/[-\d.]+/g).map(Number);
+    let minX = Infinity, minY = Infinity;
+    for (let i = 0; i < nums.length; i += 2) {
+        if (!isNaN(nums[i])) minX = Math.min(minX, nums[i]);
+        if (!isNaN(nums[i + 1])) minY = Math.min(minY, nums[i + 1]);
+    }
+    
+    const offsetX = Math.abs(minX) + 2;
+    const offsetY = Math.abs(minY) + 2;
+    
+    let shifted = pathD.replace(/([-\d.]+)\s+([-\d.]+)/g, (match, x, y) => {
+        const newX = (parseFloat(x) + offsetX).toFixed(3);
+        const newY = (parseFloat(y) + offsetY).toFixed(3);
+        return `${newX} ${newY}`;
+    });
+    
+    return shifted;
+}
+
+    function getBoundsPositive(pathD) {
+        const nums = pathD.match(/[-\d.]+/g).map(Number);
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (let i = 0; i < nums.length; i += 2) {
+            if (!isNaN(nums[i])) {
+                minX = Math.min(minX, nums[i]);
+                maxX = Math.max(maxX, nums[i]);
+            }
+            if (!isNaN(nums[i + 1])) {
+                minY = Math.min(minY, nums[i + 1]);
+                maxY = Math.max(maxY, nums[i + 1]);
+            }
+        }
+        return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
+    }
+
+function buildCleanSVG(pathData, bounds, fillSpikes) {
+    let svgContent = '';
+    
+    if (fillSpikes && pathData.spikePaths) {
+        // Находим общие границы для ВСЕХ путей (основной + шипы)
+        const allPaths = [pathData.mainPath, ...pathData.spikePaths];
+        let allMinX = Infinity, allMinY = Infinity;
+        
+        allPaths.forEach(path => {
+            const nums = path.match(/[-\d.]+/g).map(Number);
+            for (let i = 0; i < nums.length; i += 2) {
+                if (!isNaN(nums[i])) allMinX = Math.min(allMinX, nums[i]);
+                if (!isNaN(nums[i + 1])) allMinY = Math.min(allMinY, nums[i + 1]);
+            }
         });
+        
+        // Единое смещение для всех путей
+        const offsetX = Math.abs(allMinX) + 2;
+        const offsetY = Math.abs(allMinY) + 2;
+        
+        // Функция смещения с одинаковыми offset
+        function shiftWithSameOffset(path) {
+            return path.replace(/([-\d.]+)\s+([-\d.]+)/g, (match, x, y) => {
+                const newX = (parseFloat(x) + offsetX).toFixed(3);
+                const newY = (parseFloat(y) + offsetY).toFixed(3);
+                return `${newX} ${newY}`;
+            });
+        }
+        
+        // Смещаем все пути одинаково
+        const shiftedMainPath = shiftWithSameOffset(pathData.mainPath);
+        const shiftedSpikePaths = pathData.spikePaths.map(sp => shiftWithSameOffset(sp));
+        
+        // Находим границы после смещения
+        const allShiftedPaths = [shiftedMainPath, ...shiftedSpikePaths];
+        let maxX = -Infinity, maxY = -Infinity;
+        let minX = Infinity, minY = Infinity;
+        
+        allShiftedPaths.forEach(path => {
+            const nums = path.match(/[-\d.]+/g).map(Number);
+            for (let i = 0; i < nums.length; i += 2) {
+                if (!isNaN(nums[i])) {
+                    minX = Math.min(minX, nums[i]);
+                    maxX = Math.max(maxX, nums[i]);
+                }
+                if (!isNaN(nums[i + 1])) {
+                    minY = Math.min(minY, nums[i + 1]);
+                    maxY = Math.max(maxY, nums[i + 1]);
+                }
+            }
+        });
+        
+        const pad = 2;
+        const w = (maxX - minX + pad * 2).toFixed(3);
+        const h = (maxY - minY + pad * 2).toFixed(3);
+        const vb = `${(minX - pad).toFixed(3)} ${(minY - pad).toFixed(3)} ${w} ${h}`;
+        
+        svgContent = `<?xml version="1.0" encoding="UTF-8"?>
+        <svg xmlns="${SVG_NS}" width="${w}mm" height="${h}mm" viewBox="${vb}">
+            <!-- Заливка шипов -->
+            ${shiftedSpikePaths.map(sp => `<path style="fill:#ff4444;stroke:#ff4444;stroke-width:0.1mm" d="${sp}"/>`).join('\n            ')}
+            <!-- Основной контур -->
+            <path style="stroke:#000000;stroke-width:0.1mm;fill:none" d="${shiftedMainPath}"/>
+        </svg>`;
+    } else {
+        const mainPath = typeof pathData === 'string' ? pathData : pathData.mainPath || pathData;
+        const shiftedPath = shiftPathToPositive(mainPath);
+        const posBounds = getBoundsPositive(shiftedPath);
+        
+        const pad = 2;
+        const w = (posBounds.w + pad * 2).toFixed(3);
+        const h = (posBounds.h + pad * 2).toFixed(3);
+        const vb = `${(posBounds.minX - pad).toFixed(3)} ${(posBounds.minY - pad).toFixed(3)} ${w} ${h}`;
+        
+        svgContent = `<?xml version="1.0" encoding="UTF-8"?>
+        <svg xmlns="${SVG_NS}" width="${w}mm" height="${h}mm" viewBox="${vb}">
+            <path style="stroke:#000000;stroke-width:0.1mm;fill:none" d="${shiftedPath}"/>
+        </svg>`;
+    }
+    
+    return svgContent;
+}
 
-        generateBtn.addEventListener('click', update);
-        [shapeSelect,sideInput,thicknessInput,pairsInput,startSelect].forEach(el=>{
+    function update() {
+        const sides = parseInt(shapeSelect.value);
+        let side = parseFloat(sideInput.value);
+        let thick = parseFloat(thicknessInput.value);
+        let pairs = parseInt(pairsInput.value);
+        const startSpike = startSelect.value === 'spike';
+        const fillSpikes = fillSpikesCheckbox.checked;
+
+        if(isNaN(side)||side<5) side=20;
+        if(isNaN(thick)||thick<0.3) thick=2.4;
+        if(isNaN(pairs)||pairs<1) pairs=1;
+
+        const verts = getPolygonVertices(sides, side);
+        const sideLen = Math.sqrt(Math.pow(verts[1].x-verts[0].x,2)+Math.pow(verts[1].y-verts[0].y,2));
+        const fw = sideLen/(pairs*2);
+        if(fw<0.5){ pairs=Math.floor(sideLen/1); if(pairs<1) pairs=1; }
+        if(pairs>20) pairs=20;
+
+        sideInput.value=side.toFixed(1);
+        thicknessInput.value=thick.toFixed(1);
+        pairsInput.value=pairs;
+
+        const pathData = generatePartPathWithFill(verts, thick, pairs, startSpike, fillSpikes);
+        const mainPath = typeof pathData === 'string' ? pathData : pathData.mainPath;
+        const bounds = getBounds(mainPath);
+        const actualFW = sideLen/(pairs*2);
+        const info = getPolyhedronInfo(sides);
+
+        svgContainer.innerHTML = buildDisplaySVG(pathData, bounds, fillSpikes);
+        currentCleanSVG = buildCleanSVG(pathData, bounds, fillSpikes);
+
+        // Обновляем 3D превью
+        create3DModel(sides);
+        
+        previewLabel.textContent = info.name;
+        previewSub.textContent = info.sub;
+
+        sideDisplay.textContent = side.toFixed(1);
+        thickDisplay.textContent = thick.toFixed(1);
+        spikeWidthDisplay.textContent = actualFW.toFixed(2);
+        dimensionsDisplay.textContent = `${bounds.w.toFixed(1)} × ${bounds.h.toFixed(1)} мм`;
+        totalDisplay.textContent = `${getTotalPieces(sides)} шт`;
+    }
+
+    // Информационное окно
+    document.getElementById('infoBtn').addEventListener('click', () => {
+        let thick = parseFloat(thicknessInput.value);
+        const recommendedThickness = (thick + 0.1).toFixed(1);
+        
+        const overlay = document.createElement('div');
+        overlay.className = 'info-overlay';
+        
+        const tooltip = document.createElement('div');
+        tooltip.className = 'info-tooltip';
+        tooltip.innerHTML = `
+            <button class="close-btn">✕</button>
+            <h3>💡 Настройки для лазерной резки</h3>
+            <p>📏 
+              При толщине фанеры <b>${thick.toFixed(1)} мм</b><br>
+              и вы не измеряли её штангенциркулем то фанера скорее всего больше, установите <b>${recommendedThickness} мм</b> тогда сторона не будет вылезать за грань. И при резке 
+             установите смещение<b> 0.04-0.06 мм</b> наружу, для жескости соединения.
+            </p>
+        `;
+        
+        document.body.appendChild(overlay);
+        document.body.appendChild(tooltip);
+        
+        const close = () => {
+            overlay.remove();
+            tooltip.remove();
+        };
+        
+        tooltip.querySelector('.close-btn').addEventListener('click', close);
+        overlay.addEventListener('click', close);
+    });
+
+    saveBtn.addEventListener('click', ()=>{
+        if(!currentCleanSVG) return;
+        const blob = new Blob([currentCleanSVG], {type:'image/svg+xml'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'detal.svg';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showToast('Сохранено!');
+    });
+
+    copyBtn.addEventListener('click', ()=>{
+        if(!currentCleanSVG) return;
+        navigator.clipboard.writeText(currentCleanSVG).then(()=>showToast('SVG скопирован!')).catch(()=>showToast('Ошибка'));
+    });
+
+    generateBtn.addEventListener('click', update);
+    [shapeSelect, sideInput, thicknessInput, pairsInput, startSelect, fillSpikesCheckbox].forEach(el => {
+        if (el.type === 'checkbox') {
             el.addEventListener('change', update);
-            el.addEventListener('keypress', e=>{ if(e.key==='Enter') update(); });
-        });
+        } else {
+            el.addEventListener('change', update);
+            el.addEventListener('keypress', e => { if(e.key === 'Enter') update(); });
+        }
+    });
 
-        window.addEventListener('DOMContentLoaded', update);
-    })();
+    // Инициализация при загрузке
+    window.addEventListener('DOMContentLoaded', () => {
+        initThreeJS();
+        update();
+    });
 </script>
 </body>
 </html>
