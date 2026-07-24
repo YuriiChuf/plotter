@@ -1,0 +1,1431 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Определитель лист по фото</title>
+    <style>
+        :root {
+            --bg: #0d0d14;
+            --panel: #161622;
+            --border: #2a2a3a;
+            --text: #d0d0d0;
+            --accent: #ff4444;
+            --success: #2ed573;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            user-select: none;
+        }
+        .header {
+            padding: 12px 20px;
+            background: #1a0a0a;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header h1 { font-size: 1em; font-weight: 700; color: #fff; }
+        .main-container { flex: 1; display: flex; overflow: hidden; }
+        .controls-panel {
+            width: 320px;
+            min-width: 320px;
+            background: var(--panel);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            padding: 16px;
+            gap: 12px;
+            order: 1;
+        }
+        .video-panel {
+            flex: 1;
+            position: relative;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 0;
+            order: 2;
+        }
+        .video-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        .video-container video,
+        .video-container canvas {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        .section {
+            background: #111122;
+            border-radius: 8px;
+            padding: 12px;
+            border: 1px solid var(--border);
+        }
+        .section-label {
+            font-size: 0.6em;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #777;
+            margin-bottom: 8px;
+            font-weight: 700;
+        }
+        button {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.8em;
+            width: 100%;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+        button:hover { filter: brightness(1.2); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-success { background: var(--success); color: #000; font-weight: 700; }
+        .btn-outline { background: transparent; border: 1px solid #444; color: #ccc; }
+        .btn-danger { background: transparent; border: 1px solid var(--accent); color: var(--accent); }
+        select, input {
+            background: #0a0a16;
+            border: 1px solid #444;
+            color: #ccc;
+            padding: 6px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            width: 100%;
+        }
+        .btn-row { display: flex; gap: 6px; }
+        .btn-row button { flex: 1; }
+        .status-badge {
+            font-size: 0.75em;
+            padding: 4px 10px;
+            border-radius: 10px;
+            background: #333;
+            color: #aaa;
+            text-align: center;
+            font-weight: 600;
+        }
+        .status-badge.calibrated { background: #1a3d2e; color: #2ed573; }
+        .calibration-marker {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: rgba(255, 68, 68, 0.9);
+            border: 2px solid #fff;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            cursor: grab;
+            z-index: 20;
+            box-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            color: #fff;
+            font-weight: bold;
+        }
+        .calibration-marker:active { cursor: grabbing; }
+        .polygon-marker {
+            position: absolute;
+            width: 22px;
+            height: 22px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            z-index: 25;
+            font-size: 10px;
+            color: #000;
+            text-align: center;
+            line-height: 18px;
+            font-weight: bold;
+            box-shadow: 0 0 6px rgba(46, 213, 115, 0.8);
+        }
+        .polygon-list-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: #111122;
+            border: 1px solid #2a2a3a;
+            border-radius: 4px;
+            padding: 6px 8px;
+            font-size: 0.75em;
+            margin-top: 4px;
+        }
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #222;
+            color: #fff;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 0.8em;
+            z-index: 10000;
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: all 0.3s;
+            pointer-events: none;
+        }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.success { background: #1a3d2e; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>📸 Определитель лист по фото</h1>
+    <span id="calibStatus" class="status-badge">⚪ Калибровка не выполнена</span>
+</div>
+
+<div class="main-container">
+    <div class="controls-panel">
+        <!-- Камера -->
+        <div class="section">
+            <div class="section-label">📹 Камера</div>
+            <select id="cameraSelect"><option>Загрузка камер...</option></select>
+            <div class="btn-row" style="margin-top:6px;">
+                <button class="btn-outline" id="btnRefreshCameras">🔄</button>
+                <button class="btn-primary" id="btnStartCamera" style="flex:2;">▶ Запустить</button>
+                <button class="btn-danger" id="btnStopCamera" style="flex:2; display:none;">⏹ Стоп</button>
+            </div>
+        </div>
+
+        <!-- Калибровка -->
+        <div class="section">
+            <div class="section-label">⚙️ Калибровка</div>
+            <button class="btn-outline" id="btnCalibrate">📐 Калибровка</button>
+            <div id="calibInputs" style="display:none; margin-top:8px;">
+                <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
+                    <span style="font-size:0.7em;">Размер (мм):</span>
+                    <input id="calibSizeW" type="number" value="90" style="width:55px;">
+                    <span>×</span>
+                    <input id="calibSizeH" type="number" value="90" style="width:55px;">
+                </div>
+                <span style="font-size:0.7em; color:#999;">Перетащите 4 маркера на углы эталона</span>
+                <button class="btn-outline" id="btnRetakeCalibPhoto" style="margin-top:6px;">📸 Переснять фото</button>
+            </div>
+            <button class="btn-success" id="btnSaveCalib" style="display:none; margin-top:6px;">💾 Сохранить калибровку</button>
+            <button class="btn-danger" id="btnCancelCalib" style="display:none; margin-top:4px;">✕ Отменить калибровку</button>
+        </div>
+
+        <!-- Области листа -->
+        <div class="section">
+            <div class="section-label">✂️ Области листа</div>
+            <button class="btn-outline" id="btnTakePhoto" disabled>📸 Снимок листа</button>
+            <button class="btn-outline" id="btnRetakePhoto" style="display:none; margin-top:6px;">🔄 Переснять</button>
+            <button class="btn-outline" id="btnAddArea" style="display:none; margin-top:6px;">+ Добавить область</button>
+            <select id="areaTypeSelect" style="display:none; margin-top:6px;">
+                <option value="area">🟢 Область</option>
+                <option value="hole">🔴 Дырка</option>
+            </select>
+            <button class="btn-outline" id="btnMagicWand" style="display:none; margin-top:6px;">🪄 Волшебная палочка</button>
+            <button class="btn-outline" id="btnFindAll" style="display:none; margin-top:6px;" disabled>🔍 OpenCV загружается...</button>
+            <div id="polygonList" style="max-height:150px; overflow-y:auto; margin-top:6px;"></div>
+        </div>
+
+        <!-- Результат -->
+        <div class="section">
+            <div class="section-label">📦 Результат</div>
+            <div id="resultInfo" style="font-size:0.7em; color:#999; margin-bottom:8px;">Размер не определён</div>
+            <button class="btn-outline" id="btnExportSheet" style="margin-top:6px;" disabled>💾 Экспорт SVG</button>
+            <button class="btn-outline" id="btnCopyToMain" style="margin-top:6px;" disabled>📋 Копировать в редактор</button>
+        </div>
+
+        <!-- Предпросмотр -->
+        <div class="section">
+            <div class="section-label">👁 Предпросмотр</div>
+            <div id="previewContainer" style="width:100%; min-height:120px; background:#f5f5f0; border-radius:4px; display:flex; align-items:center; justify-content:center; color:#999; font-size:0.7em;">Нет данных</div>
+        </div>
+    </div>
+
+    <div class="video-panel">
+        <div class="video-container" id="videoContainer">
+            <video id="cameraVideo" autoplay playsinline style="display:block;"></video>
+            <canvas id="cameraCanvas" style="display:none;"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- OpenCV -->
+<script>
+    var opencvReady = false;
+    var opencvLoading = false;
+    
+    function onOpenCvLoaded() {
+        opencvLoading = true;
+        var check = setInterval(function() {
+            if (typeof cv !== 'undefined' && cv.Mat && cv.imread) {
+                opencvReady = true;
+                opencvLoading = false;
+                clearInterval(check);
+                
+                var btn = document.getElementById('btnFindAll');
+                if (btn) {
+                    btn.textContent = '🔍 Найти все области';
+                    btn.disabled = false;
+                }
+                console.log('OpenCV готов');
+            }
+        }, 200);
+    }
+    
+    (function() {
+        var script = document.createElement('script');
+        script.src = 'https://docs.opencv.org/4.9.0/opencv.js';
+        script.async = true;
+        script.onload = onOpenCvLoaded;
+        script.onerror = function() {
+            console.error('OpenCV не загрузился');
+            var btn = document.getElementById('btnFindAll');
+            if (btn) btn.textContent = '🔍 OpenCV (ошибка)';
+        };
+        document.head.appendChild(script);
+    })();
+</script>
+
+<script>
+(function() {
+    // ==================== ПЕРЕМЕННЫЕ ====================
+    var currentStream = null;
+    var calibrationData = null;
+    var calibrationPhotoURL = null;
+    var sheetPhotoURL = null;
+    var isCalibrationMode = false;
+    var isDrawingMode = false;
+    var drawingType = 'area';
+    var activeMarkerIndex = -1;
+    var markers = [];
+    var polygonGroups = [];
+    var currentPolygon = null;
+    var polygonMarkers = [];
+    var wasDragging = false;
+    var detectedSheetData = null;
+    var magicWandActive = false;
+	var hoveredPolygonIndex = -1;
+	
+    // ==================== УТИЛИТЫ ====================
+    function showToast(msg, ok) {
+        var t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = 'toast' + (ok ? ' success' : '') + ' show';
+        clearTimeout(t._t);
+        t._t = setTimeout(function() { t.classList.remove('show'); }, 2500);
+    }
+
+    function loadSettings() {
+        try {
+            var saved = localStorage.getItem('cameraCalibration');
+            if (saved) {
+                calibrationData = JSON.parse(saved);
+                document.getElementById('calibStatus').textContent = '🟢 Калибровано';
+                document.getElementById('calibStatus').className = 'status-badge calibrated';
+                if (calibrationData.sizeMM) {
+                    document.getElementById('calibSizeW').value = calibrationData.sizeMM.w;
+                    document.getElementById('calibSizeH').value = calibrationData.sizeMM.h;
+                }
+                document.getElementById('btnTakePhoto').disabled = false;
+            }
+            var deviceId = localStorage.getItem('cameraDeviceId');
+            if (deviceId) document.getElementById('cameraSelect').value = deviceId;
+        } catch(e) {}
+    }
+
+    function saveSettings() {
+        if (calibrationData) localStorage.setItem('cameraCalibration', JSON.stringify(calibrationData));
+        localStorage.setItem('cameraDeviceId', document.getElementById('cameraSelect').value);
+    }
+
+    // ==================== КАМЕРА ====================
+    async function refreshCameras() {
+        try {
+            var devices = await navigator.mediaDevices.enumerateDevices();
+            var videoDevices = devices.filter(function(d) { return d.kind === 'videoinput'; });
+            var sel = document.getElementById('cameraSelect');
+            sel.innerHTML = '';
+            if (videoDevices.length === 0) {
+                sel.innerHTML = '<option>Нет камер</option>';
+            } else {
+                for (var i = 0; i < videoDevices.length; i++) {
+                    var opt = document.createElement('option');
+                    opt.value = videoDevices[i].deviceId;
+                    opt.textContent = videoDevices[i].label || ('Камера ' + (i + 1));
+                    sel.appendChild(opt);
+                }
+                var savedId = localStorage.getItem('cameraDeviceId');
+                if (savedId && videoDevices.find(function(d) { return d.deviceId === savedId; })) {
+                    sel.value = savedId;
+                }
+            }
+        } catch(e) {}
+    }
+
+    async function startCamera() {
+        stopCamera();
+        var deviceId = document.getElementById('cameraSelect').value;
+        if (!deviceId || deviceId === 'Нет камер' || deviceId === 'Загрузка камер...') return;
+        try {
+            currentStream = await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+            });
+            document.getElementById('cameraVideo').srcObject = currentStream;
+            document.getElementById('cameraVideo').style.display = 'block';
+            document.getElementById('cameraCanvas').style.display = 'none';
+            document.getElementById('btnStartCamera').style.display = 'none';
+            document.getElementById('btnStopCamera').style.display = 'flex';
+            if (calibrationData) document.getElementById('btnTakePhoto').disabled = false;
+        } catch(e) {
+            showToast('Ошибка камеры: ' + e.message);
+        }
+    }
+
+    function stopCamera() {
+        if (currentStream) {
+            currentStream.getTracks().forEach(function(t) { t.stop(); });
+            currentStream = null;
+        }
+        document.getElementById('cameraVideo').srcObject = null;
+        document.getElementById('cameraVideo').style.display = 'none';
+        if (!sheetPhotoURL && !calibrationPhotoURL) {
+            document.getElementById('cameraCanvas').style.display = 'none';
+        }
+        document.getElementById('btnStartCamera').style.display = 'flex';
+        document.getElementById('btnStopCamera').style.display = 'none';
+    }
+
+    function takePhoto() {
+        var video = document.getElementById('cameraVideo');
+        var canvas = document.getElementById('cameraCanvas');
+        if (!video.videoWidth || !video.videoHeight) {
+            showToast('Видеопоток не готов');
+            return null;
+        }
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+
+        var container = document.getElementById('videoContainer');
+        var cW = container.clientWidth;
+        var cH = container.clientHeight;
+        var ratio = canvas.width / canvas.height;
+        var cr = cW / cH;
+        var cssW, cssH;
+        if (ratio > cr) { cssW = cW; cssH = cW / ratio; }
+        else { cssH = cH; cssW = cH * ratio; }
+        canvas.style.width = cssW + 'px';
+        canvas.style.height = cssH + 'px';
+        canvas.style.position = 'absolute';
+        canvas.style.top = '50%';
+        canvas.style.left = '50%';
+        canvas.style.transform = 'translate(-50%, -50%)';
+        video.style.display = 'none';
+        canvas.style.display = 'block';
+        return canvas.toDataURL('image/png');
+    }
+
+    function showPhotoOnCanvas(photoURL) {
+        var canvas = document.getElementById('cameraCanvas');
+        var container = document.getElementById('videoContainer');
+        var img = new Image();
+        img.onload = function() {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            var ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            var cW = container.clientWidth;
+            var cH = container.clientHeight;
+            var ratio = img.width / img.height;
+            var cr = cW / cH;
+            var cssW, cssH;
+            if (ratio > cr) { cssW = cW; cssH = cW / ratio; }
+            else { cssH = cH; cssW = cH * ratio; }
+            canvas.style.width = cssW + 'px';
+            canvas.style.height = cssH + 'px';
+            canvas.style.position = 'absolute';
+            canvas.style.top = '50%';
+            canvas.style.left = '50%';
+            canvas.style.transform = 'translate(-50%, -50%)';
+            document.getElementById('cameraVideo').style.display = 'none';
+            canvas.style.display = 'block';
+        };
+        img.src = photoURL;
+    }
+
+    // ==================== МАРКЕРЫ КАЛИБРОВКИ ====================
+    function clearMarkers() {
+        for (var i = 0; i < markers.length; i++) {
+            if (markers[i].parentNode) markers[i].remove();
+        }
+        markers = [];
+        activeMarkerIndex = -1;
+    }
+
+    function restoreMarkersFromData() {
+        clearMarkers();
+        if (!calibrationData || !calibrationData.points) return;
+        var canvas = document.getElementById('cameraCanvas');
+        var container = document.getElementById('videoContainer');
+        var cW = container.clientWidth;
+        var cH = container.clientHeight;
+        var canvasW = canvas.offsetWidth;
+        var canvasH = canvas.offsetHeight;
+        var ox = (cW - canvasW) / 2;
+        var oy = (cH - canvasH) / 2;
+        var scaleX = canvasW / canvas.width;
+        var scaleY = canvasH / canvas.height;
+        for (var i = 0; i < calibrationData.points.length; i++) {
+            var marker = document.createElement('div');
+            marker.className = 'calibration-marker';
+            marker.textContent = i + 1;
+            marker.style.left = Math.round(ox + calibrationData.points[i].x * scaleX) + 'px';
+            marker.style.top = Math.round(oy + calibrationData.points[i].y * scaleY) + 'px';
+            (function(idx) {
+                marker.addEventListener('mousedown', function(e) {
+                    if (!isCalibrationMode) return;
+                    e.stopPropagation();
+                    e.preventDefault();
+                    activeMarkerIndex = idx;
+                });
+            })(i);
+            container.appendChild(marker);
+            markers.push(marker);
+        }
+    }
+
+    function createCalibrationMarkers() {
+        clearMarkers();
+        var canvas = document.getElementById('cameraCanvas');
+        var container = document.getElementById('videoContainer');
+        var cW = container.clientWidth;
+        var cH = container.clientHeight;
+        var canvasW = canvas.offsetWidth;
+        var canvasH = canvas.offsetHeight;
+        var ox = (cW - canvasW) / 2;
+        var oy = (cH - canvasH) / 2;
+        var m = 0.2;
+        var positions = [
+            { x: ox + canvasW * m, y: oy + canvasH * m },
+            { x: ox + canvasW * (1 - m), y: oy + canvasH * m },
+            { x: ox + canvasW * (1 - m), y: oy + canvasH * (1 - m) },
+            { x: ox + canvasW * m, y: oy + canvasH * (1 - m) }
+        ];
+        for (var i = 0; i < 4; i++) {
+            var marker = document.createElement('div');
+            marker.className = 'calibration-marker';
+            marker.textContent = i + 1;
+            marker.style.left = Math.round(positions[i].x) + 'px';
+            marker.style.top = Math.round(positions[i].y) + 'px';
+            (function(idx) {
+                marker.addEventListener('mousedown', function(e) {
+                    if (!isCalibrationMode) return;
+                    e.stopPropagation();
+                    e.preventDefault();
+                    activeMarkerIndex = idx;
+                });
+            })(i);
+            container.appendChild(marker);
+            markers.push(marker);
+        }
+    }
+
+    // ==================== КАЛИБРОВКА ====================
+    function startCalibration() {
+        isCalibrationMode = true;
+        isDrawingMode = false;
+        document.getElementById('calibInputs').style.display = 'block';
+        document.getElementById('btnSaveCalib').style.display = 'block';
+        document.getElementById('btnCancelCalib').style.display = 'block';
+        document.getElementById('btnRetakeCalibPhoto').style.display = 'block';
+        document.getElementById('btnAddArea').style.display = 'none';
+        document.getElementById('areaTypeSelect').style.display = 'none';
+        document.getElementById('btnMagicWand').style.display = 'none';
+        document.getElementById('btnFindAll').style.display = 'none';
+        if (calibrationData && calibrationData.sizeMM) {
+            document.getElementById('calibSizeW').value = calibrationData.sizeMM.w;
+            document.getElementById('calibSizeH').value = calibrationData.sizeMM.h;
+        }
+        if (calibrationData && calibrationData.photoURL) {
+            calibrationPhotoURL = calibrationData.photoURL;
+            showPhotoOnCanvas(calibrationPhotoURL);
+            setTimeout(function() { restoreMarkersFromData(); }, 300);
+        } else {
+            calibrationPhotoURL = takePhoto();
+            if (calibrationPhotoURL) createCalibrationMarkers();
+        }
+    }
+
+    function retakeCalibrationPhoto() {
+        clearMarkers();
+        document.getElementById('cameraVideo').style.display = 'block';
+        document.getElementById('cameraCanvas').style.display = 'none';
+        setTimeout(function() {
+            calibrationPhotoURL = takePhoto();
+            if (calibrationPhotoURL) createCalibrationMarkers();
+        }, 300);
+    }
+
+    function cancelCalibration() {
+        isCalibrationMode = false;
+        clearMarkers();
+        document.getElementById('calibInputs').style.display = 'none';
+        document.getElementById('btnSaveCalib').style.display = 'none';
+        document.getElementById('btnCancelCalib').style.display = 'none';
+        document.getElementById('btnRetakeCalibPhoto').style.display = 'none';
+        document.getElementById('cameraVideo').style.display = 'block';
+        document.getElementById('cameraCanvas').style.display = 'none';
+        showToast('Калибровка отменена');
+    }
+
+    function saveCalibration() {
+        if (markers.length !== 4) return;
+        var canvas = document.getElementById('cameraCanvas');
+        var container = document.getElementById('videoContainer');
+        var cW = container.clientWidth;
+        var cH = container.clientHeight;
+        var canvasW = canvas.offsetWidth;
+        var canvasH = canvas.offsetHeight;
+        var ox = (cW - canvasW) / 2;
+        var oy = (cH - canvasH) / 2;
+        var scaleX = canvas.width / canvasW;
+        var scaleY = canvas.height / canvasH;
+        var points = [];
+        for (var i = 0; i < 4; i++) {
+            var left = parseFloat(markers[i].style.left) - ox;
+            var top = parseFloat(markers[i].style.top) - oy;
+            points.push({ x: left * scaleX, y: top * scaleY });
+        }
+        calibrationData = {
+            points: points,
+            sizeMM: {
+                w: parseFloat(document.getElementById('calibSizeW').value) || 90,
+                h: parseFloat(document.getElementById('calibSizeH').value) || 90
+            },
+            photoURL: calibrationPhotoURL
+        };
+        saveSettings();
+        document.getElementById('calibStatus').textContent = '🟢 Калибровано';
+        document.getElementById('calibStatus').className = 'status-badge calibrated';
+        document.getElementById('btnTakePhoto').disabled = false;
+        document.getElementById('calibInputs').style.display = 'none';
+        document.getElementById('btnSaveCalib').style.display = 'none';
+        document.getElementById('btnCancelCalib').style.display = 'none';
+        document.getElementById('btnRetakeCalibPhoto').style.display = 'none';
+        isCalibrationMode = false;
+        clearMarkers();
+        document.getElementById('cameraVideo').style.display = 'block';
+        document.getElementById('cameraCanvas').style.display = 'none';
+        showToast('✅ Калибровка сохранена', true);
+    }
+
+    // ==================== ПОЛИГОНЫ ====================
+    function clearPolygonMarkers() {
+        for (var i = 0; i < polygonMarkers.length; i++) {
+            if (polygonMarkers[i].parentNode) polygonMarkers[i].remove();
+        }
+        polygonMarkers = [];
+    }
+
+    function createPolygonMarker(idx) {
+        if (!currentPolygon || idx >= currentPolygon.points.length) return;
+        var points = currentPolygon.points;
+        var color = drawingType === 'hole' ? '#ff4444' : '#2ed573';
+        var marker = document.createElement('div');
+        marker.className = 'polygon-marker';
+        marker.textContent = idx + 1;
+        marker.style.background = color;
+        marker.style.left = points[idx].x + 'px';
+        marker.style.top = points[idx].y + 'px';
+        marker.addEventListener('mousedown', function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            wasDragging = false;
+            var startX = e.clientX;
+            var startY = e.clientY;
+            var origX = points[idx].x;
+            var origY = points[idx].y;
+            function onMove(ev) {
+                wasDragging = true;
+                var newX = origX + ev.clientX - startX;
+                var newY = origY + ev.clientY - startY;
+                var rect = document.getElementById('videoContainer').getBoundingClientRect();
+                newX = Math.max(0, Math.min(newX, rect.width));
+                newY = Math.max(0, Math.min(newY, rect.height));
+                points[idx] = { x: newX, y: newY };
+                marker.style.left = newX + 'px';
+                marker.style.top = newY + 'px';
+                redrawPolygons();
+            }
+            function onUp() {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            }
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+        marker.addEventListener('dblclick', function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            points.splice(idx, 1);
+            if (points.length === 0) {
+                polygonGroups = polygonGroups.filter(function(g) { return g !== currentPolygon; });
+                currentPolygon = null;
+                clearPolygonMarkers();
+            } else {
+                rebuildAllPolygonMarkers();
+            }
+            redrawPolygons();
+            updatePolygonList();
+        });
+        document.getElementById('videoContainer').appendChild(marker);
+        polygonMarkers.push(marker);
+    }
+
+    function rebuildAllPolygonMarkers() {
+        clearPolygonMarkers();
+        if (!currentPolygon) return;
+        for (var i = 0; i < currentPolygon.points.length; i++) {
+            createPolygonMarker(i);
+        }
+    }
+
+	function redrawPolygons() {
+		var canvas = document.getElementById('cameraCanvas');
+		var ctx = canvas.getContext('2d');
+		if (!sheetPhotoURL) return;
+		var img = new Image();
+		img.onload = function() {
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			ctx.drawImage(img, 0, 0);
+			var canvasRect = canvas.getBoundingClientRect();
+			var containerRect = document.getElementById('videoContainer').getBoundingClientRect();
+			var offsetX = canvasRect.left - containerRect.left;
+			var offsetY = canvasRect.top - containerRect.top;
+			var scaleX = canvas.width / canvasRect.width;
+			var scaleY = canvas.height / canvasRect.height;
+			
+			for (var g = 0; g < polygonGroups.length; g++) {
+				var group = polygonGroups[g];
+				if (group.points.length < 2) continue;
+				
+				var color = group.type === 'hole' ? '#ff4444' : '#2ed573';
+				var fill = group.type === 'hole' ? 'rgba(255,68,68,0.2)' : 'rgba(46,213,115,0.15)';
+				
+				// Подсветка при наведении
+				if (g === hoveredPolygonIndex) {
+					color = '#ffa502';
+					fill = 'rgba(255,165,2,0.35)';
+					ctx.lineWidth = 5;
+				} else if (group === currentPolygon) {
+					ctx.lineWidth = 5;
+				} else {
+					ctx.lineWidth = 3;
+				}
+				
+				ctx.strokeStyle = color;
+				ctx.fillStyle = fill;
+				ctx.setLineDash(group.type === 'hole' ? [4, 4] : [8, 4]);
+				ctx.beginPath();
+				
+				for (var i = 0; i < group.points.length; i++) {
+					var px = (group.points[i].x - offsetX) * scaleX;
+					var py = (group.points[i].y - offsetY) * scaleY;
+					if (i === 0) ctx.moveTo(px, py);
+					else ctx.lineTo(px, py);
+				}
+				ctx.closePath();
+				ctx.fill();
+				ctx.stroke();
+				ctx.setLineDash([]);
+				
+				if (group === currentPolygon) {
+					for (var i = 0; i < group.points.length; i++) {
+						var px = (group.points[i].x - offsetX) * scaleX;
+						var py = (group.points[i].y - offsetY) * scaleY;
+						ctx.fillStyle = color;
+						ctx.beginPath();
+						ctx.arc(px, py, 6, 0, Math.PI * 2);
+						ctx.fill();
+						ctx.strokeStyle = '#fff';
+						ctx.lineWidth = 2;
+						ctx.stroke();
+					}
+				}
+			}
+		};
+		img.src = sheetPhotoURL;
+	}
+
+    function updatePolygonList() {
+        var list = document.getElementById('polygonList');
+        list.innerHTML = '';
+        if (polygonGroups.length === 0) {
+            list.innerHTML = '<div style="font-size:0.7em;color:#666;padding:8px;">Нет областей</div>';
+            return;
+        }
+        for (var g = 0; g < polygonGroups.length; g++) {
+            var group = polygonGroups[g];
+            var color = group.type === 'hole' ? '#ff4444' : '#2ed573';
+            var icon = group.type === 'hole' ? '🔴' : '🟢';
+            var name = group.type === 'hole' ? 'Дырка' : 'Область';
+            var item = document.createElement('div');
+            item.className = 'polygon-list-item';
+            item.innerHTML =
+                '<span style="color:' + color + ';">' + icon + ' ' + name + ' ' + (g + 1) + '</span>' +
+                '<span style="color:#999;font-size:0.8em;">(' + group.points.length + ' т.)</span>' +
+                '<button style="width:auto;padding:2px 6px;font-size:0.7em;background:transparent;border:1px solid #444;color:#ccc;border-radius:3px;margin-left:auto;" data-edit="' + g + '">✏️</button>' +
+                '<button style="width:auto;padding:2px 6px;font-size:0.7em;background:transparent;border:1px solid #444;color:#ff4444;border-radius:3px;" data-del="' + g + '">🗑️</button>';
+            list.appendChild(item);
+        }
+    }
+
+    // ==================== АВТОПРИМЕНЕНИЕ МАСКИ ====================
+    function autoApplyMask() {
+        if (!calibrationData || polygonGroups.length === 0) {
+            detectedSheetData = null;
+            document.getElementById('resultInfo').innerHTML = 'Размер не определён';
+            document.getElementById('btnExportSheet').disabled = true;
+            document.getElementById('btnCopyToMain').disabled = true;
+            document.getElementById('previewContainer').innerHTML = 'Нет данных';
+            return;
+        }
+
+        var canvas = document.getElementById('cameraCanvas');
+        var canvasRect = canvas.getBoundingClientRect();
+        var containerRect = document.getElementById('videoContainer').getBoundingClientRect();
+        var offsetX = canvasRect.left - containerRect.left;
+        var offsetY = canvasRect.top - containerRect.top;
+        var scaleX = canvas.width / canvasRect.width;
+        var scaleY = canvas.height / canvasRect.height;
+
+        var photoW = Math.abs(calibrationData.points[1].x - calibrationData.points[0].x);
+        var photoH = Math.abs(calibrationData.points[3].y - calibrationData.points[0].y);
+        var sclX = calibrationData.sizeMM.w / photoW;
+        var sclY = calibrationData.sizeMM.h / photoH;
+        var offX = -calibrationData.points[0].x * sclX;
+        var offY = -calibrationData.points[0].y * sclY;
+
+        var allMM = [];
+        var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+        for (var g = 0; g < polygonGroups.length; g++) {
+            if (polygonGroups[g].points.length < 3) continue;
+            var pts = [];
+            for (var i = 0; i < polygonGroups[g].points.length; i++) {
+                var px = (polygonGroups[g].points[i].x - offsetX) * scaleX;
+                var py = (polygonGroups[g].points[i].y - offsetY) * scaleY;
+                pts.push({ x: px * sclX + offX, y: py * sclY + offY });
+                if (pts[i].x < minX) minX = pts[i].x;
+                if (pts[i].y < minY) minY = pts[i].y;
+                if (pts[i].x > maxX) maxX = pts[i].x;
+                if (pts[i].y > maxY) maxY = pts[i].y;
+            }
+            allMM.push({ type: polygonGroups[g].type, points: pts });
+        }
+
+        if (minX === Infinity) return;
+
+        detectedSheetData = {
+            width: maxX - minX,
+            height: maxY - minY,
+            offsetX: minX,
+            offsetY: minY,
+            areas: allMM
+        };
+
+        document.getElementById('resultInfo').innerHTML =
+            'Размер: <b style="color:#2ed573;">' + (maxX - minX).toFixed(1) + ' × ' + (maxY - minY).toFixed(1) + ' мм</b>';
+        document.getElementById('btnExportSheet').disabled = false;
+        document.getElementById('btnCopyToMain').disabled = false;
+
+        var svgNS = 'http://www.w3.org/2000/svg';
+        var svg = document.createElementNS(svgNS, 'svg');
+        svg.setAttribute('viewBox', '0 0 ' + (maxX - minX) + ' ' + (maxY - minY));
+        svg.style.width = '100%';
+        svg.style.height = '100%';
+
+        var bg = document.createElementNS(svgNS, 'rect');
+        bg.setAttribute('width', maxX - minX);
+        bg.setAttribute('height', maxY - minY);
+        bg.setAttribute('fill', '#f5f5f0');
+        bg.setAttribute('stroke', '#ddd');
+        bg.setAttribute('stroke-width', '0.3');
+        svg.appendChild(bg);
+
+        for (var g = 0; g < allMM.length; g++) {
+            var d = '';
+            for (var i = 0; i < allMM[g].points.length; i++) {
+                d += (i === 0 ? 'M' : 'L') +
+                     (allMM[g].points[i].x - minX).toFixed(3) + ' ' +
+                     (allMM[g].points[i].y - minY).toFixed(3) + ' ';
+            }
+            d += 'Z';
+            var path = document.createElementNS(svgNS, 'path');
+            path.setAttribute('d', d);
+            path.setAttribute('fill', allMM[g].type === 'hole' ? '#fff' : 'rgba(46,213,115,0.2)');
+            path.setAttribute('stroke', allMM[g].type === 'hole' ? '#ff4444' : '#2ed573');
+            path.setAttribute('stroke-width', '0.3');
+            svg.appendChild(path);
+        }
+
+        var preview = document.getElementById('previewContainer');
+        preview.innerHTML = '';
+        preview.appendChild(svg);
+    }
+
+    // ==================== ЭКСПОРТ SVG ====================
+    function generateSheetSVG() {
+        if (!detectedSheetData) return null;
+        var d = detectedSheetData;
+        var svgNS = 'http://www.w3.org/2000/svg';
+        var svg = document.createElementNS(svgNS, 'svg');
+        svg.setAttribute('xmlns', svgNS);
+        svg.setAttribute('viewBox', '0 0 ' + d.width + ' ' + d.height);
+        svg.setAttribute('width', d.width + 'mm');
+        svg.setAttribute('height', d.height + 'mm');
+
+        for (var g = 0; g < d.areas.length; g++) {
+            var pd = '';
+            for (var i = 0; i < d.areas[g].points.length; i++) {
+                pd += (i === 0 ? 'M' : 'L') +
+                      (d.areas[g].points[i].x - d.offsetX).toFixed(3) + ' ' +
+                      (d.areas[g].points[i].y - d.offsetY).toFixed(3) + ' ';
+            }
+            pd += 'Z';
+            var path = document.createElementNS(svgNS, 'path');
+            path.setAttribute('d', pd);
+            if (d.areas[g].type === 'area') {
+                path.setAttribute('fill', 'none');
+                path.setAttribute('stroke', '#000000');
+                path.setAttribute('stroke-width', '0.5');
+            } else {
+                path.setAttribute('fill', 'none');
+                path.setAttribute('stroke', '#ff0000');
+                path.setAttribute('stroke-width', '0.5');
+                path.setAttribute('stroke-dasharray', '2,2');
+            }
+            svg.appendChild(path);
+        }
+        return svg;
+    }
+
+    // ==================== OPENCV ПОИСК ====================
+    function findAllAreas() {
+        if (!sheetPhotoURL) {
+            showToast('Сначала сделайте снимок листа');
+            return;
+        }
+        if (!opencvReady) {
+            showToast('OpenCV ещё загружается...');
+            return;
+        }
+
+        try {
+            var canvas = document.getElementById('cameraCanvas');
+            var src = cv.imread(canvas);
+            var w = src.cols;
+            var h = src.rows;
+
+            var scale = 1;
+            if (w > 800) { scale = 800 / w; }
+            var small = new cv.Mat();
+            cv.resize(src, small, new cv.Size(0, 0), scale, scale, cv.INTER_AREA);
+
+            var k = 4;
+            var samples = new cv.Mat(small.rows * small.cols, 3, cv.CV_32F);
+            for (var y = 0; y < small.rows; y++) {
+                for (var x = 0; x < small.cols; x++) {
+                    var pixel = small.ucharPtr(y, x);
+                    var idx = (y * small.cols + x) * 3;
+                    samples.data32F[idx] = pixel[0];
+                    samples.data32F[idx + 1] = pixel[1];
+                    samples.data32F[idx + 2] = pixel[2];
+                }
+            }
+
+            var labels = new cv.Mat(small.rows * small.cols, 1, cv.CV_32S);
+            var centers = new cv.Mat();
+            cv.kmeans(samples, k, labels, new cv.TermCriteria(cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 10, 1.0), 3, cv.KMEANS_PP_CENTERS, centers);
+
+            var clusters = [];
+            for (var i = 0; i < k; i++) {
+                var sum = centers.floatPtr(i)[0] + centers.floatPtr(i)[1] + centers.floatPtr(i)[2];
+                clusters.push({ idx: i, brightness: sum });
+            }
+            clusters.sort(function(a, b) { return b.brightness - a.brightness; });
+            var brightCluster = clusters[0].idx;
+
+            var mask = new cv.Mat(small.rows, small.cols, cv.CV_8UC1);
+            for (var y = 0; y < small.rows; y++) {
+                for (var x = 0; x < small.cols; x++) {
+                    var idx = y * small.cols + x;
+                    mask.ucharPtr(y, x)[0] = labels.data32S[idx] === brightCluster ? 255 : 0;
+                }
+            }
+
+            var contours = new cv.MatVector();
+            var hierarchy = new cv.Mat();
+            cv.findContours(mask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+            var validContours = [];
+            for (var i = 0; i < contours.size(); i++) {
+                var contour = contours.get(i);
+                var area = cv.contourArea(contour) / (scale * scale);
+                if (area < 500) continue;
+                if (area > w * h * 0.7) continue;
+
+                var perimeter = cv.arcLength(contour, true);
+                var epsilon = 0.015 * perimeter;
+                var approx = new cv.Mat();
+                cv.approxPolyDP(contour, approx, epsilon, true);
+
+                var points = [];
+                for (var j = 0; j < approx.rows; j++) {
+                    points.push({
+                        x: Math.round(approx.data32S[j * 2] / scale),
+                        y: Math.round(approx.data32S[j * 2 + 1] / scale)
+                    });
+                }
+                if (points.length >= 4) validContours.push(points);
+                approx.delete();
+            }
+
+            if (validContours.length === 0) {
+                showToast('Области не найдены');
+                src.delete(); small.delete(); samples.delete(); labels.delete();
+                centers.delete(); mask.delete(); contours.delete(); hierarchy.delete();
+                return;
+            }
+
+            polygonGroups = [];
+            currentPolygon = null;
+            clearPolygonMarkers();
+            isDrawingMode = false;
+
+            var vr = document.getElementById('videoContainer').getBoundingClientRect();
+            var cr = canvas.getBoundingClientRect();
+            var dsx = cr.width / canvas.width;
+            var dsy = cr.height / canvas.height;
+            var ox = cr.left - vr.left;
+            var oy = cr.top - vr.top;
+
+            for (var c = 0; c < validContours.length; c++) {
+                var pts = [];
+                for (var i = 0; i < validContours[c].length; i++) {
+                    pts.push({
+                        x: ox + validContours[c][i].x * dsx,
+                        y: oy + validContours[c][i].y * dsy
+                    });
+                }
+                if (pts.length >= 3) {
+                    if (pts[0].x !== pts[pts.length - 1].x || pts[0].y !== pts[pts.length - 1].y) {
+                        pts.push({ x: pts[0].x, y: pts[0].y });
+                    }
+                    polygonGroups.push({ type: 'area', points: pts });
+                }
+            }
+
+            updatePolygonList();
+            redrawPolygons();
+            autoApplyMask();
+
+            src.delete(); small.delete(); samples.delete(); labels.delete();
+            centers.delete(); mask.delete(); contours.delete(); hierarchy.delete();
+
+            showToast('Найдено ' + polygonGroups.length + ' областей', true);
+        } catch(e) {
+            showToast('Ошибка OpenCV: ' + e.message);
+            console.error(e);
+        }
+    }
+
+    // ==================== ВОЛШЕБНАЯ ПАЛОЧКА ====================
+    function magicWandSelect(clickX, clickY) {
+        var canvas = document.getElementById('cameraCanvas');
+        var ctx = canvas.getContext('2d');
+        var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        var data = imageData.data;
+        var w = canvas.width;
+        var h = canvas.height;
+
+        var canvasRect = canvas.getBoundingClientRect();
+        var scaleX = canvas.width / canvasRect.width;
+        var scaleY = canvas.height / canvasRect.height;
+        var startX = Math.floor(clickX * scaleX);
+        var startY = Math.floor(clickY * scaleY);
+
+        if (startX < 0 || startX >= w || startY < 0 || startY >= h) return;
+
+        var idx = (startY * w + startX) * 4;
+        var r0 = data[idx], g0 = data[idx + 1], b0 = data[idx + 2];
+
+        var heatmap = new Uint16Array(w * h);
+        var totalLayers = 0;
+
+        for (var tolerance = 50; tolerance <= 200; tolerance += 2) {
+            var area = new Uint8Array(w * h);
+            var stack = [{ x: startX, y: startY }];
+            var count = 0;
+
+            while (stack.length > 0) {
+                var p = stack.pop();
+                var x = p.x, y = p.y;
+                if (x < 0 || x >= w || y < 0 || y >= h) continue;
+                if (area[y * w + x]) continue;
+                var i = (y * w + x) * 4;
+                if (Math.abs(data[i] - r0) <= tolerance &&
+                    Math.abs(data[i + 1] - g0) <= tolerance &&
+                    Math.abs(data[i + 2] - b0) <= tolerance) {
+                    area[y * w + x] = 1;
+                    count++;
+                    stack.push({ x: x - 1, y: y }, { x: x + 1, y: y }, { x: x, y: y - 1 }, { x: x, y: y + 1 });
+                }
+            }
+
+            if (count < 200) continue;
+            if (count > w * h * 0.8) break;
+
+            for (var i = 0; i < area.length; i++) {
+                if (area[i]) heatmap[i]++;
+            }
+            totalLayers++;
+        }
+
+        if (totalLayers < 3) { showToast('Мало слоёв: ' + totalLayers); return; }
+
+        var threshold = Math.floor(totalLayers * 0.6);
+        var stableArea = new Uint8Array(w * h);
+        for (var i = 0; i < heatmap.length; i++) {
+            if (heatmap[i] >= threshold) stableArea[i] = 1;
+        }
+
+        var border = [];
+        for (var y = 1; y < h - 1; y++) {
+            for (var x = 1; x < w - 1; x++) {
+                if (!stableArea[y * w + x]) continue;
+                if (!stableArea[(y - 1) * w + x] || !stableArea[(y + 1) * w + x] ||
+                    !stableArea[y * w + (x - 1)] || !stableArea[y * w + (x + 1)]) {
+                    border.push({ x: x, y: y });
+                }
+            }
+        }
+
+        if (border.length < 10) { showToast('Нет границы'); return; }
+
+        var cx = 0, cy = 0;
+        for (var i = 0; i < border.length; i++) { cx += border[i].x; cy += border[i].y; }
+        cx /= border.length; cy /= border.length;
+        border.sort(function(a, b) {
+            return Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx);
+        });
+
+        var step = Math.max(1, Math.floor(border.length / 60));
+        var contour = [];
+        for (var i = 0; i < border.length; i += step) contour.push(border[i]);
+        contour.push({ x: contour[0].x, y: contour[0].y });
+
+        var vr = document.getElementById('videoContainer').getBoundingClientRect();
+        var cr = canvas.getBoundingClientRect();
+        var dsx = cr.width / canvas.width, dsy = cr.height / canvas.height;
+        var ox = cr.left - vr.left, oy = cr.top - vr.top;
+
+        var pts = contour.map(function(p) {
+            return { x: ox + p.x * dsx, y: oy + p.y * dsy };
+        });
+        polygonGroups.push({ type: 'area', points: pts });
+        updatePolygonList();
+        redrawPolygons();
+        autoApplyMask();
+
+        magicWandActive = false;
+        document.getElementById('btnMagicWand').textContent = '🪄 Волшебная палочка';
+        document.getElementById('btnMagicWand').style.background = '';
+        document.getElementById('btnMagicWand').style.color = '';
+        document.getElementById('videoContainer').style.cursor = '';
+
+        showToast('Готово', true);
+    }
+
+    // ==================== ОБРАБОТЧИКИ СОБЫТИЙ ====================
+    document.getElementById('btnRefreshCameras').addEventListener('click', refreshCameras);
+    document.getElementById('btnStartCamera').addEventListener('click', startCamera);
+    document.getElementById('btnStopCamera').addEventListener('click', stopCamera);
+    document.getElementById('btnCalibrate').addEventListener('click', startCalibration);
+    document.getElementById('btnRetakeCalibPhoto').addEventListener('click', retakeCalibrationPhoto);
+    document.getElementById('btnSaveCalib').addEventListener('click', saveCalibration);
+    document.getElementById('btnCancelCalib').addEventListener('click', cancelCalibration);
+
+    document.getElementById('btnTakePhoto').addEventListener('click', function() {
+        if (!currentStream) {
+            startCamera().then(function() {
+                setTimeout(function() {
+                    sheetPhotoURL = takePhoto();
+                    if (sheetPhotoURL) {
+                        document.getElementById('btnRetakePhoto').style.display = 'block';
+                        document.getElementById('btnAddArea').style.display = 'block';
+                        document.getElementById('btnMagicWand').style.display = 'block';
+                        document.getElementById('btnFindAll').style.display = 'block';
+                        document.getElementById('btnTakePhoto').style.display = 'none';
+                        clearPolygonMarkers();
+                        polygonGroups = [];
+                        currentPolygon = null;
+                        updatePolygonList();
+                        showToast('Лист снят. Обводите области.', true);
+                    }
+                }, 800);
+            }).catch(function(e) {
+                showToast('Не удалось запустить камеру: ' + e.message);
+            });
+            return;
+        }
+        sheetPhotoURL = takePhoto();
+        if (sheetPhotoURL) {
+            document.getElementById('btnRetakePhoto').style.display = 'block';
+            document.getElementById('btnAddArea').style.display = 'block';
+            document.getElementById('btnMagicWand').style.display = 'block';
+            document.getElementById('btnFindAll').style.display = 'block';
+            document.getElementById('btnTakePhoto').style.display = 'none';
+            clearPolygonMarkers();
+            polygonGroups = [];
+            currentPolygon = null;
+            updatePolygonList();
+            showToast('Лист снят. Обводите области.', true);
+        }
+    });
+
+    document.getElementById('btnRetakePhoto').addEventListener('click', function() {
+        document.getElementById('cameraVideo').style.display = 'block';
+        document.getElementById('cameraCanvas').style.display = 'none';
+        document.getElementById('btnRetakePhoto').style.display = 'none';
+        document.getElementById('btnTakePhoto').style.display = 'block';
+        document.getElementById('btnAddArea').style.display = 'none';
+        document.getElementById('areaTypeSelect').style.display = 'none';
+        document.getElementById('btnMagicWand').style.display = 'none';
+        document.getElementById('btnFindAll').style.display = 'none';
+        clearPolygonMarkers();
+        polygonGroups = [];
+        currentPolygon = null;
+        isDrawingMode = false;
+        updatePolygonList();
+        document.getElementById('videoContainer').style.cursor = '';
+    });
+
+    document.getElementById('btnAddArea').addEventListener('click', function() {
+        if (isDrawingMode && currentPolygon) {
+            if (currentPolygon.points.length < 3) { showToast('Минимум 3 точки'); return; }
+            var f = currentPolygon.points[0];
+            var l = currentPolygon.points[currentPolygon.points.length - 1];
+            if (f.x !== l.x || f.y !== l.y) currentPolygon.points.push({ x: f.x, y: f.y });
+            currentPolygon = null;
+            clearPolygonMarkers();
+            isDrawingMode = false;
+            document.getElementById('btnAddArea').textContent = '+ Добавить область';
+            document.getElementById('areaTypeSelect').style.display = 'none';
+            document.getElementById('videoContainer').style.cursor = '';
+            redrawPolygons();
+            updatePolygonList();
+            autoApplyMask();
+            showToast('Область добавлена', true);
+        } else if (currentPolygon) {
+            currentPolygon = null;
+            clearPolygonMarkers();
+            document.getElementById('btnAddArea').textContent = '+ Добавить область';
+            document.getElementById('areaTypeSelect').style.display = 'none';
+            document.getElementById('videoContainer').style.cursor = '';
+            redrawPolygons();
+            updatePolygonList();
+            autoApplyMask();
+            showToast('Редактирование завершено', true);
+        } else {
+            drawingType = document.getElementById('areaTypeSelect').value;
+            isDrawingMode = true;
+            currentPolygon = { type: drawingType, points: [] };
+            polygonGroups.push(currentPolygon);
+            clearPolygonMarkers();
+            document.getElementById('btnAddArea').textContent = '✅ Завершить';
+            document.getElementById('areaTypeSelect').style.display = 'inline-block';
+            document.getElementById('videoContainer').style.cursor = 'crosshair';
+        }
+    });
+
+    document.getElementById('areaTypeSelect').addEventListener('change', function() {
+        drawingType = this.value;
+        if (currentPolygon) {
+            currentPolygon.type = drawingType;
+            redrawPolygons();
+            updatePolygonList();
+            var color = drawingType === 'hole' ? '#ff4444' : '#2ed573';
+            for (var i = 0; i < polygonMarkers.length; i++) {
+                polygonMarkers[i].style.background = color;
+            }
+            autoApplyMask();
+        }
+    });
+
+    document.getElementById('polygonList').addEventListener('click', function(e) {
+        var t = e.target;
+        if (t.hasAttribute('data-edit')) {
+            var idx = parseInt(t.getAttribute('data-edit'));
+            if (isDrawingMode && currentPolygon && currentPolygon.points.length >= 3) {
+                var f = currentPolygon.points[0];
+                var l = currentPolygon.points[currentPolygon.points.length - 1];
+                if (f.x !== l.x || f.y !== l.y) currentPolygon.points.push({ x: f.x, y: f.y });
+                currentPolygon = null;
+                clearPolygonMarkers();
+                isDrawingMode = false;
+            }
+            currentPolygon = polygonGroups[idx];
+            drawingType = currentPolygon.type;
+            isDrawingMode = false;
+            document.getElementById('btnAddArea').textContent = '✅ Завершить';
+            document.getElementById('areaTypeSelect').style.display = 'inline-block';
+            document.getElementById('areaTypeSelect').value = drawingType;
+            document.getElementById('videoContainer').style.cursor = '';
+            rebuildAllPolygonMarkers();
+            redrawPolygons();
+            updatePolygonList();
+            showToast('Редактирование области #' + (idx + 1), true);
+        }
+        if (t.hasAttribute('data-del')) {
+            var idx = parseInt(t.getAttribute('data-del'));
+            if (currentPolygon === polygonGroups[idx]) {
+                currentPolygon = null;
+                clearPolygonMarkers();
+                isDrawingMode = false;
+                document.getElementById('btnAddArea').textContent = '+ Добавить область';
+                document.getElementById('areaTypeSelect').style.display = 'none';
+                document.getElementById('videoContainer').style.cursor = '';
+            }
+            polygonGroups.splice(idx, 1);
+            redrawPolygons();
+            updatePolygonList();
+            autoApplyMask();
+            showToast('Область удалена', true);
+        }
+    });
+
+document.getElementById('polygonList').addEventListener('mouseover', function(e) {
+    var item = e.target.closest('.polygon-list-item');
+    if (!item) return;
+    
+    var buttons = item.querySelectorAll('button');
+    for (var i = 0; i < buttons.length; i++) {
+        if (buttons[i].hasAttribute('data-edit')) {
+            hoveredPolygonIndex = parseInt(buttons[i].getAttribute('data-edit'));
+            break;
+        }
+        if (buttons[i].hasAttribute('data-del')) {
+            hoveredPolygonIndex = parseInt(buttons[i].getAttribute('data-del'));
+            break;
+        }
+    }
+    
+    redrawPolygons();
+});
+
+document.getElementById('polygonList').addEventListener('mouseout', function() {
+    hoveredPolygonIndex = -1;
+    redrawPolygons();
+});
+
+    document.getElementById('btnMagicWand').addEventListener('click', function() {
+        if (!sheetPhotoURL) { showToast('Сначала сделайте снимок листа'); return; }
+        magicWandActive = !magicWandActive;
+        if (magicWandActive) {
+            document.getElementById('videoContainer').style.cursor = 'crosshair';
+            this.textContent = '🪄 Отменить';
+            this.style.background = '#ffa502';
+            this.style.color = '#000';
+            showToast('Кликните на фанеру');
+        } else {
+            document.getElementById('videoContainer').style.cursor = '';
+            this.textContent = '🪄 Волшебная палочка';
+            this.style.background = '';
+            this.style.color = '';
+        }
+    });
+
+    document.getElementById('btnFindAll').addEventListener('click', findAllAreas);
+
+    document.getElementById('btnExportSheet').addEventListener('click', function() {
+        var svg = generateSheetSVG();
+        if (!svg) return;
+        var blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'detected-sheet.svg';
+        a.click();
+        showToast('Экспортировано', true);
+    });
+
+    document.getElementById('btnCopyToMain').addEventListener('click', function() {
+        var svg = generateSheetSVG();
+        if (!svg) return;
+        var svgText = new XMLSerializer().serializeToString(svg);
+        localStorage.setItem('detectedSheetSVG', svgText);
+        localStorage.setItem('detectedSheetData', JSON.stringify(detectedSheetData));
+        navigator.clipboard.writeText(svgText).then(function() {
+            showToast('SVG скопирован', true);
+        }).catch(function() {
+            showToast('Сохранено в localStorage', true);
+        });
+    });
+
+    document.getElementById('videoContainer').addEventListener('click', function(e) {
+        if (magicWandActive) {
+            var rect = this.getBoundingClientRect();
+            magicWandSelect(e.clientX - rect.left, e.clientY - rect.top);
+            return;
+        }
+        if (!isDrawingMode || !currentPolygon) return;
+        if (wasDragging) { wasDragging = false; return; }
+        if (e.target.classList.contains('polygon-marker') || e.target.classList.contains('calibration-marker')) return;
+        var r = document.getElementById('videoContainer').getBoundingClientRect();
+        currentPolygon.points.push({ x: e.clientX - r.left, y: e.clientY - r.top });
+        createPolygonMarker(currentPolygon.points.length - 1);
+        redrawPolygons();
+    });
+
+    document.addEventListener('mousemove', function(e) {
+        if (activeMarkerIndex >= 0 && markers[activeMarkerIndex]) {
+            var r = document.getElementById('videoContainer').getBoundingClientRect();
+            markers[activeMarkerIndex].style.left = Math.max(0, Math.min(e.clientX - r.left, r.width)) + 'px';
+            markers[activeMarkerIndex].style.top = Math.max(0, Math.min(e.clientY - r.top, r.height)) + 'px';
+        }
+    });
+
+    document.addEventListener('mouseup', function() {
+        activeMarkerIndex = -1;
+    });
+
+    // ==================== ИНИЦИАЛИЗАЦИЯ ====================
+    loadSettings();
+    refreshCameras();
+    showToast('Готов к работе', true);
+})();
+</script>
+</body>
+</html>
