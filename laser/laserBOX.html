@@ -16,19 +16,19 @@
             justify-content: center;
             min-height: 100vh;
             margin: 0;
-            padding: 1.5rem 1rem;
+            padding: 0.5rem 0.5rem;
         }
         .card {
             background: white;
-            border-radius: 2rem;
-            padding: 1.8rem 2rem 2rem;
+            border-radius: 1rem;
+            padding: 0.5rem 2rem;
             box-shadow: 0 20px 35px rgba(0,0,0,0.07);
             width: fit-content;
             max-width: 950px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 1.2rem;
+            gap: 0.5rem;
         }
         h2 { font-weight: 500; font-size: 1.5rem; color: #2e2e2c; margin: 0; }
         .controls {
@@ -42,18 +42,40 @@
             border-radius: 3rem;
             width: 100%;
         }
-        .input-group { display: flex; flex-direction: column; gap: 0.3rem; }
+        .input-group {  position: relative; display: flex; flex-direction: column; gap: 0.3rem; }
         .input-group label {
             font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
             letter-spacing: 0.5px; color: #4b4b45; margin-left: 0.2rem; white-space: nowrap;
         }
+		.input-group  label:hover::after, .checkbox-group label:hover::after {
+			content: attr(data-tip);
+			position: absolute;
+			bottom: 100%;
+			left: 50%;
+			transform: translateX(-50%);
+			background: #2e2e2c;
+			color: #fff;
+			padding: 0.5rem 0.8rem;
+			border-radius: 0.8rem;
+			font-size: 0.7rem;
+			font-weight: 400;
+			white-space: normal;
+			width: 200px;
+			text-align: center;
+			z-index: 100;
+			margin-bottom: 0.5rem;
+			line-height: 1.3;
+			letter-spacing: 0;
+			text-transform: none;
+			pointer-events: none;
+		}
         .input-group input, .input-group select {
-            width: 85px; padding: 0.5rem 0.5rem; border: 1.5px solid #dbd9d3;
+            width: 100px; padding: 0.5rem 0.5rem; border: 1.5px solid #dbd9d3;
             border-radius: 2.5rem; font-size: 0.85rem; font-weight: 500;
             background: white; text-align: center; transition: 0.2s; outline: none;
         }
         .input-group select {
-            width: 100%; cursor: pointer; appearance: none;
+            width: 103%; cursor: pointer; appearance: none;
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%235b5b55'/%3E%3C/svg%3E");
             background-repeat: no-repeat; background-position: right 0.5rem center; padding-right: 1.5rem;
         }
@@ -62,21 +84,22 @@
         }
         .checkbox-group {
 			display: grid;
-			gap: 0.7rem;
+			gap: 0.1rem;
 			position: relative;
-			top: -11px;
+			top: -5px;
         }
         .checkbox-group input[type="checkbox"] {
-            width: 16px;
-            height: 16px;
+            width: 29px;
+            height: 29px;
             cursor: pointer;
         }
-        .checkbox-group label {
-            font-size: 0.7rem;
-            font-weight: 600;
-            color: #4b4b45;
-            cursor: pointer;
-            white-space: nowrap;
+		.checkbox-group label {
+		  font-size: 1rem;
+		  font-weight: 600;
+		  color: #4b4b45;
+		  cursor: pointer;
+		  white-space: nowrap;
+		  text-align: center;
         }
         .workspace {
             display: flex;
@@ -164,14 +187,14 @@
         button.secondary:hover { background: #f5f3ee; }
         button.primary-btn {
             background: #1f1f1d; border: 1px solid #3f3f3b; color: white;
-            font-size: 0.8rem; padding: 0.55rem 1.2rem;
+            font-size: 1.6rem; /*padding: 0.55rem 1.2rem;*/
         }
         .info-text {
             color: #4f4d48;
             font-size: 0.8rem;
             font-weight: 500;
             display: flex;
-            gap: 0.6rem;
+            gap: 2rem;
             align-items: center;
             background: #f9f7f3;
             padding: 0.4rem 1rem;
@@ -180,6 +203,11 @@
             justify-content: center;
             width: 100%;
         }
+		.info-col {
+			display: flex;
+			flex-direction: column;
+			gap: 0.2rem;
+		}
         .info-text span { font-weight: 700; color: #2e2e2c; }
         .info-text .highlight { background: #e8e0d5; padding: 0.15rem 0.5rem; border-radius: 1rem; }
         .toast {
@@ -237,37 +265,42 @@
 </head>
 <body>
 <div class="card">
-    <h2>🔷 генератор деталей для многогранников</h2>
+    <h2>🔷 Генератор деталей для многогранников (4d 6d 8d 12d 20d)</h2>
     <div class="controls">
         <div class="input-group">
-            <label>📐 фигура</label>
+            <label data-tip="△ 4d 8d 20d, ◇ 6d, ⬠ 12d .">📐 фигура</label>
             <select id="shapeSelect">
-                <option value="3">△ треуг.(8 шт)</option>
-                <option value="4">◇ квадр.(6 шт)</option>
-                <option value="5">⬠ пятиуг.(12 шт)</option>
+                <option value="3">△ треугольник</option>
+                <option value="4">◇ квадрат</option>
+                <option value="5">⬠ пятиугольник</option>
             </select>
         </div>
-        <div class="input-group">
-            <label>📏 сторона мм</label>
+        <div class="input-group" >
+            <label data-tip="Длина ребра грани. Считать с шипами или без переключать в '?'.">📏 сторона мм</label>
             <input type="number" id="sideInput" value="20" step="0.5" min="6" max="200">
         </div>
-        <div class="input-group">
-            <label>🪵 толщина мм</label>
+		<div class="checkbox-group" >
+			<label data-tip="С шипом или без шипа" for="totalSideCheckbox" >?</label>
+			<input type="checkbox" id="totalSideCheckbox">
+			
+		</div>
+        <div class="input-group" >
+            <label data-tip="Толщина материала. Влияет на высоту шипов.">🪵 толщина мм</label>
             <input type="number" id="thicknessInput" value="2.4" step="0.1" min="0.5" max="15">
         </div>
-        <div class="input-group">
-            <label>🔢 пар шип-паз</label>
+        <div class="input-group" >
+            <label data-tip="Сколько шипов и пазов на одном ребре">🔢 пар шип-паз</label>
             <input type="number" id="pairsInput" value="3" step="1" min="2" max="20">
         </div>
-        <div class="input-group">
-            <label>▶ начало</label>
+        <div class="input-group" >
+            <label data-tip="С чего начинается ребро: с выступа или выемки">▶ начало</label>
             <select id="startSelect">
                 <option value="spike">с шипа</option>
                 <option value="gap">с паза</option>
             </select>
         </div>
-        <div class="checkbox-group" title= "закрасить шипы">
-            <label for="fillSpikesCheckbox" >🎨</label>
+        <div class="checkbox-group" >
+            <label data-tip="Закрасить шипы." for="fillSpikesCheckbox">🎨</label>
 			<input type="checkbox" id="fillSpikesCheckbox">
         </div>
 
@@ -279,11 +312,14 @@
             <div class="svg-container" id="svgContainer"></div>
         </div>
         <div class="right-panel">
-            <div class="preview-container" id="previewContainer">
-                <div class="preview-label" id="previewLabel">Октаэдр</div>
-                <div class="preview-sub" id="previewSub">8 треугольников</div>
-                <div class="preview-3d" id="preview3D"></div>
-            </div>
+<div class="preview-container" id="previewContainer">
+    <div class="preview-label" id="previewLabel">Треугольник</div>
+    <div class="preview-sub" id="previewSub">правильный многоугольник</div>
+    <div class="preview-3d" id="preview3D"></div>
+	<div class="assembly-info" id="assemblyInfo" style="font-size:0.7rem;color:#666;text-align:center;margin-top:0.3rem;cursor:pointer;user-select:none;">
+		Нажмите для смены 3D-вида
+	</div>
+</div>
             <div class="btn-row">
                 <button id="saveBtn" class="secondary">💾 сохранить SVG</button>
                 <button id="copyBtn" class="secondary">📋 копировать SVG</button>
@@ -292,13 +328,20 @@
         </div>
     </div>
 
-    <div class="info-text" id="infoBar">
-        <span>📐 сторона: <strong id="sideDisplay">20</strong> мм</span>
-        <span>🪵 толщина: <strong id="thickDisplay">2.4</strong> мм</span>
-        <span>📏 шип/паз: <span class="highlight" id="spikeWidthDisplay">3.33</span> мм</span>
-        <span>📐 габариты: <span class="highlight" id="dimensionsDisplay">—</span></span>
-        <span>📦 <strong id="totalDisplay">8 шт</strong></span>
+<div class="info-text" id="infoBar">
+    <div class="info-col">
+        <div>📐 грань без шипов: <strong id="sideDisplay">20</strong> мм</div>
+        <div>📐 грань с шипами: <strong id="totalSideDisplay">24.8</strong> мм</div>
     </div>
+    <div class="info-col">
+        <div>🪵 высота шипа: <strong id="thickDisplay">2.4</strong> мм</div>
+        <div>📏 ширина шипа: <strong id="spikeWidthDisplay">3.33</strong> мм</div>
+    </div>
+    <div class="info-col">
+        <div>📐 габариты: <strong id="dimensionsDisplay">—</strong></div>
+        <div>📦 количество: <strong id="totalDisplay">8 шт</strong></div>
+    </div>
+</div>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -340,7 +383,9 @@
 
     let currentCleanSVG = '';
     let scene, camera, renderer, controls, modelGroup;
-
+	let currentAssemblyIndex = 0;
+	let currentAssemblies = [];
+	
     // Инициализация Three.js
     function initThreeJS() {
         const container = preview3D;
@@ -391,42 +436,48 @@
     }
     
     // Создание трёхмерной модели
-    function create3DModel(sides) {
-        // Очищаем предыдущую модель
-        while(modelGroup.children.length > 0) {
-            modelGroup.remove(modelGroup.children[0]);
-        }
-        
-        const material = new THREE.MeshPhongMaterial({
-            color: '#e8d5c0',
-            specular: '#ffffff',
-            shininess: 30,
-            transparent: true,
-            opacity: 0.85,
-            side: THREE.DoubleSide
-        });
-        
-        const edgeMaterial = new THREE.LineBasicMaterial({ color: '#b8875b' });
-        
-        let geometry;
-        
-        if (sides === 3) {
+function create3DModel(sides, assemblyType) {
+    while(modelGroup.children.length > 0) {
+        modelGroup.remove(modelGroup.children[0]);
+    }
+    
+    const material = new THREE.MeshPhongMaterial({
+        color: '#e8d5c0',
+        specular: '#ffffff',
+        shininess: 30,
+        transparent: true,
+        opacity: 0.85,
+        side: THREE.DoubleSide
+    });
+    
+    const edgeMaterial = new THREE.LineBasicMaterial({ color: '#b8875b' });
+    
+    let geometry;
+    
+    if (sides === 3) {
+        if (assemblyType === 'tetra') {
+            geometry = new THREE.TetrahedronGeometry(10, 0);
+        } else if (assemblyType === 'octa') {
             geometry = new THREE.OctahedronGeometry(10, 0);
-        } else if (sides === 4) {
-            geometry = new THREE.BoxGeometry(14.14, 14.14, 14.14);
-        } else if (sides === 5) {
-            geometry = new THREE.DodecahedronGeometry(10, 0);
+        } else {
+            geometry = new THREE.IcosahedronGeometry(10, 0);
         }
-        
+    } else if (sides === 4) {
+        geometry = new THREE.BoxGeometry(14.14, 14.14, 14.14);
+    } else if (sides === 5) {
+        geometry = new THREE.DodecahedronGeometry(10, 0);
+    }
+    
+    if (geometry) {
         const mesh = new THREE.Mesh(geometry, material);
         modelGroup.add(mesh);
         
-        // Добавляем рёбра
         const edgesGeometry = new THREE.EdgesGeometry(geometry);
         const edges = new THREE.LineSegments(edgesGeometry, edgeMaterial);
         modelGroup.add(edges);
     }
-    
+}
+   
     // Обработка изменения размера окна
     window.addEventListener('resize', () => {
         if (renderer && preview3D) {
@@ -446,13 +497,34 @@
         return { 3: 8, 4: 6, 5: 12 }[sides] || 0;
     }
 
-    function getPolyhedronInfo(sides) {
-        return {
-            3: { name: 'Октаэдр', sub: '8 треугольников' },
-            4: { name: 'Куб', sub: '6 квадратов' },
-            5: { name: 'Додекаэдр', sub: '12 пятиугольников' }
-        }[sides] || { name: '', sub: '' };
-    }
+function getPolyhedronInfo(sides) {
+    const info = {
+        3: { 
+            name: 'Треугольник', 
+            sub: 'правильный треугольник',
+            assemblies: [
+                { name: 'ТЕТРАЭДР окта. икоса.', count: 4, type: 'tetra' },
+                { name: 'тетра. ОКТАЭДР икоса.', count: 8, type: 'octa' },
+                { name: 'тетра. окта. ИКОСАЭДР', count: 20, type: 'icosa' }
+            ]
+        },
+        4: { 
+            name: 'Квадрат', 
+            sub: 'правильный квадрат',
+            assemblies: [
+                { name: 'Куб', count: 6, type: 'cube' }
+            ]
+        },
+        5: { 
+            name: 'Пятиугольник', 
+            sub: 'правильный пятиугольник',
+            assemblies: [
+                { name: 'Додекаэдр', count: 12, type: 'dodeca' }
+            ]
+        }
+    };
+    return info[sides] || { name: '', sub: '', assemblies: [] };
+}
 
     function getPolygonVertices(sides, sideLength) {
         const vertices = [];
@@ -707,6 +779,60 @@ function buildCleanSVG(pathData, bounds, fillSpikes) {
     
     return svgContent;
 }
+function updateAssemblyInfo() {
+    const assemblyInfo = document.getElementById('assemblyInfo');
+    if (currentAssemblies.length === 0) {
+        assemblyInfo.textContent = '';
+        return;
+    }
+    
+    const current = currentAssemblies[currentAssemblyIndex];
+    const total = currentAssemblies.length;
+    
+    if (total === 1) {
+        assemblyInfo.textContent = `${current.name} (${current.count} шт)`;
+    } else {
+        assemblyInfo.textContent = `${current.name} (${current.count} шт) — ${currentAssemblyIndex + 1}/${total} ▶`;
+    }
+}
+
+function getDihedralAngle(sides) {
+    // Двугранные углы для платоновых тел
+    const angles = {
+        3: Math.acos(-1/3),        // треугольник: arccos(-1/3) ≈ 109.47°
+        4: Math.PI / 2,            // квадрат: 90°
+        5: Math.acos(-1/Math.sqrt(5)) // пятиугольник: arccos(-1/√5) ≈ 116.57°
+    };
+    return angles[sides] || Math.PI / 2;
+}
+
+function sideToTotal(side, thickness, sides) {
+    const angle = getDihedralAngle(sides);
+    return side + 2 * thickness * Math.cos(angle / 2);
+}
+
+function totalToSide(total, thickness, sides) {
+    const angle = getDihedralAngle(sides);
+    return total - 2 * thickness * Math.cos(angle / 2);
+}
+
+document.getElementById('assemblyInfo').addEventListener('click', () => {
+    if (currentAssemblies.length <= 1) return;
+    
+    currentAssemblyIndex = (currentAssemblyIndex + 1) % currentAssemblies.length;
+    const sides = currentAssemblies[currentAssemblyIndex].type === 'tetra' || 
+                   currentAssemblies[currentAssemblyIndex].type === 'octa' || 
+                   currentAssemblies[currentAssemblyIndex].type === 'icosa' ? 3 : 
+                   currentAssemblies[currentAssemblyIndex].type === 'cube' ? 4 : 5;
+    
+    create3DModel(sides, currentAssemblies[currentAssemblyIndex].type);
+    updateAssemblyInfo();
+});
+
+totalSideCheckbox.addEventListener('change', () => {
+    update();
+});
+
 
     function update() {
         const sides = parseInt(shapeSelect.value);
@@ -715,7 +841,10 @@ function buildCleanSVG(pathData, bounds, fillSpikes) {
         let pairs = parseInt(pairsInput.value);
         const startSpike = startSelect.value === 'spike';
         const fillSpikes = fillSpikesCheckbox.checked;
-
+		const useTotal = totalSideCheckbox.checked;
+		if (useTotal) {
+			side = totalToSide(side, thick, sides);
+		}
         if(isNaN(side)||side<5) side=20;
         if(isNaN(thick)||thick<0.3) thick=2.4;
         if(isNaN(pairs)||pairs<1) pairs=1;
@@ -726,7 +855,6 @@ function buildCleanSVG(pathData, bounds, fillSpikes) {
         if(fw<0.5){ pairs=Math.floor(sideLen/1); if(pairs<1) pairs=1; }
         if(pairs>20) pairs=20;
 
-        sideInput.value=side.toFixed(1);
         thicknessInput.value=thick.toFixed(1);
         pairsInput.value=pairs;
 
@@ -735,19 +863,25 @@ function buildCleanSVG(pathData, bounds, fillSpikes) {
         const bounds = getBounds(mainPath);
         const actualFW = sideLen/(pairs*2);
         const info = getPolyhedronInfo(sides);
+		currentAssemblies = info.assemblies;
+		currentAssemblyIndex = 0;
+		// Обновляем текст подсказки
+		updateAssemblyInfo();
 
+		// Показываем первую модель
+		if (currentAssemblies.length > 0) {
+			create3DModel(sides, currentAssemblies[0].type);
+		}
         svgContainer.innerHTML = buildDisplaySVG(pathData, bounds, fillSpikes);
         currentCleanSVG = buildCleanSVG(pathData, bounds, fillSpikes);
 
-        // Обновляем 3D превью
-        create3DModel(sides);
         
         previewLabel.textContent = info.name;
         previewSub.textContent = info.sub;
-
-        sideDisplay.textContent = side.toFixed(1);
-        thickDisplay.textContent = thick.toFixed(1);
-        spikeWidthDisplay.textContent = actualFW.toFixed(2);
+sideDisplay.textContent = side.toFixed(1);
+totalSideDisplay.textContent = sideToTotal(side, thick, sides).toFixed(1);
+thickDisplay.textContent = thick.toFixed(1);
+spikeWidthDisplay.textContent = actualFW.toFixed(2);
         dimensionsDisplay.textContent = `${bounds.w.toFixed(1)} × ${bounds.h.toFixed(1)} мм`;
         totalDisplay.textContent = `${getTotalPieces(sides)} шт`;
     }
