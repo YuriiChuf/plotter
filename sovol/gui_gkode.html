@@ -539,14 +539,23 @@ h1, h2, h3 {
                         <label>Метод конвертации:</label>
 						<select id="conversionMethod">
                             <!-- Опции будут заполняться динамически -->
-                        </select><div id="centerlineOptions" style="display: none;">
-							<label for="removeSpursCheckbox" style="font-size: 9px;" >Отростки</label><input title="Удаление отростков" type="checkbox" id="removeSpursCheckbox" checked>
-							<label for="removeParallelCheckbox" style="font-size: 9px;" >Паралельные</label><input text="про" title="Удаление параллельных" type="checkbox" id="removeParallelCheckbox" checked>
-							<label for="connectCrossroadsCheckbox" style="font-size: 9px;" >Перекрестки</label><input title="Обработка перекрестков" type="checkbox" id="connectCrossroadsCheckbox" checked>
-							<label for="continuePathsCheckbox" style="font-size: 9px;" >Путь</label><input title="Продолжение путей" type="checkbox" id="continuePathsCheckbox" checked>
-						</div></div>
+                        </select>
+<div id="centerlineOptions" style="display: none;">
+	<label for="removeSpursCheckbox" style="font-size: 9px;" >Отростки</label><input title="Удаление отростков" type="checkbox" id="removeSpursCheckbox" checked>
+	<label for="removeParallelCheckbox" style="font-size: 9px;" >Паралельные</label><input text="про" title="Удаление параллельных" type="checkbox" id="removeParallelCheckbox" checked>
+	<label for="connectCrossroadsCheckbox" style="font-size: 9px;" >Перекрестки</label><input title="Обработка перекрестков" type="checkbox" id="connectCrossroadsCheckbox" checked>
+	<label for="continuePathsCheckbox" style="font-size: 9px;" >Путь</label><input title="Продолжение путей" type="checkbox" id="continuePathsCheckbox" checked>
 
+</div>
+						</div>
 						<div><button id="resetBottomSettings" title="Сбросить настройки трассировки" class="butsett">⟲ Сброс</button>
+<div id="combinedOptions" style="display: none; margin-top: 6px;">
+    <label for="combinedThickness" >Порог толщины (px):</label>
+    <input type="number" id="combinedThickness" value="3" min="1" max="20" step="1" style="width: 35%;">
+    <div class="info-text" >
+        Тоньше — трассировка, толще — заливка
+    </div>
+</div>
                         </div>
 						<div>
                             <label>Расширение области (мм):</label>
@@ -559,15 +568,11 @@ h1, h2, h3 {
 							<input type="number" id="borderOffset" value="0" min="0" max="1" step="0.1">
 							<div class="info-text">Компенсация ширины пера</div>
                         </div>
-                    </div>
-                    
-                    <div class="compact-group">
-
 
                         <div>
                             <label>Шаг штриховки (мм):</label>
                             <input type="number" id="hatchStep" value="0.5" min="0.1" max="10" step="0.1">
-                            <div class="info-text">Расстояние между линиями штриховки</div>
+                            <div class="info-text" >Расстояние между линиями штриховки</div>
                         </div>
                         <div>
                             <label>Угол штриховки (°):</label>
@@ -705,6 +710,7 @@ h1, h2, h3 {
         const lockProportions = document.getElementById('lockProportions');
         const imageCtx = imagePreview.getContext('2d');
         const vectorCtx = vectorPreview.getContext('2d');
+		const pathSource = new WeakMap();
         // Переменные
 		let eraserAnimationFrame = null;
         let originalImage = null;
@@ -784,16 +790,33 @@ document.querySelectorAll('#removeSpursCheckbox, #removeParallelCheckbox, #conne
     });
 });
 
+function canConnectPaths(pathA, pathB) {
+    //const srcA = pathSource.get(pathA);
+    //const srcB = pathSource.get(pathB);
+    //if (!srcA || !srcB) return true;
+    //return srcA === srcB;
+	return true;
+}
+
 function toggleCenterlineOptions() {
     const centerlineOptions = document.getElementById('centerlineOptions');
-    const conversionMethod = document.getElementById('conversionMethod');
+    const method = document.getElementById('conversionMethod').value;
     
-    if (conversionMethod.value === 'centerline') {
+    // показывать чекбоксы отростков/параллельных и т.д.
+    // при centerline И при combined (трассировка тоже используется)
+    if (method === 'centerline' || method === 'combined') {
         centerlineOptions.style.display = 'block';
     } else {
         centerlineOptions.style.display = 'none';
     }
+    
+    // Показ/скрытие блока "Порог толщины" для combined — сделаем в блоке 6
+    const combinedOptions = document.getElementById('combinedOptions');
+    if (combinedOptions) {
+        combinedOptions.style.display = (method === 'combined') ? 'block' : 'none';
+    }
 }
+
 		function showLoading() {
 			document.getElementById('loadingIcon').style.display = 'block';
 		}
@@ -902,11 +925,13 @@ function toggleCenterlineOptions() {
 				conversionMethod.appendChild(new Option('Заливка', 'fill'));
 				conversionMethod.appendChild(new Option('Штриховка', 'hatch'));
 				conversionMethod.appendChild(new Option('Контуры', 'contour'));
+				conversionMethod.appendChild(new Option('Трассировка + Заливка', 'combined'));
 			} else {
 				conversionMethod.appendChild(new Option('Трассировка по центру линии', 'centerline'));
 				conversionMethod.appendChild(new Option('Заливка', 'fill'));
 				conversionMethod.appendChild(new Option('Штриховка', 'hatch'));
 				conversionMethod.appendChild(new Option('Контуры', 'contour'));
+				conversionMethod.appendChild(new Option('Трассировка + Заливка', 'combined'));
 			}
 
 			if (conversionMethod.querySelector(`[value="${currentValue}"]`)) {
@@ -938,6 +963,35 @@ function toggleCenterlineOptions() {
 			};
 			return settings[type] || settings.optimized;
 		}
+
+// Делит бинарную маску на тонкие линии и толстые области.
+// minThicknessPx — минимальная толщина (в пикселях), при которой область считается "толстой".
+// Возвращает { thinMask, thickMask }.
+function splitMaskByThickness(binary, minThicknessPx) {
+    if (!originalImage) {
+        return { thinMask: [], thickMask: [] };
+    }
+    
+    const radius = Math.max(1, Math.round(minThicknessPx));
+    
+    // Ядро толстых областей — то, что выживает после эрозии на radius
+    const erodedCore = erodeBinary(binary, radius);
+    
+    // Возвращаем ядру исходную толщину — получаем маску "толстых" областей
+    const thickMask = expandBinary(erodedCore, radius);
+    
+    // Тонкие = всё чёрное минус толстое
+    const width = originalImage.width;
+    const height = originalImage.height;
+    const total = width * height;
+    const thinMask = new Array(total);
+    
+    for (let i = 0; i < total; i++) {
+        thinMask[i] = (binary[i] === 1 && thickMask[i] === 0) ? 1 : 0;
+    }
+    
+    return { thinMask, thickMask };
+}
 
 		// Функция применения стилей к контексту
 		function applyLineStyle(ctx, type) {
@@ -1226,6 +1280,9 @@ function toggleCenterlineOptions() {
 		document.getElementById('hatchAngle').addEventListener('input', function() {
 			debouncedExpansionUpdate();
 		});
+		document.getElementById('combinedThickness').addEventListener('input', function() {
+    debouncedExpansionUpdate();
+});
 
         // Обработчик блокировки пропорций
 		lockProportions.addEventListener('change', function() {
@@ -1277,6 +1334,7 @@ function toggleCenterlineOptions() {
 				document.getElementById('borderOffset').value = 0;
 				document.getElementById('hatchStep').value = 0.5;
 				document.getElementById('hatchAngle').value = 0;
+				document.getElementById('combinedThickness').value = 3;
 				document.getElementById('connectDistance').value = 1;
 				document.getElementById('minLineLength').value = 0.5;
 				document.getElementById('invertImage').value = 'false';
@@ -1493,14 +1551,21 @@ imageInput.addEventListener('change', function(e) {
 
     document.getElementById('imageInput').title = `Файл: ${file.name}&#10;Размер: ${(file.size / 1024).toFixed(1)} KB&#10;Тип: ${file.type}`;
 
-    isSvgFile = fileExtension === 'svg';
-    updateConversionMethods();
-    
-    if (isSvgFile) {
-        conversionMethod.value = 'svg';
-    } else {
-        conversionMethod.value = 'centerline';
-    }
+isSvgFile = fileExtension === 'svg';
+
+// Запоминаем текущий выбор пользователя ДО перестройки списка
+const userChoice = conversionMethod.value;
+
+// Перестраиваем список опций под новый тип файла
+updateConversionMethods();
+
+// Пытаемся восстановить выбор пользователя
+if (conversionMethod.querySelector(`[value="${userChoice}"]`)) {
+    conversionMethod.value = userChoice;
+} else {
+    // Если метод недоступен (например, 'svg' для PNG) — дефолт
+    conversionMethod.value = isSvgFile ? 'svg' : 'centerline';
+}
     
     const reader = new FileReader();
     reader.onload = function(event) {
@@ -1978,28 +2043,38 @@ convertBtn.addEventListener('click', function() {
 		}
 
 		// Модифицированная функция генерации путей с прогрессом
-		async function generateVectorPathsWithProgress() {
-			const threshold = parseInt(thresholdInput.value);
-			const invert = document.getElementById('invertImage').value === 'true';
-			const method = document.getElementById('conversionMethod').value;
-			
-			vectorPaths = [];
-			
-			if (method === 'centerline') {
-				await generateCenterlinePathsWithProgress(threshold, invert);
-			} else if (method === 'fill') {
-				await generateFillPathsWithProgress(threshold, invert);
-			} else if (method === 'hatch') {
-				await generateHatchPathsWithProgress(threshold, invert);
-			} else if (method === 'contour') {
-				await generateContourPathsWithProgress(threshold, invert);
-			}
-			
-			updatePathInfo();
-		}
+async function generateVectorPathsWithProgress() {
+    const threshold = parseInt(thresholdInput.value);
+    const invert = document.getElementById('invertImage').value === 'true';
+    const method = document.getElementById('conversionMethod').value;
+    
+    let result;
+    
+    if (method === 'centerline') {
+        result = await generateCenterlinePathsWithProgress(threshold, invert);
+    } else if (method === 'fill') {
+        result = await generateFillPathsWithProgress(threshold, invert);
+    } else if (method === 'hatch') {
+        result = await generateHatchPathsWithProgress(threshold, invert);
+    } else if (method === 'contour') {
+        result = await generateContourPathsWithProgress(threshold, invert);
+} else if (method === 'combined') {
+    await generateCombinedPathsWithProgress(threshold, invert);
+    result = vectorPaths;
+} else {
+        result = [];
+    }
+    
+    vectorPaths = result;
+    updatePathInfo();
+}
 
 		// Центральная линия с прогрессом
-		async function generateCenterlinePathsWithProgress(threshold, invert) {
+async function generateCenterlinePathsWithProgress(threshold, invert) {
+    const saved = vectorPaths;
+    vectorPaths = [];
+    
+    try {
 			const binary = createBinaryImage(threshold, invert);
 			const width = originalImage.width;
 			const height = originalImage.height;
@@ -2041,10 +2116,18 @@ convertBtn.addEventListener('click', function() {
 			const totalPaths = vectorPaths.length;
 			const totalLength = vectorPaths.reduce((sum, path) => sum + calculatePathLength(path), 0);
 			updateStatus(`Создано ${totalPaths} путей, улучшено ${improvements} соединений`, 'success');
-		}
+        return vectorPaths;
+    } finally {
+        vectorPaths = saved;
+    }
+}
 
 		// Заливка с прогрессом
-		async function generateFillPathsWithProgress(threshold, invert) {
+async function generateFillPathsWithProgress(threshold, invert) {
+    const saved = vectorPaths;
+    vectorPaths = [];
+    
+    try {
 			const binary = createBinaryImage(threshold, invert);
 			const width = originalImage.width;
 			const height = originalImage.height;
@@ -2121,10 +2204,18 @@ convertBtn.addEventListener('click', function() {
 			await new Promise(resolve => setTimeout(resolve, 100));
 			
 			updateStatus(`Создано ${pathsAdded} путей заливки в ${areas.length} областях`, 'success');
-		}
+        return vectorPaths;
+    } finally {
+        vectorPaths = saved;
+    }
+}
 
 		// Штриховка с прогрессом
-		async function generateHatchPathsWithProgress(threshold, invert) {
+async function generateHatchPathsWithProgress(threshold, invert) {
+    const saved = vectorPaths;
+    vectorPaths = [];
+    
+    try {
 			let binary = createBinaryImage(threshold, invert);
 			const width = originalImage.width;
 			const height = originalImage.height;
@@ -2188,10 +2279,18 @@ convertBtn.addEventListener('click', function() {
 					await new Promise(resolve => setTimeout(resolve, 0));
 				}
 			}
-		}
+        return vectorPaths;
+    } finally {
+        vectorPaths = saved;
+    }
+}
 
 		// Контуры с прогрессом
-		async function generateContourPathsWithProgress(threshold, invert) {
+async function generateContourPathsWithProgress(threshold, invert) {
+    const saved = vectorPaths;
+    vectorPaths = [];
+    
+    try {
 			const binary = createBinaryImage(threshold, invert);
 			const width = originalImage.width;
 			const height = originalImage.height;
@@ -2273,8 +2372,13 @@ convertBtn.addEventListener('click', function() {
 				}
 			}
 			
-			updateStatus(`Найдено контуров: ${contoursFound}`, 'success');
-		}
+        updateStatus(`Найдено контуров: ${contoursFound}`, 'success');
+        
+        return vectorPaths;
+    } finally {
+        vectorPaths = saved;
+    }
+}
 
 		// Модифицируем функцию findAllBlackAreas для поддержки прогресса
 		async function findAllBlackAreasWithProgress(binary, width, height) {
@@ -2307,6 +2411,46 @@ convertBtn.addEventListener('click', function() {
 			return areas;
 		}
 
+async function generateCombinedPathsWithProgress(threshold, invert) {
+    const savedImageData = imageData;
+    const width = originalImage.width;
+    const height = originalImage.height;
+    
+    // 1. Общая бинарная маска
+    const binary = createBinaryImage(threshold, invert);
+    
+    // 2. Порог толщины берём из UI (слайдер добавим в блоке 6),
+    //    по умолчанию 3 пикселя
+    const thicknessInput = document.getElementById('combinedThickness');
+    const thicknessPx = thicknessInput ? parseInt(thicknessInput.value) : 3;
+    
+    drawProgressIndicator(35, 'Разделение по толщине...');
+    const { thinMask, thickMask } = splitMaskByThickness(binary, thicknessPx);
+    
+    // 3. Трассировка по тонкой маске
+    drawProgressIndicator(50, 'Трассировка тонких линий...');
+    imageData = maskToImageData(thinMask, width, height);
+    const centerlinePaths = await generateCenterlinePathsWithProgress(threshold, invert);
+    centerlinePaths.forEach(p => pathSource.set(p, 'centerline'));
+    
+    // 4. Заливка по толстой маске
+    drawProgressIndicator(70, 'Заливка толстых областей...');
+    imageData = maskToImageData(thickMask, width, height);
+    const fillPaths = await generateFillPathsWithProgress(threshold, invert);
+    fillPaths.forEach(p => pathSource.set(p, 'fill'));
+    
+    // 5. Восстанавливаем исходный imageData
+    imageData = savedImageData;
+    
+    // 6. Склеиваем
+    vectorPaths = [...centerlinePaths, ...fillPaths];
+    
+    drawProgressIndicator(85, `Готово: ${centerlinePaths.length} + ${fillPaths.length}`);
+    updateStatus(
+        `Комбинированный метод: ${centerlinePaths.length} линий трассировки, ${fillPaths.length} путей заливки`,
+        'success'
+    );
+}
 		// Функция для предпросмотра скелета
 		function drawSkeletonPreview(skeleton, progress = 0) {
 			const width = originalImage.width;
@@ -2748,7 +2892,8 @@ function collinearConnectionPhase(stats) {
             for (let j = i + 1; j < vectorPaths.length && !changed; j++) {
                 const pathA = vectorPaths[i];
                 const pathB = vectorPaths[j];
-                
+				
+                if (!canConnectPaths(pathA, pathB)) continue;
                 if (pathA.length < 3 || pathB.length < 3) continue;
                 
                 const connectionTypes = [ 
@@ -2895,6 +3040,7 @@ function mergeCloseParallelLines() {
             if (areLinesCloseAndParallel(lineA, lineB, distanceThreshold, angleThreshold, minOverlapRatio)) {
                 candidates.push({i, j, distance: calculateLinesDistance(lineA, lineB)});
             }
+			if (!canConnectPaths(lineA, lineB)) continue;
         }
     }
     
@@ -3133,7 +3279,7 @@ function removeShortConnectedVectors() {
         const vectorB = vectorPaths[indexB];
         
         if (!vectorA || !vectorB || vectorA.length < 2 || vectorB.length < 2) continue;
-        
+        if (!canConnectPaths(vectorA, vectorB)) continue;
         // Проверяем, что векторы соединены именно КРАЙНИМИ точками
         if (areVectorsConnectedAtEnds(indexA, indexB, connections)) {
             const lengthA = calculatePathLength(vectorA);
@@ -3532,7 +3678,8 @@ function processPairsInCrossroad(pairs) {
             console.log("Paths not found, skipping pair");
             continue;
         }
-        
+        if (!canConnectPaths(path1Info.path, path2Info.path)) continue;
+		
         // Проверяем, что пути еще существуют и не были изменены
         if (path1Info.index === -1 || path2Info.index === -1) {
             continue;
@@ -3905,6 +4052,7 @@ function calculateOppositeScore(ep1, ep2, center) {
 				const candidatePath = vectorPaths[i];
 				const alternatives = findAlternativeConnections(partA, partB, candidatePath);
 				
+				if (!canConnectPaths(originalPath, candidatePath)) continue;
 				for (const alt of alternatives) {
 					if (alt.score > bestScore) {
 						bestScore = alt.score;
@@ -4054,7 +4202,24 @@ function calculateOppositeScore(ep1, ep2, center) {
 			}
 			return binary;
 		}
-		
+
+// Превращает бинарную маску (0/1) в ImageData (0=чёрный, 255=белый),
+// чтобы существующие генераторы (которые читают imageData) могли с ней работать.
+function maskToImageData(mask, width, height) {
+    const img = new ImageData(width, height);
+    const data = img.data;
+    
+    for (let i = 0; i < mask.length; i++) {
+        const idx = i * 4;
+        const v = (mask[i] === 1) ? 0 : 255;
+        data[idx]     = v;
+        data[idx + 1] = v;
+        data[idx + 2] = v;
+        data[idx + 3] = 255;
+    }
+    
+    return img;
+}
 		// Алгоритм Чжана-Суэна для скелетизации
 		function zhangSuenSkeletonization(binary) {
 			const width = originalImage.width;
@@ -4286,92 +4451,77 @@ function findBestStartPoint(skeleton, visited, x, y, width, height) {
 function findBestNextPoint(skeleton, visited, current, previousPoints, width, height) {
     const candidates = [];
     
-    // Определяем текущее направление движения
-    let currentDirection = {dx: 0, dy: 0};
-    if (previousPoints.length >= 2) {
-        const lastPoint = previousPoints[previousPoints.length - 2];
-        currentDirection = {
-            dx: current.x - lastPoint.x,
-            dy: current.y - lastPoint.y
-        };
-        
-        // Нормализуем направление
-        const length = Math.sqrt(currentDirection.dx * currentDirection.dx + currentDirection.dy * currentDirection.dy);
-        if (length > 0) {
-            currentDirection.dx /= length;
-            currentDirection.dy /= length;
-        }
+    // Направление по последним 5 точкам — устойчиво к лесенке
+    let curDir = { x: 0, y: 0 };
+    if (previousPoints.length >= 3) {
+        const back = previousPoints[Math.max(0, previousPoints.length - 5)];
+        const dx = current.x - back.x;
+        const dy = current.y - back.y;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len > 0) { curDir.x = dx / len; curDir.y = dy / len; }
     }
     
-    // Проверяем соседей в радиусе 2
-    for (let dy = -2; dy <= 2; dy++) {
-        for (let dx = -2; dx <= 2; dx++) {
+    // Насколько "ветвистая" текущая точка — считаем соседей в скелете
+    // (включая уже посещённые)
+    let totalNeighbors = 0;
+    for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
             if (dx === 0 && dy === 0) continue;
-            
             const nx = current.x + dx, ny = current.y + dy;
-            if (nx >= 0 && nx < width && ny >= 0 && ny < height &&
-                skeleton[ny * width + nx] && !visited[ny * width + nx]) {
-                
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                let score = 12 - distance; // Ближе = лучше
-                
-                // ОЦЕНКА НАПРАВЛЕНИЯ - КЛЮЧЕВОЕ ИЗМЕНЕНИЕ
-                if (previousPoints.length >= 2) {
-                    const newDirection = {dx: dx, dy: dy};
-                    const newLength = Math.sqrt(newDirection.dx * newDirection.dx + newDirection.dy * newDirection.dy);
-                    if (newLength > 0) {
-                        newDirection.dx /= newLength;
-                        newDirection.dy /= newLength;
-                    }
-                    
-                    // Скалярное произведение для определения схожести направлений
-                    const dotProduct = currentDirection.dx * newDirection.dx + currentDirection.dy * newDirection.dy;
-                    
-                    if (dotProduct > 0.8) {
-                        // Отличное продолжение направления - большой бонус
-                        score += 10;
-                    } else if (dotProduct > 0.3) {
-                        // Хорошее продолжение
-                        score += 5;
-                    } else if (dotProduct > -0.3) {
-                        // Нейтральное направление
-                        score += 1;
-                    } else {
-                        // Разворот или резкий поворот - ШТРАФ
-                        score -= 8;
-                    }
-                }
-                
-                // Бонус за прямых соседей (4-связность)
-                if ((dx === 0 && Math.abs(dy) === 1) || (dy === 0 && Math.abs(dx) === 1)) {
-                    score += 2;
-                }
-                
-                candidates.push({
-                    point: {x: nx, y: ny},
-                    score: score,
-                    distance: distance
-                });
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                if (skeleton[ny * width + nx] === 1) totalNeighbors++;
             }
         }
     }
+    const atJunction = totalNeighbors >= 3;
     
-    if (candidates.length === 0) return null;
-    
-    // Сортируем по score и выбираем лучшего
-    candidates.sort((a, b) => b.score - a.score);
-    
-    // ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: не выбираем точки, которые ведут назад
-    const bestCandidate = candidates[0];
-    if (previousPoints.length >= 3) {
-        const isBackward = isMovingBackward(bestCandidate.point, current, previousPoints);
-        if (isBackward && candidates.length > 1) {
-            // Если лучший кандидат ведет назад, берем следующего
-            return candidates[1].point;
+    // Собираем кандидатов — сначала в радиусе 1, потом 2
+    for (let radius = 1; radius <= 2; radius++) {
+        for (let dy = -radius; dy <= radius; dy++) {
+            for (let dx = -radius; dx <= radius; dx++) {
+                if (dx === 0 && dy === 0) continue;
+                // Для radius=2 берём только внешнее кольцо
+                if (radius === 2 && Math.abs(dx) < 2 && Math.abs(dy) < 2) continue;
+                
+                const nx = current.x + dx, ny = current.y + dy;
+                if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+                if (skeleton[ny * width + nx] !== 1) continue;
+                if (visited[ny * width + nx]) continue;
+                
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                let score = 10 - dist * 2;
+                
+                // Направление
+                if (previousPoints.length >= 3) {
+                    const ndx = dx / dist, ndy = dy / dist;
+                    const dot = curDir.x * ndx + curDir.y * ndy;
+                    
+                    if (atJunction) {
+                        // Жёстко: на перекрёстке только прямое продолжение
+                        if (dot > 0.85) score += 30;
+                        else if (dot > 0.6) score += 10;
+                        else if (dot > 0.3) score -= 5;
+                        else score -= 25;
+                    } else {
+                        if (dot > 0.7) score += 6;
+                        else if (dot > 0.3) score += 3;
+                        else if (dot < -0.3) score -= 6;
+                    }
+                }
+                
+                // 4-связные соседи чуть предпочтительнее (прямее)
+                if (dx === 0 || dy === 0) score += 1.5;
+                
+                candidates.push({ point: { x: nx, y: ny }, score });
+            }
         }
+        // Если нашли кандидатов в радиусе 1 — 2 не смотрим
+        if (candidates.length > 0) break;
     }
     
-    return bestCandidate.point;
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates[0].point;
 }
 
 function isMovingBackward(newPoint, current, previousPoints) {
@@ -5413,6 +5563,21 @@ function clipPathsToSheetBounds(paths) {
     return clippedPaths;
 }
 
+function getGroupSource(group) {
+    for (const p of group) {
+        const src = pathSource.get(p);
+        if (src) return src;
+    }
+    return null;
+}
+
+function canConnectGroup(group, path) {
+    //const groupSrc = getGroupSource(group);
+    //const pathSrc = pathSource.get(path);
+    //if (!groupSrc || !pathSrc) return true;
+    //return groupSrc === pathSrc;
+	return true;
+}
 
 		function connectPathsGreedy(paths, maxDistance) {
 			if (paths.length === 0) return [];
@@ -5446,7 +5611,7 @@ function clipPathsToSheetBounds(paths) {
 					
 					const path = paths[i];
 					if (path.length < 2) continue;
-					
+					if (!canConnectGroup(currentGroup, path)) continue;
 					const pathStart = path[0];
 					const pathEnd = path[path.length - 1];
 					
@@ -5467,19 +5632,28 @@ function clipPathsToSheetBounds(paths) {
 					}
 				}
 				
-				if (bestIndex !== -1) {
-					const pathToConnect = paths[bestIndex];
-					let newSegment = shouldReverse ? [...pathToConnect].reverse() : [...pathToConnect];
-					
-					if (connectTo === 'start') {
-						connected[connected.length - 1] = [...newSegment, ...currentGroup];
-					} else {
-						connected[connected.length - 1] = [...currentGroup, ...newSegment];
-					}
-					
-					used.add(bestIndex);
-					improvements = true;
-				} else {
+if (bestIndex !== -1) {
+    const pathToConnect = paths[bestIndex];
+    let newSegment = shouldReverse ? [...pathToConnect].reverse() : [...pathToConnect];
+    
+    let newGroup;
+    if (connectTo === 'start') {
+        newGroup = [...newSegment, ...currentGroup];
+    } else {
+        newGroup = [...currentGroup, ...newSegment];
+    }
+    
+    connected[connected.length - 1] = newGroup;
+    
+    // Переносим метку источника на новую группу
+    if (!pathSource.get(newGroup)) {
+        const src = getGroupSource(currentGroup) || getGroupSource(newSegment);
+        if (src) pathSource.set(newGroup, src);
+    }
+    
+    used.add(bestIndex);
+    improvements = true;
+} else {
 					const nextIndex = findLongestUnusedPathIndex(paths, used);
 					if (nextIndex !== -1) {
 						connected.push([...paths[nextIndex]]);
@@ -6451,11 +6625,7 @@ function clipPathsToSheetBounds(paths) {
 conversionMethod.addEventListener('change', function() {
     // Показ/скрытие опций для трассировки по центру линии
     const centerlineOptions = document.getElementById('centerlineOptions');
-    if (conversionMethod.value === 'centerline') {
-        centerlineOptions.style.display = 'block';
-    } else {
-        centerlineOptions.style.display = 'none';
-    }
+toggleCenterlineOptions();
     
     if (document.getElementById('loadingIcon').style.display === 'block') {
         updateStatus('Дождитесь завершения текущей обработки', 'error');
@@ -9913,11 +10083,7 @@ controlsHint.style.cssText = `
 			updateUndoButton();
     const centerlineOptions = document.getElementById('centerlineOptions');
     const conversionMethod = document.getElementById('conversionMethod');
-    if (conversionMethod.value === 'centerline') {
-        centerlineOptions.style.display = 'block';
-    } else {
-        centerlineOptions.style.display = 'none';
-    }
+toggleCenterlineOptions();
 		document.getElementById('lockProportions').addEventListener('change', function() {
 			if (originalImage || isSvgFile) {
 				updateStatus('Пропорции ' + (this.checked ? 'включены' : 'выключены'), 'success');
