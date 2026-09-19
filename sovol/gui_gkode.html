@@ -1848,123 +1848,114 @@ convertBtn.addEventListener('click', function() {
 			});
 		}
 
-		// Функция для частичной отрисовки векторов с прогрессом
-		function drawPartialVectors(partialPaths, progress = 0, type = 'optimized') {
-			if (!originalImage && !isSvgFile) return;
-			
-			vectorCtx.fillStyle = 'white';
-			vectorCtx.fillRect(0, 0, vectorPreview.width, vectorPreview.height);
-			
-			if (partialPaths.length === 0) return;
+		// Функция для частичной отрисовки векторов
+function drawPartialVectors(partialPaths, progress = 0, type = 'optimized') {
+    if (!originalImage && !isSvgFile) return;
+    
+    vectorCtx.fillStyle = 'white';
+    vectorCtx.fillRect(0, 0, vectorPreview.width, vectorPreview.height);
+    
+    if (partialPaths.length === 0) return;
 
-			const areaWidth = parseInt(areaWidthInput.value);
-			const areaHeight = parseInt(areaHeightInput.value);
-			const sheetWidth = parseInt(sheetWidthInput.value);
-			const sheetHeight = parseInt(sheetHeightInput.value);
-			const offsetX = parseFloat(offsetXInput.value);
-			const offsetY = parseFloat(offsetYInput.value);
-			const rotation = parseFloat(rotationInput.value);
-			
-			const scaleX = vectorPreview.width / sheetWidth;
-			const scaleY = vectorPreview.height / sheetHeight;
-			
-			const areaCanvasX = offsetX * scaleX;
-			const areaCanvasY = vectorPreview.height - (offsetY * scaleY) - (areaHeight * scaleY);
-			const areaCanvasWidth = areaWidth * scaleX;
-			const areaCanvasHeight = areaHeight * scaleY;
-			
-			vectorCtx.save();
-			vectorCtx.translate(areaCanvasX + areaCanvasWidth / 2, areaCanvasY + areaCanvasHeight / 2);
-			vectorCtx.rotate(rotation * Math.PI / 180);
-			
-			const width = isSvgFile ? svgPaths.width : originalImage.width;
-			const height = isSvgFile ? svgPaths.height : originalImage.height;
-			
-			const imageRatio = width / height;
-			const areaRatio = areaWidth / areaHeight;
-			
-			let drawScaleX, drawScaleY;
-			
-			if (areaRatio > imageRatio) {
-				drawScaleY = areaCanvasHeight / height;
-				drawScaleX = drawScaleY;
-			} else {
-				drawScaleX = areaCanvasWidth / width;
-				drawScaleY = drawScaleX;
-			}
-			
-			applyLineStyle(vectorCtx, type);
-			
-			// Рисуем пути
-			for (const path of partialPaths) {
-				if (path.length < 2) continue;
-				
-				vectorCtx.beginPath();
-				vectorCtx.moveTo(
-					(path[0].x - width / 2) * drawScaleX, 
-					(path[0].y - height / 2) * drawScaleY
-				);
-				
-				for (let j = 1; j < path.length; j++) {
-					vectorCtx.lineTo(
-						(path[j].x - width / 2) * drawScaleX, 
-						(path[j].y - height / 2) * drawScaleY
-					);
-				}
-				vectorCtx.stroke();
-			}
-			
-			vectorCtx.restore();
-			if (progress > 0) {
-				const progressAreaHeight = 40;
-				vectorCtx.fillStyle = 'white';
-				vectorCtx.fillRect(0, 0, vectorPreview.width, progressAreaHeight);
-				
-				drawProgressIndicator(progress, '');
-			}
-		}
+    const areaWidth = parseInt(areaWidthInput.value);
+    const areaHeight = parseInt(areaHeightInput.value);
+    const sheetWidth = parseInt(sheetWidthInput.value);
+    const sheetHeight = parseInt(sheetHeightInput.value);
+    const offsetX = parseFloat(offsetXInput.value);
+    const offsetY = parseFloat(offsetYInput.value);
+    const rotation = parseFloat(rotationInput.value);
+    
+    const scaleX = vectorPreview.width / sheetWidth;
+    const scaleY = vectorPreview.height / sheetHeight;
+    
+    const areaCanvasX = offsetX * scaleX;
+    const areaCanvasY = vectorPreview.height - (offsetY * scaleY) - (areaHeight * scaleY);
+    const areaCanvasWidth = areaWidth * scaleX;
+    const areaCanvasHeight = areaHeight * scaleY;
+    
+    vectorCtx.save();
+    vectorCtx.translate(areaCanvasX + areaCanvasWidth / 2, areaCanvasY + areaCanvasHeight / 2);
+    vectorCtx.rotate(rotation * Math.PI / 180);
+    
+    const width = isSvgFile ? svgPaths.width : originalImage.width;
+    const height = isSvgFile ? svgPaths.height : originalImage.height;
+    
+    const imageRatio = width / height;
+    const areaRatio = areaWidth / areaHeight;
+    
+    let drawScaleX, drawScaleY;
+    
+    if (areaRatio > imageRatio) {
+        drawScaleY = areaCanvasHeight / height;
+        drawScaleX = drawScaleY;
+    } else {
+        drawScaleX = areaCanvasWidth / width;
+        drawScaleY = drawScaleX;
+    }
+    
+    applyLineStyle(vectorCtx, type);
+    
+    for (const path of partialPaths) {
+        if (path.length < 2) continue;
+        
+        vectorCtx.beginPath();
+        vectorCtx.moveTo(
+            (path[0].x - width / 2) * drawScaleX, 
+            (path[0].y - height / 2) * drawScaleY
+        );
+        
+        for (let j = 1; j < path.length; j++) {
+            vectorCtx.lineTo(
+                (path[j].x - width / 2) * drawScaleX, 
+                (path[j].y - height / 2) * drawScaleY
+            );
+        }
+        vectorCtx.stroke();
+    }
+    
+    vectorCtx.restore();
+
+}
 
 		// Функция для отображения прогресса
-		function drawProgressIndicator(progress, text = '') {
-			vectorCtx.save();
-			
-			const progressWidth = 120;
-			const progressHeight = 10;
-			const margin = 15;
-			
-			vectorCtx.fillStyle = 'white';
-			vectorCtx.fillRect(0, 0, progressWidth + margin * 2, 60);
+function drawProgressIndicator(progress, text = '') {
+    vectorCtx.save();
+    
+    const progressWidth = 220;   // шире, чтобы текст влезал
+    const progressHeight = 12;
+    const margin = 15;
+    
+    vectorCtx.fillStyle = 'white';
+    vectorCtx.fillRect(0, 0, progressWidth + margin * 2, 70);
 
-			vectorCtx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-			vectorCtx.strokeStyle = '#333';
-			vectorCtx.lineWidth = 1;
-			
-			vectorCtx.beginPath();
-			vectorCtx.roundRect(margin, margin, progressWidth, progressHeight, 4);
-			vectorCtx.fill();
-			vectorCtx.stroke();
-			
-			vectorCtx.fillStyle = '#007cba';
-			vectorCtx.beginPath();
-			vectorCtx.roundRect(margin, margin, progressWidth * (progress / 100), progressHeight, 4);
-			vectorCtx.fill();
-			
-			vectorCtx.fillStyle = '#333';
-			vectorCtx.font = '12px Arial, sans-serif';
-			vectorCtx.textAlign = 'center';
-			vectorCtx.textBaseline = 'top';
-			
-			const percentText = `${Math.round(progress)}%`;
-			vectorCtx.fillText(percentText, margin + progressWidth / 2, margin + progressHeight + 5);
-			
-			if (text && text.length <= 20) {
-				vectorCtx.font = '12px Arial, sans-serif';
-				vectorCtx.fillText(text, margin + progressWidth / 2, margin + progressHeight + 22);
-			}
-			
-			vectorCtx.restore();
-		}
-
+    vectorCtx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    vectorCtx.strokeStyle = '#333';
+    vectorCtx.lineWidth = 1;
+    
+    vectorCtx.beginPath();
+    vectorCtx.roundRect(margin, margin, progressWidth, progressHeight, 4);
+    vectorCtx.fill();
+    vectorCtx.stroke();
+    
+    vectorCtx.fillStyle = '#007cba';
+    vectorCtx.beginPath();
+    vectorCtx.roundRect(margin, margin, progressWidth * (progress / 100), progressHeight, 4);
+    vectorCtx.fill();
+    
+    vectorCtx.fillStyle = '#333';
+    vectorCtx.font = '12px Arial, sans-serif';
+    vectorCtx.textAlign = 'center';
+    vectorCtx.textBaseline = 'top';
+    
+    vectorCtx.fillText(`${Math.round(progress)}%`, margin + progressWidth / 2, margin + progressHeight + 6);
+    
+    if (text) {
+        vectorCtx.font = '11px Arial, sans-serif';
+        vectorCtx.fillText(text, margin + progressWidth / 2, margin + progressHeight + 24, progressWidth);
+    }
+    
+    vectorCtx.restore();
+}
         // Обработка и отрисовка векторов
 		async function processAndDrawVectors() {
 			showLoading();
@@ -2128,82 +2119,93 @@ async function generateFillPathsWithProgress(threshold, invert) {
     vectorPaths = [];
     
     try {
-			const binary = createBinaryImage(threshold, invert);
-			const width = originalImage.width;
-			const height = originalImage.height;
-			
-			vectorPaths = [];
-			
-			drawProgressIndicator(45, 'Создание бинарного изображения...');
-
-			
-			const lineThicknessMM = parseFloat(document.getElementById('lineThickness').value);
-			
-			let processedBinary = binary;
-			if (lineThicknessMM > 0) {
-				drawProgressIndicator(47, 'Расширение областей...');
-				const thicknessPixels = Math.max(1, Math.round(lineThicknessMM / pixelToMM));
-				processedBinary = expandBinary(binary, thicknessPixels);
-
-			}
-			
-			const borderOffsetMM = parseFloat(document.getElementById('borderOffset').value);
-			const borderOffsetPixels = Math.max(0, Math.round(borderOffsetMM / pixelToMM));
-			
-			if (borderOffsetPixels > 0) {
-				drawProgressIndicator(50, 'Применение отступа...');
-				processedBinary = erodeBinary(processedBinary, borderOffsetPixels);
-				
-
-			}
-			
-			const hatchStepMM = parseFloat(document.getElementById('hatchStep').value);
-			const areaWidth = parseInt(areaWidthInput.value);
-			const hatchStepPixels = Math.max(1, Math.round((hatchStepMM / areaWidth) * width));
-
-			drawProgressIndicator(52, 'Поиск черных областей...');
-			const areas = await findAllBlackAreasWithProgress(processedBinary, width, height);
-			
-			drawProgressIndicator(60, `Найдено ${areas.length} областей`);
-			await new Promise(resolve => setTimeout(resolve, 200));
-			
-			let totalPathsBefore = vectorPaths.length;
-			
-			for (let i = 0; i < areas.length; i++) {
-				const area = areas[i];
-				
-				drawProgressIndicator(60 + Math.min(20, (i / areas.length) * 20), 
-									`Область ${i+1}/${areas.length}`);
-				
-				const intersections = findGridIntersections(area, hatchStepPixels, width, height);
-				
-				if (intersections.length > 1) {
-					const snakes = connectWithNearestNeighbor(intersections, hatchStepPixels);
-					
-					for (const snake of snakes) {
-						if (snake.length > 1) {
-							vectorPaths.push(snake);
-						}
-					}
-					
-					if (i % 2 === 0 || i === areas.length - 1) {
-						const progress = 60 + Math.min(20, (i / areas.length) * 20);
-						drawPartialVectors(vectorPaths, progress, 'temporary');
-						await new Promise(resolve => setTimeout(resolve, 50));
-					}
-				}
-				
-				if (i % 5 === 0) {
-					await new Promise(resolve => setTimeout(resolve, 10));
-				}
-			}
-			
-			const pathsAdded = vectorPaths.length - totalPathsBefore;
-			
-			drawPartialVectors(vectorPaths, 85, 'optimized');
-			await new Promise(resolve => setTimeout(resolve, 100));
-			
-			updateStatus(`Создано ${pathsAdded} путей заливки в ${areas.length} областях`, 'success');
+        const binary = createBinaryImage(threshold, invert);
+        const width = originalImage.width;
+        const height = originalImage.height;
+        
+        // ── Фаза 1: бинаризация и морфология (5..15%)
+        drawProgressIndicator(5, 'Бинаризация...');
+        await new Promise(r => setTimeout(r, 0));
+        
+        const lineThicknessMM = parseFloat(document.getElementById('lineThickness').value);
+        let processedBinary = binary;
+        if (lineThicknessMM > 0) {
+            drawProgressIndicator(8, 'Расширение областей...');
+            const thicknessPixels = Math.max(1, Math.round(lineThicknessMM / pixelToMM));
+            processedBinary = expandBinary(binary, thicknessPixels);
+        }
+        
+        const borderOffsetMM = parseFloat(document.getElementById('borderOffset').value);
+        const borderOffsetPixels = Math.max(0, Math.round(borderOffsetMM / pixelToMM));
+        if (borderOffsetPixels > 0) {
+            drawProgressIndicator(12, 'Сужение (компенсация пера)...');
+            processedBinary = erodeBinary(processedBinary, borderOffsetPixels);
+        }
+        
+        const hatchStepMM = parseFloat(document.getElementById('hatchStep').value);
+        const areaWidth = parseInt(areaWidthInput.value);
+        const hatchStepPixels = Math.max(1, Math.round((hatchStepMM / areaWidth) * width));
+        
+        // ── Фаза 2: поиск областей (15..30%)
+        drawProgressIndicator(15, 'Поиск чёрных областей...');
+        const areas = await findAllBlackAreasWithProgress(processedBinary, width, height);
+        
+        // Сортируем — крупные первыми (для UX)
+        areas.sort((a, b) => b.points.length - a.points.length);
+        
+        // ── Вес для прогресса
+        let totalAreaPixels = 0;
+        for (const area of areas) totalAreaPixels += area.points.length;
+        let processedAreaPixels = 0;
+        
+        // ── Фаза 3: обработка областей (30..90%)
+        let lastRenderTime = performance.now();
+        const RENDER_INTERVAL = 100; // мс
+        
+        for (let i = 0; i < areas.length; i++) {
+            const area = areas[i];
+            const areaWeight = area.points.length;
+            const isLastArea = (i === areas.length - 1);
+            
+            // ── СИНХРОННАЯ обработка (быстро)
+            const intersections = findGridIntersections(area, hatchStepPixels, width, height);
+            
+            if (intersections.length > 1) {
+                const snakes = connectWithNearestNeighbor(intersections, hatchStepPixels);
+                for (const snake of snakes) {
+                    if (snake.length > 1) vectorPaths.push(snake);
+                }
+            }
+            
+            processedAreaPixels += areaWeight;
+            
+            // ── Рендер по времени
+            const now = performance.now();
+            if (now - lastRenderTime > RENDER_INTERVAL || isLastArea) {
+                const overallProgress = totalAreaPixels > 0
+                    ? processedAreaPixels / totalAreaPixels
+                    : (i + 1) / areas.length;
+                
+                drawPartialVectors(vectorPaths, 0, 'temporary');
+                drawProgressIndicator(
+                    30 + overallProgress * 60,
+                    `Область ${i+1}/${areas.length} (${Math.round(overallProgress * 100)}%)`
+                );
+                
+                lastRenderTime = performance.now();
+                await new Promise(r => setTimeout(r, 0));
+            }
+        }
+        
+        // ── Фаза 4: финализация (90..100%)
+        drawProgressIndicator(92, 'Финализация заливки...');
+        await new Promise(r => setTimeout(r, 0));
+        
+        updateStatus(
+            `Создано ${vectorPaths.length} путей заливки в ${areas.length} областях`,
+            'success'
+        );
+        
         return vectorPaths;
     } finally {
         vectorPaths = saved;
@@ -2380,36 +2382,44 @@ async function generateContourPathsWithProgress(threshold, invert) {
     }
 }
 
-		// Модифицируем функцию findAllBlackAreas для поддержки прогресса
-		async function findAllBlackAreasWithProgress(binary, width, height) {
-			const areas = [];
-			const visited = new Array(width * height).fill(false);
-			let totalPixels = width * height;
-			let processedPixels = 0;
-			
-			for (let y = 0; y < height; y++) {
-				for (let x = 0; x < width; x++) {
-					const index = y * width + x;
-					
-					if (binary[index] === 1 && !visited[index]) {
-						const area = floodFillArea(binary, visited, x, y, width, height);
-						if (area.points.length > 10) {
-							areas.push(area);
-						}
-					}
-					
-					processedPixels++;
-				}
-				
-				if (y % 10 === 0) {
-					const progress = 45 + Math.min(15, (processedPixels / totalPixels) * 15);
-					drawProgressIndicator(progress, 'Поиск областей...');
-					await new Promise(resolve => setTimeout(resolve, 10));
-				}
-			}
-			
-			return areas;
-		}
+async function findAllBlackAreasWithProgress(binary, width, height) {
+    const areas = [];
+    const visited = new Array(width * height).fill(false);
+    const totalPixels = width * height;
+    let processedPixels = 0;
+    
+    let lastRenderTime = performance.now();
+    const RENDER_INTERVAL = 100; // мс
+    
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const index = y * width + x;
+            
+            if (binary[index] === 1 && !visited[index]) {
+                const area = floodFillArea(binary, visited, x, y, width, height);
+                if (area.points.length > 10) {
+                    areas.push(area);
+                }
+            }
+            
+            processedPixels++;
+        }
+        
+        // ── Рендер по времени, а не по y%10
+        const now = performance.now();
+        if (now - lastRenderTime > RENDER_INTERVAL || y === height - 1) {
+            const progress = 15 + (processedPixels / totalPixels) * 15;
+            drawProgressIndicator(
+                progress,
+                `Поиск областей ${Math.round((processedPixels / totalPixels) * 100)}%`
+            );
+            lastRenderTime = now;
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+    }
+    
+    return areas;
+}
 
 async function generateCombinedPathsWithProgress(threshold, invert) {
     const savedImageData = imageData;
@@ -4693,7 +4703,7 @@ function distance(p1, p2) {
 			
 			return area <= tolerance;
 		}
-
+		
 		// Заливка - второй метод 
 		// Находит пересечения сетки внутри области
 		function findGridIntersections(area, stepPixels, width, height) {
@@ -4736,93 +4746,152 @@ function distance(p1, p2) {
 		}
 
 		// соединяем точки
-		function connectWithNearestNeighbor(points, hatchStepPixels) {
-			if (points.length === 0) return [];
-			
-			const MAX_STEP_PX = Math.round(hatchStepPixels * 1.5);
-			const MAX_JUMP_PX = Math.round(hatchStepPixels * 2.5);
-			
-			const allSnakes = [];
-			const used = new Set();
-			
-			
-			while (used.size < points.length) {
-				let snake = [];
-				
-				let current = findStartCorner(points, used);
-				if (!current) {
-
-					for (const point of points) {
-						const key = `${point.x},${point.y}`;
-						if (!used.has(key)) {
-							current = point;
-							break;
-						}
-					}
-				}
-				
-				if (!current) break;
-				
-				snake.push(current);
-				used.add(`${current.x},${current.y}`);
-
-				
-				let canContinue = true;
-				
-				while (canContinue && used.size < points.length) {
-					let nearest = null;
-					let minDist = Infinity;
-
-					for (const point of points) {
-						const key = `${point.x},${point.y}`;
-						if (used.has(key)) continue;
-						
-						const dist = distanceBetweenPoints(current, point);
-						if (dist <= MAX_STEP_PX && dist < minDist) {
-							minDist = dist;
-							nearest = point;
-						}
-					}
-					
-					if (nearest) {
-						snake.push(nearest);
-						used.add(`${nearest.x},${nearest.y}`);
-						current = nearest;
-					} else {
-
-						let jumpPoint = null;
-						let jumpDist = Infinity;
-						
-						for (const point of points) {
-							const key = `${point.x},${point.y}`;
-							if (used.has(key)) continue;
-							
-							const dist = distanceBetweenPoints(current, point);
-							if (dist <= MAX_JUMP_PX && dist < jumpDist) {
-								jumpDist = dist;
-								jumpPoint = point;
-							}
-						}
-						
-						if (jumpPoint) {
-							snake.push(jumpPoint);
-							used.add(`${jumpPoint.x},${jumpPoint.y}`);
-							current = jumpPoint;
-						} else {
-							canContinue = false;
-
-						}
-					}
-				}
-				
-				if (snake.length > 1) {
-					allSnakes.push(snake);
-
-				}
-			}
-			
-			return allSnakes;
-		}
+function connectWithNearestNeighbor(points, hatchStepPixels) {
+    if (points.length === 0) return [];
+    
+    const MAX_STEP_PX = Math.round(hatchStepPixels * 1.5);
+    const MAX_JUMP_PX = Math.round(hatchStepPixels * 3.5);
+    
+    // ── Пространственная сетка для быстрого поиска соседей
+    const cellSize = Math.max(1, MAX_JUMP_PX);
+    const grid = new Map();
+    
+    for (const p of points) {
+        const cx = Math.floor(p.x / cellSize);
+        const cy = Math.floor(p.y / cellSize);
+        const key = cx + ',' + cy;
+        if (!grid.has(key)) grid.set(key, []);
+        grid.get(key).push(p);
+    }
+    
+    // Поиск ближайшего непосещённого соседа в радиусе
+    function findNearestInRadius(point, radius, used) {
+        const cx = Math.floor(point.x / cellSize);
+        const cy = Math.floor(point.y / cellSize);
+        
+        let nearest = null;
+        let minDist = Infinity;
+        
+        const cellsToCheck = Math.ceil(radius / cellSize);
+        
+        for (let dx = -cellsToCheck; dx <= cellsToCheck; dx++) {
+            for (let dy = -cellsToCheck; dy <= cellsToCheck; dy++) {
+                const key = (cx + dx) + ',' + (cy + dy);
+                const cell = grid.get(key);
+                if (!cell) continue;
+                
+                for (const p of cell) {
+                    const pKey = p.x + ',' + p.y;
+                    if (used.has(pKey)) continue;
+                    
+                    const d = Math.sqrt((p.x - point.x) ** 2 + (p.y - point.y) ** 2);
+                    if (d <= radius && d < minDist) {
+                        minDist = d;
+                        nearest = p;
+                    }
+                }
+            }
+        }
+        
+        return nearest;
+    }
+    
+    const allSnakes = [];
+    const used = new Set();
+    
+    while (used.size < points.length) {
+        let snake = [];
+        
+        // ── Ищем стартовую точку (угол) среди непосещённых
+        let current = null;
+        // Если есть предыдущая змейка — стартуем с ближайшей к её концу
+        if (allSnakes.length > 0) {
+            const lastSnake = allSnakes[allSnakes.length - 1];
+            const lastPoint = lastSnake[lastSnake.length - 1];
+            
+            let minDist = Infinity;
+            for (const p of points) {
+                const key = p.x + ',' + p.y;
+                if (used.has(key)) continue;
+                const d = Math.sqrt((p.x - lastPoint.x) ** 2 + (p.y - lastPoint.y) ** 2);
+                if (d < minDist) {
+                    minDist = d;
+                    current = p;
+                }
+            }
+        }
+        
+        // Если не нашли (первая итерация или все далеко) — угол как раньше
+        if (!current) {
+            let minSum = Infinity;
+            for (const p of points) {
+                const key = p.x + ',' + p.y;
+                if (used.has(key)) continue;
+                const sum = p.x + p.y;
+                if (sum < minSum) {
+                    minSum = sum;
+                    current = p;
+                }
+            }
+        }
+        
+        if (!current) break;
+        
+        snake.push(current);
+        used.add(current.x + ',' + current.y);
+        
+        let canContinue = true;
+        
+        while (canContinue && used.size < points.length) {
+            let nearest = null;
+            let addToEnd = true;  // куда добавлять: в конец или в начало
+            
+            // ── 1. Шаг с ТЕКУЩЕГО КОНЦА (маленький радиус)
+            nearest = findNearestInRadius(current, MAX_STEP_PX, used);
+            addToEnd = true;
+            
+            // ── 2. Шаг с ХВОСТА (маленький радиус)
+            if (!nearest) {
+                nearest = findNearestInRadius(snake[0], MAX_STEP_PX, used);
+                addToEnd = false;
+            }
+            
+            // ── 3. Прыжок с ТЕКУЩЕГО КОНЦА (большой радиус)
+            if (!nearest) {
+                nearest = findNearestInRadius(current, MAX_JUMP_PX, used);
+                addToEnd = true;
+            }
+            
+            // ── 4. Прыжок с ХВОСТА (большой радиус)
+            if (!nearest) {
+                nearest = findNearestInRadius(snake[0], MAX_JUMP_PX, used);
+                addToEnd = false;
+            }
+            
+            // ── 5. Оба конца в тупике — стоп
+            if (!nearest) {
+                canContinue = false;
+                continue;
+            }
+            
+            // Добавляем точку
+            if (addToEnd) {
+                snake.push(nearest);
+                current = nearest;
+            } else {
+                snake.unshift(nearest);
+                // current НЕ меняем — следующий шаг снова с конца
+            }
+            used.add(nearest.x + ',' + nearest.y);
+        }
+        
+        if (snake.length > 1) {
+            allSnakes.push(snake);
+        }
+    }
+    
+    return allSnakes;
+}
 
 		// Находит стартовую точку в углу области
 		function findStartCorner(points, used) {
