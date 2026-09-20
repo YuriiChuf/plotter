@@ -539,6 +539,7 @@ constructor() {
 	this.selectedElement = null; 
 	this.isResizing = false;
 	this.isRotating = false;
+	this.selectedBezierContour = null;   // { vectors: [...], fakePath: <path> } — для безье-контура
 	this.selectionAngle = 0;
 	this.resizeStart = { x: 0, y: 0, width: 0, height: 0, angle: 0 };
 	this.isSpiralActive = false;
@@ -595,6 +596,310 @@ constructor() {
 			indicator.style.animation = 'none';
 			indicator.style.zIndex = '9999';
 		}
+
+// ============================================================
+// ЛАСТИК ЧЕРЕЗ МАСКУ
+// ============================================================
+
+startEraserStroke(x, y) {
+    const D = this.state.eraserSize / this.getScreenScale();
+    
+    // 1. Круг в начальной точке (заливка) — временный
+    const startCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    startCircle.setAttribute('cx', x);
+    startCircle.setAttribute('cy', y);
+    startCircle.setAttribute('r', D / 2);
+    startCircle.setAttribute('fill', '#ff6b6b');
+    startCircle.setAttribute('opacity', '0.35');
+    startCircle.setAttribute('pointer-events', 'none');
+    
+    // 2. Путь траектории (толстая линия)
+    const trail = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    trail.setAttribute('fill', 'none');
+    trail.setAttribute('stroke', '#ff6b6b');
+    trail.setAttribute('stroke-width', String(D));
+    trail.setAttribute('stroke-linecap', 'round');
+    trail.setAttribute('stroke-linejoin', 'round');
+    trail.setAttribute('opacity', '0.35');
+    trail.setAttribute('pointer-events', 'none');
+    trail.setAttribute('d', `M ${x} ${y}`);
+    
+    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    group.id = 'eraser-mask';
+    group.setAttribute('pointer-events', 'none');
+    group.appendChild(startCircle);
+    group.appendChild(trail);
+    
+    this.hideEraserIndicator();
+    this.svg.appendChild(group);
+    
+    this._eraserMaskPoints = [{x, y}];
+    this._eraserMask = group;
+    this._eraserMaskTrail = trail;
+    this._eraserMaskStartCircle = startCircle;
+}
+
+continueEraserStroke(x, y) {
+    if (!this._eraserMask || !this._eraserMaskTrail) return;
+    
+    const last = this._eraserMaskPoints[this._eraserMaskPoints.length - 1];
+    const dist = Math.hypot(x - last.x, y - last.y);
+    const step = this.state.eraserSize / this.state.zoom / 4;
+    
+    if (dist < step) return;
+    if (this._eraserMaskPoints.length > 3000) return;
+    
+    // Первое движение — удаляем круг, оставляем только линию
+    if (this._eraserMaskStartCircle) {
+        this._eraserMaskStartCircle.remove();
+        this._eraserMaskStartCircle = null;
+    }
+    
+    this._eraserMaskPoints.push({x, y});
+    
+    const d = this._eraserMaskTrail.getAttribute('d');
+    this._eraserMaskTrail.setAttribute('d', d + ` L ${x} ${y}`);
+}
+
+finishEraserStroke(deleteWhole) {
+const mask = this._eraserMask;
+const points = this._eraserMaskPoints;
+const trail = this._eraserMaskTrail;
+this._eraserMask = null;
+this._eraserMaskPoints = null;
+this._eraserMaskTrail = null;
+this._eraserMaskStartCircle = null;
+
+if (!mask) return;
+if (mask.parentNode) mask.remove();
+    if (!points || points.length === 0) return;
+    
+    const radius = (this.state.eraserSize / 2) / this.getScreenScale();
+    
+    // === 1. Запекаем transform у элементов под маской ===
+    try {
+        const maskBBox = this.computePointsBBox(points, radius + 5);
+        const candidates = Array.from(this.svg.querySelectorAll('[transform]'));
+        for (const el of candidates) {
+            if (!el.parentNode) continue;
+            const id = el.id || '';
+            const cls = el.getAttribute('class') || '';
+            if (id.includes('background') || id.includes('indicator') ||
+                id.includes('eraser') || id.includes('push') ||
+                id.includes('selection-handles')) continue;
+            if (cls.includes('bezier-')) continue;
+            try {
+                const bb = el.getBBox();
+                if (bb.x + bb.width < maskBBox.x || bb.x > maskBBox.x + maskBBox.width) continue;
+                if (bb.y + bb.height < maskBBox.y || bb.y > maskBBox.y + maskBBox.height) continue;
+                this.bakeElementForErase(el);
+            } catch(e) {}
+        }
+    } catch(e) {}
+    
+    // === 2. Строим растровую маску ===
+    const imageData = this.buildEraserMaskCanvas(points, radius);
+    
+    // === 3. Обрабатываем обычные пути (не безье) ===
+    if (!deleteWhole) {
+        const allPaths = Array.from(this.svg.querySelectorAll('path, line, rect, circle, ellipse, polyline, polygon'))
+            .filter(el => {
+                if (!el.parentNode) return false;
+                const id = el.id || '';
+                const cls = el.getAttribute('class') || '';
+                if (id.includes('background')) return false;
+                if (id.includes('indicator')) return false;
+                if (id.includes('eraser')) return false;
+                if (id.includes('push')) return false;
+                if (id.includes('selection-handles')) return false;
+                if (cls.includes('bezier-')) return false; // Безье отдельно
+                return true;
+            });
+        
+        for (const el of allPaths) {
+            if (!el.parentNode) continue;
+            
+            // Быстрая bbox-проверка
+            try {
+                const bb = el.getBBox();
+                const pad = radius + 10;
+                const maskBBox = this.computePointsBBox(points, pad);
+                if (bb.x + bb.width < maskBBox.x || bb.x > maskBBox.x + maskBBox.width ||
+                    bb.y + bb.height < maskBBox.y || bb.y > maskBBox.y + maskBBox.height) {
+                    continue;
+                }
+            } catch(e) { continue; }
+            
+            // Конвертируем в path, если нужно
+            let elPath = el;
+            if (el.tagName.toLowerCase() !== 'path') {
+                elPath = this.convertToPath(el);
+                if (!elPath) continue;
+            }
+            
+            const result = this.cutPathByMask(elPath, imageData);
+            
+            if (result === 'delete') {
+                if (elPath.parentNode) elPath.parentNode.removeChild(elPath);
+            } else if (result && result.segments) {
+                // Заменяем путь на сегменты
+                const parent = elPath.parentNode;
+                if (!parent) continue;
+                
+                const attrs = {};
+                for (const a of ['stroke','stroke-width','stroke-linecap','stroke-linejoin','stroke-dasharray','fill','opacity']) {
+                    attrs[a] = elPath.getAttribute(a);
+                }
+                if (!attrs.fill) attrs.fill = 'none';
+                
+                parent.removeChild(elPath);
+                
+                for (const seg of result.segments) {
+                    if (seg.length < 2) continue;
+                    let dd = `M ${seg[0].x.toFixed(3)} ${seg[0].y.toFixed(3)}`;
+                    for (let k = 1; k < seg.length; k++) {
+                        dd += ` L ${seg[k].x.toFixed(3)} ${seg[k].y.toFixed(3)}`;
+                    }
+                    const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    newPath.setAttribute('d', dd);
+                    for (const [k, v] of Object.entries(attrs)) {
+                        if (v !== null) newPath.setAttribute(k, v);
+                    }
+                    parent.appendChild(newPath);
+                }
+            }
+        }
+    }
+    
+    // === 4. Обрабатываем безье (с сохранением безье) ===
+    if (!deleteWhole && this.state.bezierVectors.length > 0) {
+        this.cutAllBeziersByMask(imageData);
+    }
+    
+    // === 5. Для Ctrl+протяжки — удаляем целиком ===
+    if (deleteWhole) {
+        const allPaths = Array.from(this.svg.querySelectorAll('path, line, rect, circle, ellipse, polyline, polygon'))
+            .filter(el => {
+                if (!el.parentNode) return false;
+                const id = el.id || '';
+                const cls = el.getAttribute('class') || '';
+                if (id.includes('background') || id.includes('indicator') ||
+                    id.includes('eraser') || id.includes('push') ||
+                    id.includes('selection-handles')) return false;
+                if (cls.includes('bezier-')) return false;
+                return true;
+            });
+        
+        for (const el of allPaths) {
+            try {
+                const bb = el.getBBox();
+                const cx = bb.x + bb.width / 2;
+                const cy = bb.y + bb.height / 2;
+                if (this.isPointInMask(imageData, cx, cy)) {
+                    el.remove();
+                }
+            } catch(e) {}
+        }
+        
+        // Безье — тоже удаляем целиком, если середина в маске
+        const vectorsToDelete = [];
+        for (const vector of this.state.bezierVectors) {
+            const fromPoint = this.state.bezierPoints[vector.from];
+            const toPoint = this.state.bezierPoints[vector.to];
+            if (!fromPoint || !toPoint) continue;
+            const mid = this.evaluateCubicBezier(
+                fromPoint.x, fromPoint.y,
+                vector.control1.x, vector.control1.y,
+                vector.control2.x, vector.control2.y,
+                toPoint.x, toPoint.y,
+                0.5
+            );
+            if (this.isPointInMask(imageData, mid.x, mid.y)) {
+                vectorsToDelete.push(vector);
+            }
+        }
+        for (const v of vectorsToDelete) this.deleteBezierVector(v);
+    }
+    
+    this.saveSnapshot();
+}
+
+// Вспомогательный метод: bbox набора точек + отступ
+computePointsBBox(points, pad = 0) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of points) {
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+    }
+    return {
+        x: minX - pad,
+        y: minY - pad,
+        width: (maxX - minX) + pad * 2,
+        height: (maxY - minY) + pad * 2
+    };
+}
+
+// Приблизительная точка на границе маски между двумя точками пути
+_approxBoundaryPoint(points, indexInside, flags, isInsideMask) {
+    // indexInside — текущая точка (внутри). Предыдущая — снаружи.
+    const outsideIdx = indexInside - 1;
+    if (outsideIdx < 0) return points[indexInside];
+    
+    const a = points[outsideIdx];
+    const b = points[indexInside];
+    
+    // Бинарный поиск между a и b
+    let lo = 0, hi = 1;
+    for (let it = 0; it < 8; it++) {
+        const mid = (lo + hi) / 2;
+        const px = a.x + (b.x - a.x) * mid;
+        const py = a.y + (b.y - a.y) * mid;
+        if (isInsideMask(px, py)) hi = mid;
+        else lo = mid;
+    }
+    return {
+        x: a.x + (b.x - a.x) * hi,
+        y: a.y + (b.y - a.y) * hi
+    };
+}
+
+// Удаление целиком (Ctrl+клик)
+deleteElementsAlongStroke(maskPoints) {
+    const radius = (this.state.eraserSize / this.state.zoom) / 2;
+    
+    const elems = Array.from(this.svg.querySelectorAll('path, line, rect, circle, ellipse, polyline, polygon'))
+        .filter(el => {
+            if (!el.parentNode) return false;
+            const id = el.id || '';
+            const cls = el.getAttribute('class') || '';
+            if (id.includes('background')) return false;
+            if (id.includes('indicator')) return false;
+            if (id.includes('eraser')) return false;
+            if (id.includes('push')) return false;
+            if (id.includes('selection-handles')) return false;
+            if (cls.includes('bezier-')) return false;
+            return true;
+        });
+    
+    // Проверяем: центр bbox элемента попадает в маску?
+    for (const el of elems) {
+        let bb;
+        try { bb = el.getBBox(); } catch(e) { continue; }
+        const cx = bb.x + bb.width / 2;
+        const cy = bb.y + bb.height / 2;
+        
+        let hit = false;
+        for (const m of maskPoints) {
+            const dx = cx - m.x;
+            const dy = cy - m.y;
+            if (dx * dx + dy * dy <= radius * radius) { hit = true; break; }
+        }
+        
+        if (hit && el.parentNode) el.parentNode.removeChild(el);
+    }
+}
 
 		// СКРЫВАЕМ ИНДИКАТОР ЛАСТИКА
 		hideEraserIndicator() {
@@ -898,18 +1203,23 @@ setupHotkeys() {
                 break;
             case 'delete': // Удалить выделенное
             case 'backspace':
-                if (this.state.currentTool === 'bezier-points' && 
-                    this.state.bezierSelectedPoint !== null) {
-                    this.deleteBezierPoint(this.state.bezierSelectedPoint);
-                }
-                break;
+				if (this.state.currentTool === 'bezier-points' && 
+					this.state.bezierSelectedPoint !== null) {
+					this.deleteBezierPoint(this.state.bezierSelectedPoint);
+				} else if (this.state.currentTool === 'select' && this.selectedBezierContour) {
+					this.deleteSelectedBezierContour();
+				} else if (this.state.currentTool === 'select' && this.selectedElement) {
+					this.selectedElement.remove();
+					this.clearSelection();
+				}
+				break;
         }
     });
     document.addEventListener('keyup', (e) => {
         if (e.key === 'Control' || e.key === 'Meta') {
             if (this.state.currentTool === 'eraser') {
                 this.svg.style.cursor = 'none';
-                const radius = this.state.eraserSize / this.state.zoom;
+                const radius = (this.state.eraserSize / 2) / this.getScreenScale();
                 this.showEraserIndicator(this.state.lastMouseX, this.state.lastMouseY, radius);
             }
         }
@@ -1625,6 +1935,45 @@ findAllConnectedBezierVectors(startVector) {
     return connected;
 }
 
+buildBezierContourFakePath(startVector) {
+    const vectors = this.findAllConnectedBezierVectors(startVector);
+    if (vectors.length === 0) return null;
+    
+    let d = '';
+    for (const v of vectors) {
+        const fromPoint = this.state.bezierPoints[v.from];
+        const toPoint = this.state.bezierPoints[v.to];
+        if (!fromPoint || !toPoint) continue;
+        
+        d += `M ${fromPoint.x} ${fromPoint.y} `;
+        d += `C ${v.control1.x} ${v.control1.y} ${v.control2.x} ${v.control2.y} ${toPoint.x} ${toPoint.y} `;
+    }
+    
+    if (!d) return null;
+    
+    // Стиль от первого вектора
+    const first = vectors[0];
+    const stroke = first.path.getAttribute('stroke') || this.state.strokeColor || '#4dabf7';
+    const strokeWidth = first.path.getAttribute('stroke-width') || this.state.strokeWidth || 3;
+    const linecap = first.path.getAttribute('stroke-linecap') || 'round';
+    const linejoin = first.path.getAttribute('stroke-linejoin') || 'round';
+    
+    const fakePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    fakePath.setAttribute('d', d);
+    fakePath.setAttribute('fill', 'none');
+    fakePath.setAttribute('stroke', stroke);
+    fakePath.setAttribute('stroke-width', strokeWidth);
+    fakePath.setAttribute('stroke-linecap', linecap);
+    fakePath.setAttribute('stroke-linejoin', linejoin);
+    fakePath.dataset.isBezierContour = 'true';
+    fakePath.style.cursor = 'move';
+    fakePath.style.pointerEvents = 'all';
+    
+    // В vectorLayer — чтобы стандартные механизмы работали
+    this.vectorLayer.appendChild(fakePath);
+    
+    return { fakePath, vectors };
+}
 
 doBezierContourDrag(x, y) {
     if (!this.state.bezierContourDragData) return;
@@ -1860,13 +2209,162 @@ rotatePoint(px, py, cx, cy, angle) {
 selectElement(element) {
     // Снимаем выделение с предыдущего
     if (this.selectedElement && this.selectedElement !== element) {
-        this.removeSelectionHandles();
+        this.clearSelection();
     }
     
     this.selectedElement = element;
     
     if (element) {
         this.showSelectionHandles(element);
+    }
+}
+
+// Удаляет выделенный безье-контур целиком
+deleteSelectedBezierContour() {
+    if (!this.selectedBezierContour) return;
+    
+    const contour = this.selectedBezierContour;
+    const vectors = [...contour.vectors];
+    
+    // Сначала сбрасываем выделение (чтобы не мешало)
+    const fakePath = contour.fakePath;
+    this.removeSelectionHandles();
+    this.selectedBezierContour = null;
+    this.selectedElement = null;
+    if (fakePath && fakePath.parentNode) fakePath.remove();
+    
+    // Собираем уникальные точки контура
+    const pointIndices = new Set();
+    for (const v of vectors) {
+        pointIndices.add(v.from);
+        pointIndices.add(v.to);
+    }
+    
+    // Удаляем векторы
+    for (const v of vectors) {
+        // Убираем визуальные элементы
+        if (v.path && v.path.parentNode) v.path.remove();
+        const ge = v.guideElements || {};
+        if (ge.line1) ge.line1.remove();
+        if (ge.control1) ge.control1.remove();
+        if (ge.line2) ge.line2.remove();
+        if (ge.control2) ge.control2.remove();
+        
+        const idx = this.state.bezierVectors.indexOf(v);
+        if (idx !== -1) this.state.bezierVectors.splice(idx, 1);
+    }
+    
+    // Удаляем точки (только те, что больше не используются)
+    const usedPointIndices = new Set();
+    for (const v of this.state.bezierVectors) {
+        usedPointIndices.add(v.from);
+        usedPointIndices.add(v.to);
+    }
+    
+    // Удаляем с конца, чтобы индексы не сбивались
+    const toDelete = [...pointIndices].filter(i => !usedPointIndices.has(i));
+    toDelete.sort((a, b) => b - a);
+    
+    for (const idx of toDelete) {
+        const p = this.state.bezierPoints[idx];
+        if (p && p.element && p.element.parentNode) p.element.remove();
+        this.state.bezierPoints.splice(idx, 1);
+    }
+    
+    // Обновляем индексы оставшихся точек и векторов
+    this.state.bezierPoints.forEach((p, i) => {
+        p.index = i;
+        if (p.element) p.element.setAttribute('data-index', i);
+    });
+    
+    for (const v of this.state.bezierVectors) {
+        let fromShift = 0, toShift = 0;
+        for (const deleted of toDelete) {
+            if (v.from > deleted) fromShift++;
+            if (v.to > deleted) toShift++;
+        }
+        v.from -= fromShift;
+        v.to -= toShift;
+    }
+    
+    this.saveSnapshot();
+}
+
+// Специальная версия для безье-контура: собирает все связанные векторы,
+// строит фейковый path и вызывает стандартный механизм выделения.
+selectBezierContour(clickedVectorPath) {
+    const vector = this.state.bezierVectors.find(v => v.path === clickedVectorPath);
+    if (!vector) {
+        console.warn('Вектор не найден по path');
+        return;
+    }
+    
+    // Сбрасываем предыдущее выделение (с запеканием)
+    this.clearSelection();
+    
+    const contour = this.buildBezierContourFakePath(vector);
+    if (!contour) return;
+    
+    // Скрываем оригинальные визуальные элементы контура
+    this.hideBezierContourVisuals(contour.vectors);
+    
+    // Сохраняем
+    this.selectedBezierContour = {
+        fakePath: contour.fakePath,
+        vectors: contour.vectors,
+        isBezierContour: true
+    };
+    this.selectedElement = contour.fakePath;
+    
+    // Рамка
+    this.showSelectionHandles(contour.fakePath);
+}
+
+// Скрывает path безье, точки и направляющие
+hideBezierContourVisuals(vectors) {
+    for (const v of vectors) {
+        if (v.path) v.path.style.display = 'none';
+        
+        const ge = v.guideElements || {};
+        if (ge.line1) ge.line1.style.display = 'none';
+        if (ge.control1) ge.control1.style.display = 'none';
+        if (ge.line2) ge.line2.style.display = 'none';
+        if (ge.control2) ge.control2.style.display = 'none';
+        
+        const fp = this.state.bezierPoints[v.from];
+        const tp = this.state.bezierPoints[v.to];
+        if (fp && fp.element) fp.element.style.display = 'none';
+        if (tp && tp.element) tp.element.style.display = 'none';
+    }
+}
+
+// Показывает обратно path безье, точки и направляющие
+showBezierContourVisuals(vectors) {
+    const showBezierEditing = (this.state.currentTool === 'bezier-points');
+    
+    for (const v of vectors) {
+        if (v.path) v.path.style.display = '';
+        
+        const ge = v.guideElements || {};
+        if (ge.line1) ge.line1.style.display = showBezierEditing ? '' : 'none';
+        if (ge.control1) ge.control1.style.display = showBezierEditing ? '' : 'none';
+        if (ge.line2) ge.line2.style.display = showBezierEditing ? '' : 'none';
+        if (ge.control2) ge.control2.style.display = showBezierEditing ? '' : 'none';
+        
+        const fp = this.state.bezierPoints[v.from];
+        const tp = this.state.bezierPoints[v.to];
+        if (fp && fp.element) {
+            fp.element.style.display = showBezierEditing ? '' : 'none';
+        }
+        if (tp && tp.element) {
+            tp.element.style.display = showBezierEditing ? '' : 'none';
+        }
+    }
+    
+    // Финальная страховка: если не bezier-points, скрываем всё скопом
+    if (!showBezierEditing) {
+        this.toggleBezierPoints(false);
+        this.hideBezierHelpers();
     }
 }
 
@@ -1993,6 +2491,117 @@ removeSelectionHandles() {
     if (handles) {
         handles.remove();
     }
+}
+
+// Полная очистка выделения — рамка + фейковый path + сброс ссылок
+clearSelection() {
+    // Запекаем изменения безье-контура (если был выделен)
+    if (this.selectedBezierContour) {
+        this.commitBezierContourChanges();
+    }
+    
+    this.removeSelectionHandles();
+    
+    if (this.selectedBezierContour && this.selectedBezierContour.fakePath) {
+        this.selectedBezierContour.fakePath.remove();
+    }
+    this.selectedBezierContour = null;
+    this.selectedElement = null;
+}
+
+// Применяет трансформации фейкового path обратно в оригинальные безье-векторы
+commitBezierContourChanges() {
+    const contour = this.selectedBezierContour;
+    if (!contour) return;
+    
+    const fakePath = contour.fakePath;
+    const newD = fakePath.getAttribute('d') || '';
+    const transform = fakePath.getAttribute('transform') || '';
+    
+    // Парсим сегменты из d
+    const segments = this.parseBezierSegments(newD);
+    
+    // Считаем матрицу трансформации
+    let matrix = null;
+    if (transform) {
+        matrix = this.parseTransformString(transform);
+    }
+    
+    const apply = (x, y) => {
+        if (!matrix) return { x, y };
+        return this.applyMatrixToPoint(matrix, x, y);
+    };
+    
+    if (segments.length === 0) {
+        // Нет сегментов — показываем оригинал как есть
+        this.showBezierContourVisuals(contour.vectors);
+        return;
+    }
+    
+    // Применяем к оригинальным векторам
+    const count = Math.min(segments.length, contour.vectors.length);
+    
+    for (let i = 0; i < count; i++) {
+        const seg = segments[i];
+        const vector = contour.vectors[i];
+        
+        const fromPoint = this.state.bezierPoints[vector.from];
+        const toPoint = this.state.bezierPoints[vector.to];
+        if (!fromPoint || !toPoint) continue;
+        
+        const startPt = apply(seg.start.x, seg.start.y);
+        const c1 = apply(seg.c1.x, seg.c1.y);
+        const c2 = apply(seg.c2.x, seg.c2.y);
+        const endPt = apply(seg.end.x, seg.end.y);
+        
+        fromPoint.x = startPt.x;
+        fromPoint.y = startPt.y;
+        if (fromPoint.element) {
+            fromPoint.element.setAttribute('cx', fromPoint.x);
+            fromPoint.element.setAttribute('cy', fromPoint.y);
+        }
+        
+        toPoint.x = endPt.x;
+        toPoint.y = endPt.y;
+        if (toPoint.element) {
+            toPoint.element.setAttribute('cx', toPoint.x);
+            toPoint.element.setAttribute('cy', toPoint.y);
+        }
+        
+        vector.control1.x = c1.x;
+        vector.control1.y = c1.y;
+        vector.control2.x = c2.x;
+        vector.control2.y = c2.y;
+        
+        this.updateBezierVectorPath(vector);
+        this.updateVectorGuides(vector);
+    }
+    
+    // Показываем оригинал
+    this.showBezierContourVisuals(contour.vectors);
+    
+    // Сохраняем снимок
+    this.saveSnapshot();
+}
+
+// Парсит строку d в массив сегментов (M + C)
+parseBezierSegments(d) {
+    if (!d) return [];
+    
+    const segments = [];
+    const regex = /M\s*([\d.eE+-]+)\s+([\d.eE+-]+)\s+C\s*([\d.eE+-]+)\s+([\d.eE+-]+)\s+([\d.eE+-]+)\s+([\d.eE+-]+)\s+([\d.eE+-]+)\s+([\d.eE+-]+)/g;
+    
+    let match;
+    while ((match = regex.exec(d)) !== null) {
+        segments.push({
+            start: { x: parseFloat(match[1]), y: parseFloat(match[2]) },
+            c1:    { x: parseFloat(match[3]), y: parseFloat(match[4]) },
+            c2:    { x: parseFloat(match[5]), y: parseFloat(match[6]) },
+            end:   { x: parseFloat(match[7]), y: parseFloat(match[8]) }
+        });
+    }
+    
+    return segments;
 }
 
 updateSelectionHandles() {
@@ -3354,8 +3963,7 @@ setTool(tool) {
         this.endBezierControlDrag();
     }
     if (this.selectedElement && tool !== 'select') {
-        this.removeSelectionHandles();
-        this.selectedElement = null;
+        this.clearSelection();
     }
     this.state.currentElement = null;
     const previousTool = this.state.currentTool;
@@ -3678,44 +4286,798 @@ deleteBezierVectors(vectors) {
 
 // Функция конвертации конкретного элемента в путь
 convertToPath(element) {
-    // === ЗАЩИТА: НИКОГДА НЕ КОНВЕРТИРУЕМ БЕЗЬЕ-ЭЛЕМЕНТЫ ===
+    if (!element || element.nodeType !== 1) return null;
+    
+    const tag = element.tagName.toLowerCase();
+    
+    // Безье не трогаем
     const className = element.getAttribute('class') || '';
-    if (className.includes('bezier-')) {
-        return null;
-    }
+    if (className.includes('bezier-')) return null;
+    
+    // Уже path — ничего не делаем, возвращаем как есть
+    if (tag === 'path') return element;
     
     let pathData = '';
-    const stroke = element.getAttribute('stroke') || 'black';
-    const strokeWidth = element.getAttribute('stroke-width') || '1';
-    const fill = element.getAttribute('fill') || 'none';
     
-    switch(element.tagName.toLowerCase()) {
-        case 'line':
+    switch (tag) {
+        case 'line': {
             const x1 = parseFloat(element.getAttribute('x1')) || 0;
             const y1 = parseFloat(element.getAttribute('y1')) || 0;
             const x2 = parseFloat(element.getAttribute('x2')) || 0;
             const y2 = parseFloat(element.getAttribute('y2')) || 0;
-            
             pathData = `M ${x1} ${y1} L ${x2} ${y2}`;
             break;
-            
-        // ... весь остальной switch без изменений ...
+        }
+        case 'rect': {
+            const x = parseFloat(element.getAttribute('x')) || 0;
+            const y = parseFloat(element.getAttribute('y')) || 0;
+            const w = parseFloat(element.getAttribute('width')) || 0;
+            const h = parseFloat(element.getAttribute('height')) || 0;
+            pathData = `M ${x} ${y} L ${x + w} ${y} L ${x + w} ${y + h} L ${x} ${y + h} Z`;
+            break;
+        }
+        case 'circle': {
+            const cx = parseFloat(element.getAttribute('cx')) || 0;
+            const cy = parseFloat(element.getAttribute('cy')) || 0;
+            const r  = parseFloat(element.getAttribute('r'))  || 0;
+            pathData = this.approximateCircleAsPath(cx, cy, r, 60);
+            break;
+        }
+        case 'ellipse': {
+            const cx = parseFloat(element.getAttribute('cx')) || 0;
+            const cy = parseFloat(element.getAttribute('cy')) || 0;
+            const rx = parseFloat(element.getAttribute('rx')) || 0;
+            const ry = parseFloat(element.getAttribute('ry')) || 0;
+            pathData = this.approximateEllipseAsPath(cx, cy, rx, ry, 60);
+            break;
+        }
+        case 'polyline': {
+            const pts = element.getAttribute('points') || '';
+            const nums = pts.split(/[\s,]+/).map(parseFloat).filter(n => !isNaN(n));
+            if (nums.length < 4) return null;
+            let d = `M ${nums[0]} ${nums[1]}`;
+            for (let i = 2; i < nums.length; i += 2) {
+                if (i + 1 < nums.length) d += ` L ${nums[i]} ${nums[i + 1]}`;
+            }
+            pathData = d;
+            break;
+        }
+        case 'polygon': {
+            const pts = element.getAttribute('points') || '';
+            const nums = pts.split(/[\s,]+/).map(parseFloat).filter(n => !isNaN(n));
+            if (nums.length < 4) return null;
+            let d = `M ${nums[0]} ${nums[1]}`;
+            for (let i = 2; i < nums.length; i += 2) {
+                if (i + 1 < nums.length) d += ` L ${nums[i]} ${nums[i + 1]}`;
+            }
+            pathData = d + ' Z';
+            break;
+        }
+        default:
+            return null;
     }
     
     if (!pathData) return null;
     
-    // Создаем новый путь
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', pathData);
-    path.setAttribute('stroke', stroke);
-    path.setAttribute('stroke-width', strokeWidth);
-    path.setAttribute('fill', fill);
-    path.setAttribute('stroke-linecap', element.getAttribute('stroke-linecap') || 'round');
-    path.setAttribute('stroke-linejoin', element.getAttribute('stroke-linejoin') || 'round');
+    // Создаём новый <path> с теми же стилевыми атрибутами
+    const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    newPath.setAttribute('d', pathData);
     
-    return path;
+    // Переносим стиль (stroke, fill и т.д.)
+    const styleAttrs = [
+        'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
+        'stroke-dasharray', 'stroke-opacity',
+        'fill', 'fill-rule', 'fill-opacity',
+        'opacity'
+    ];
+    for (const attr of styleAttrs) {
+        const val = element.getAttribute(attr);
+        if (val !== null) newPath.setAttribute(attr, val);
+    }
+    
+    // Значения по умолчанию, если не заданы
+    if (!newPath.getAttribute('stroke')) newPath.setAttribute('stroke', this.state.strokeColor || '#4dabf7');
+    if (!newPath.getAttribute('stroke-width')) newPath.setAttribute('stroke-width', String(this.state.strokeWidth || 3));
+    if (!newPath.getAttribute('fill')) newPath.setAttribute('fill', 'none');
+    
+    // Переносим transform? — НЕТ. transform должен быть запечён ДО вызова этой функции.
+    // Если у элемента остался transform — переносим его, чтобы не потерять вид.
+    // (но в ластике мы вызываем сначала bakeElementForErase)
+    const transform = element.getAttribute('transform');
+    if (transform) newPath.setAttribute('transform', transform);
+    
+    // Подменяем в DOM
+    if (element.parentNode) {
+        element.parentNode.replaceChild(newPath, element);
+    }
+    
+    return newPath;
 }
 
+// Аппроксимирует круг как path (полигон из numPoints точек)
+approximateCircleAsPath(cx, cy, r, numPoints = 60) {
+    if (r <= 0) return '';
+    const pts = [];
+    for (let i = 0; i < numPoints; i++) {
+        const a = (i / numPoints) * Math.PI * 2;
+        pts.push({
+            x: cx + Math.cos(a) * r,
+            y: cy + Math.sin(a) * r
+        });
+    }
+    let d = `M ${pts[0].x.toFixed(3)} ${pts[0].y.toFixed(3)}`;
+    for (let i = 1; i < pts.length; i++) {
+        d += ` L ${pts[i].x.toFixed(3)} ${pts[i].y.toFixed(3)}`;
+    }
+    return d + ' Z';
+}
+
+// Аппроксимирует эллипс как path
+approximateEllipseAsPath(cx, cy, rx, ry, numPoints = 60) {
+    if (rx <= 0 || ry <= 0) return '';
+    const pts = [];
+    for (let i = 0; i < numPoints; i++) {
+        const a = (i / numPoints) * Math.PI * 2;
+        pts.push({
+            x: cx + Math.cos(a) * rx,
+            y: cy + Math.sin(a) * ry
+        });
+    }
+    let d = `M ${pts[0].x.toFixed(3)} ${pts[0].y.toFixed(3)}`;
+    for (let i = 1; i < pts.length; i++) {
+        d += ` L ${pts[i].x.toFixed(3)} ${pts[i].y.toFixed(3)}`;
+    }
+    return d + ' Z';
+}
+
+// Запекает transform в элемент перед обработкой (ластик, push и т.д.).
+// Учитывает родительские <g transform>.
+// Возвращает актуальный элемент после возможной подмены (rect→path и т.п.).
+bakeElementForErase(element) {
+    if (!element || element.nodeType !== 1) return element;
+    
+    // Собираем матрицу (включая родительские <g>)
+    const matrix = this.getElementTransformMatrix(element);
+    
+    // Проверяем, есть ли вообще трансформация (собственная или родительская)
+    const hasOwnTransform = !!element.getAttribute('transform');
+    const hasAnyTransform = !this.isIdentityMatrix(matrix);
+    
+    if (!hasAnyTransform && !hasOwnTransform) {
+        // Нет трансформации — ничего запекать не надо
+        // Но если родитель был <g transform>, всё равно надо "вынуть" элемент
+        // — иначе координаты элемента в системе родителя, а не SVG.
+        // Проверяем: если родитель — не слой, а <g transform> — надо поднять.
+        if (element.parentNode && 
+            element.parentNode.tagName &&
+            element.parentNode.tagName.toLowerCase() === 'g' &&
+            element.parentNode.getAttribute('transform')) {
+            // Нужно запечь, даже если собственный transform пуст
+        } else {
+            return element;
+        }
+    }
+    
+    // Применяем запекание
+    const result = this.bakeTransformInElement(element);
+    
+    if (result && result.replaced && result.newElement) {
+        return result.newElement;
+    }
+    
+    return element;
+}
+
+// ============================================================
+// РАСТРОВАЯ МАСКА ДЛЯ РЕЗКИ ОБЫЧНЫХ ПУТЕЙ
+// ============================================================
+
+// Строит off-screen canvas 1000x1000 с траекторией маски.
+// Возвращает ImageData (белые пиксели = область стирания).
+buildEraserMaskCanvas(points, radius) {
+    const size = 1000;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, size, size);
+    
+    ctx.strokeStyle = 'white';
+    ctx.fillStyle = 'white';
+    ctx.lineWidth = radius * 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    
+    if (points.length === 1) {
+        ctx.beginPath();
+        ctx.arc(points[0].x, points[0].y, radius, 0, Math.PI * 2);
+        ctx.fill();
+    } else {
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+            ctx.lineTo(points[i].x, points[i].y);
+        }
+        ctx.stroke();
+        
+        // Закрашиваем концы кругами (для скругления)
+        ctx.beginPath();
+        ctx.arc(points[0].x, points[0].y, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(points[points.length - 1].x, points[points.length - 1].y, radius, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    return ctx.getImageData(0, 0, size, size);
+}
+
+// Быстрая проверка: пиксель в маске?
+isPointInMask(imageData, x, y) {
+    const w = imageData.width;
+    const h = imageData.height;
+    const px = Math.floor(x);
+    const py = Math.floor(y);
+    if (px < 0 || px >= w || py < 0 || py >= h) return false;
+    const idx = (py * w + px) * 4;
+    return imageData.data[idx] > 128;
+}
+
+// Бинарный поиск точки перехода через границу маски на отрезке p1-p2.
+// p1InMask — флаг p1 (true = внутри маски).
+findMaskBoundary(imageData, p1, p2, p1InMask) {
+    let lo = 0, hi = 1;
+    for (let it = 0; it < 20; it++) {
+        const mid = (lo + hi) / 2;
+        const mx = p1.x + (p2.x - p1.x) * mid;
+        const my = p1.y + (p2.y - p1.y) * mid;
+        const inside = this.isPointInMask(imageData, mx, my);
+        if (inside === p1InMask) lo = mid;
+        else hi = mid;
+    }
+    const t = (lo + hi) / 2;
+    return {
+        x: p1.x + (p2.x - p1.x) * t,
+        y: p1.y + (p2.y - p1.y) * t,
+        t: t
+    };
+}
+
+// Режет обычный <path> по растровой маске.
+// Возвращает:
+//   'delete' — если путь целиком внутри маски
+//   null — если путь целиком снаружи (не трогаем)
+//   { segments: [ [ {x,y}, ... ], ... ], newPath: <path> } — если разрезан
+cutPathByMask(pathElement, imageData) {
+    const d = pathElement.getAttribute('d');
+    if (!d) return null;
+    
+    const { points: rawPoints, isClosed } = this.parsePathToPoints(d);
+    if (rawPoints.length < 2) return null;
+    
+    // === РАЗБИВАЕМ ДЛИННЫЕ СЕГМЕНТЫ НА МЕЛКИЕ ===
+    // Шаг = 2 пикселя (в единицах viewBox 1000x1000)
+    const MAX_STEP = 2;
+    const points = [];
+    
+    const n0 = rawPoints.length;
+    const lastI = isClosed ? n0 : n0 - 1;
+    
+    for (let i = 0; i < lastI; i++) {
+        const a = rawPoints[i];
+        const b = rawPoints[(i + 1) % n0];
+        points.push(a);
+        
+        const dist = Math.hypot(b.x - a.x, b.y - a.y);
+        if (dist > MAX_STEP) {
+            const steps = Math.ceil(dist / MAX_STEP);
+            for (let s = 1; s < steps; s++) {
+                const t = s / steps;
+                points.push({
+                    x: a.x + (b.x - a.x) * t,
+                    y: a.y + (b.y - a.y) * t
+                });
+            }
+        }
+    }
+    if (!isClosed) {
+        points.push(rawPoints[rawPoints.length - 1]);
+    }
+    
+    // === Дальше — как раньше, но с новым массивом points ===
+    const flags = points.map(p => this.isPointInMask(imageData, p.x, p.y));
+    
+    if (flags.every(f => !f)) return null;
+    if (flags.every(f => f)) return 'delete';
+    
+    // ... остальной код такой же, но помним,
+    // что точки теперь промежуточные (включая "плотные") ...
+    
+    const segments = [];
+    let current = null;
+    const n = points.length;
+    
+    let startIdx = 0;
+    if (isClosed) {
+        const outsideIdx = flags.findIndex(f => !f);
+        if (outsideIdx > 0) startIdx = outsideIdx;
+    }
+    
+    for (let s = 0; s < n; s++) {
+        const i = (startIdx + s) % n;
+        const p = points[i];
+        const inside = flags[i];
+        
+        if (!inside) {
+            if (!current) current = [];
+            current.push(p);
+        } else {
+            if (current && current.length > 0) {
+                const prevIdx = (i - 1 + n) % n;
+                if (s > 0 || isClosed) {
+                    const boundary = this.findMaskBoundary(
+                        imageData, points[prevIdx], p, false
+                    );
+                    if (boundary) current.push({x: boundary.x, y: boundary.y});
+                }
+                if (current.length >= 2) segments.push(current);
+                current = null;
+            }
+        }
+    }
+    
+    if (current && current.length >= 2) {
+        if (isClosed && segments.length > 0 && flags[startIdx] === false) {
+            segments[0] = [...current, ...segments[0]];
+        } else {
+            segments.push(current);
+        }
+    }
+    
+    if (segments.length === 0) return 'delete';
+    
+    const validSegments = segments.filter(s => s.length >= 2);
+    if (validSegments.length === 0) return 'delete';
+    if (validSegments.length === 1 && validSegments[0].length === points.length) {
+        return null;
+    }
+    
+    // === УПРОЩАЕМ СЕГМЕНТЫ: убираем промежуточные точки, 
+    //     которые лежат на одной прямой (чтобы не раздувать d) ===
+    const simplified = validSegments.map(seg => this.simplifyPolyline(seg, 0.5));
+    
+    return { segments: simplified };
+}
+
+// Упрощение полилинии (алгоритм Рамера-Дугласа-Пека)
+simplifyPolyline(points, tolerance = 0.5) {
+    if (points.length < 3) return points;
+    
+    const sqTolerance = tolerance * tolerance;
+    
+    const getSqSegDist = (p, a, b) => {
+        let x = a.x, y = a.y;
+        let dx = b.x - x, dy = b.y - y;
+        if (dx !== 0 || dy !== 0) {
+            const t = ((p.x - x) * dx + (p.y - y) * dy) / (dx * dx + dy * dy);
+            if (t > 1) { x = b.x; y = b.y; }
+            else if (t > 0) { x += dx * t; y += dy * t; }
+        }
+        dx = p.x - x;
+        dy = p.y - y;
+        return dx * dx + dy * dy;
+    };
+    
+    const simplifyStep = (pts, first, last, sqTol, out) => {
+        let maxSqDist = sqTol;
+        let index = -1;
+        for (let i = first + 1; i < last; i++) {
+            const sqDist = getSqSegDist(pts[i], pts[first], pts[last]);
+            if (sqDist > maxSqDist) {
+                index = i;
+                maxSqDist = sqDist;
+            }
+        }
+        if (maxSqDist > sqTol) {
+            if (index - first > 1) simplifyStep(pts, first, index, sqTol, out);
+            out.push(pts[index]);
+            if (last - index > 1) simplifyStep(pts, index, last, sqTol, out);
+        }
+    };
+    
+    const out = [points[0]];
+    simplifyStep(points, 0, points.length - 1, sqTolerance, out);
+    out.push(points[points.length - 1]);
+    return out;
+}
+
+// ============================================================
+// РЕЗКА БЕЗЬЕ ЧЕРЕЗ МАСКУ (сохранение безье)
+// ============================================================
+
+// Разбивает кубическую безье (p0, c1, c2, p3) в параметре t
+// на две кубические безье. Алгоритм де Кастельо.
+splitCubicBezier(p0, c1, c2, p3, t) {
+    const lerp = (a, b, k) => ({
+        x: a.x + (b.x - a.x) * k,
+        y: a.y + (b.y - a.y) * k
+    });
+    
+    const p01 = lerp(p0, c1, t);
+    const p12 = lerp(c1, c2, t);
+    const p23 = lerp(c2, p3, t);
+    const p012 = lerp(p01, p12, t);
+    const p123 = lerp(p12, p23, t);
+    const p = lerp(p012, p123, t);
+    
+    return {
+        first: { c1: p01, c2: p012, p: p },   // первая кривая: p0 -> p01 -> p012 -> p
+        second: { c1: p123, c2: p23, p: p3 }  // вторая кривая: p -> p123 -> p23 -> p3
+    };
+}
+
+// Режет один безье-вектор по маске.
+// Возвращает:
+//   'delete' — вектор целиком в маске
+//   null — вектор целиком снаружи
+//   { cuts: [{t, point}, ...] } — параметры t для разреза (отсортированы)
+cutBezierVectorByMask(vector, imageData, numSamples = 60) {
+    const fromPoint = this.state.bezierPoints[vector.from];
+    const toPoint = this.state.bezierPoints[vector.to];
+    if (!fromPoint || !toPoint) return null;
+    
+    // Сэмплируем кривую
+    const samples = [];
+    for (let i = 0; i <= numSamples; i++) {
+        const t = i / numSamples;
+        const p = this.evaluateCubicBezier(
+            fromPoint.x, fromPoint.y,
+            vector.control1.x, vector.control1.y,
+            vector.control2.x, vector.control2.y,
+            toPoint.x, toPoint.y,
+            t
+        );
+        samples.push({
+            t: t,
+            x: p.x,
+            y: p.y,
+            inside: this.isPointInMask(imageData, p.x, p.y)
+        });
+    }
+    
+    const allInside = samples.every(s => s.inside);
+    const allOutside = samples.every(s => !s.inside);
+    
+    if (allInside) return 'delete';
+    if (allOutside) return null;
+    
+    // Ищем границы t (переходы inside↔outside)
+    const cuts = [];
+    for (let i = 0; i < samples.length - 1; i++) {
+        const a = samples[i];
+        const b = samples[i + 1];
+        
+        if (a.inside !== b.inside) {
+            // Бинарный поиск точного t
+            let lo = a.t, hi = b.t;
+            for (let it = 0; it < 20; it++) {
+                const mid = (lo + hi) / 2;
+                const p = this.evaluateCubicBezier(
+                    fromPoint.x, fromPoint.y,
+                    vector.control1.x, vector.control1.y,
+                    vector.control2.x, vector.control2.y,
+                    toPoint.x, toPoint.y,
+                    mid
+                );
+                const inside = this.isPointInMask(imageData, p.x, p.y);
+                if (inside === a.inside) lo = mid;
+                else hi = mid;
+            }
+            const t = (lo + hi) / 2;
+            const p = this.evaluateCubicBezier(
+                fromPoint.x, fromPoint.y,
+                vector.control1.x, vector.control1.y,
+                vector.control2.x, vector.control2.y,
+                toPoint.x, toPoint.y,
+                t
+            );
+            cuts.push({ t, point: p, fromInside: a.inside });
+        }
+    }
+    
+    return { cuts };
+}
+
+// Применяет резку ко всем безье-векторам.
+// Возвращает: количество изменений
+cutAllBeziersByMask(imageData) {
+    // Собираем информацию о векторах
+    const vectorsToProcess = [...this.state.bezierVectors];
+    let changesCount = 0;
+    
+    // Карта: какие векторы удалить целиком
+    const vectorsToDelete = new Set();
+    
+    // План разбиений: { vector, cuts: [{t, point}, ...] }
+    const splitPlan = [];
+    
+    // Сначала проходим и собираем план (не меняем структуру)
+    for (const vector of vectorsToProcess) {
+        const result = this.cutBezierVectorByMask(vector, imageData);
+        
+        if (result === 'delete') {
+            vectorsToDelete.add(vector);
+        } else if (result && result.cuts.length > 0) {
+            splitPlan.push({ vector, cuts: result.cuts });
+        }
+    }
+    
+    // Теперь применяем: сначала разбиения, потом удаления
+    for (const plan of splitPlan) {
+        this.applySplitsToBezierVector(plan.vector, plan.cuts);
+        changesCount++;
+    }
+    
+    // После разбиений — удаляем векторы, которые внутри маски
+    // (среди тех, что не были разбиты)
+    for (const vector of vectorsToDelete) {
+        if (this.state.bezierVectors.includes(vector)) {
+            this.deleteBezierVector(vector);
+            changesCount++;
+        }
+    }
+    
+    // Теперь удаляем "внутренние" куски, созданные после разбиения
+    // (это делается отдельным проходом, потому что после разбиения
+    // появились новые векторы)
+    changesCount += this.cleanupInnerBezierSegments(imageData);
+    if (changesCount > 0 && this.state.currentTool !== 'bezier-points') {
+    this.cleanupOrphanBezierPoints();
+}
+    return changesCount;
+}
+
+// Убираем точки, которые больше не принадлежат ни одному вектору
+cleanupOrphanBezierPoints() {
+    const usedIndices = new Set();
+    for (const v of this.state.bezierVectors) {
+        usedIndices.add(v.from);
+        usedIndices.add(v.to);
+    }
+    
+    // Собираем индексы сирот
+    const orphans = [];
+    for (let i = 0; i < this.state.bezierPoints.length; i++) {
+        if (!usedIndices.has(i)) orphans.push(i);
+    }
+    
+    // Удаляем с конца, чтобы индексы не сбивались
+    orphans.sort((a, b) => b - a);
+    for (const idx of orphans) {
+        const p = this.state.bezierPoints[idx];
+        if (p && p.element && p.element.parentNode) {
+            p.element.parentNode.removeChild(p.element);
+        }
+        this.state.bezierPoints.splice(idx, 1);
+    }
+    
+    // Обновляем индексы оставшихся
+    if (orphans.length > 0) {
+        this.state.bezierPoints.forEach((point, i) => {
+            point.index = i;
+            if (point.element) point.element.setAttribute('data-index', i);
+        });
+        
+        // Обновляем from/to в векторах
+        this.state.bezierVectors.forEach(v => {
+            let fromShift = 0, toShift = 0;
+            for (const oi of orphans) {
+                if (v.from > oi) fromShift++;
+                if (v.to > oi) toShift++;
+            }
+            v.from -= fromShift;
+            v.to -= toShift;
+        });
+    }
+}
+
+// Разбивает один безье-вектор в нескольких точках t.
+// Каждый разрез создаёт новую точку + два новых вектора.
+applySplitsToBezierVector(vector, cuts) {
+    // Сортируем по t возрастанию
+    cuts.sort((a, b) => a.t - b.t);
+    
+    let currentVector = vector;
+    let accumulatedT = 0;  // накопленный параметр для пересчёта t
+    
+    for (const cut of cuts) {
+        // Пересчитываем локальный t для currentVector
+        // (после предыдущего разреза длина оставшейся части = 1 - accumulatedT)
+        const localT = (cut.t - accumulatedT) / (1 - accumulatedT);
+        
+        if (localT <= 0.001 || localT >= 0.999) {
+            accumulatedT = cut.t;
+            continue;
+        }
+        
+        // Разбиваем currentVector в localT
+        const result = this.splitOneBezierVector(currentVector, localT);
+        if (result) {
+            currentVector = result.second;  // продолжаем работу со второй частью
+        }
+        
+        accumulatedT = cut.t;
+    }
+}
+
+// Разбивает ОДИН безье-вектор в параметре t (0..1).
+// Создаёт новую точку и два вектора.
+// Возвращает { first, second } — два новых вектора.
+splitOneBezierVector(vector, t) {
+    const fromPoint = this.state.bezierPoints[vector.from];
+    const toPoint = this.state.bezierPoints[vector.to];
+    if (!fromPoint || !toPoint) return null;
+    
+    // Точка на кривой
+    const midPointCoords = this.evaluateCubicBezier(
+        fromPoint.x, fromPoint.y,
+        vector.control1.x, vector.control1.y,
+        vector.control2.x, vector.control2.y,
+        toPoint.x, toPoint.y,
+        t
+    );
+    
+    // Де Кастельо — точное разбиение
+    const split = this.splitCubicBezier(
+        { x: fromPoint.x, y: fromPoint.y },
+        { x: vector.control1.x, y: vector.control1.y },
+        { x: vector.control2.x, y: vector.control2.y },
+        { x: toPoint.x, y: toPoint.y },
+        t
+    );
+    
+    // Создаём новую точку
+    const newPoint = {
+        x: midPointCoords.x,
+        y: midPointCoords.y,
+        element: null,
+        index: this.state.bezierPoints.length
+    };
+    newPoint.element = this.createBezierPointElement(newPoint);
+    this.svg.appendChild(newPoint.element);
+    this.state.bezierPoints.push(newPoint);
+    
+    // Сохраняем стиль
+    const strokeColor = vector.path.getAttribute('stroke') || this.state.strokeColor;
+    const strokeWidth = vector.path.getAttribute('stroke-width') || this.state.strokeWidth;
+    
+    // Создаём два новых вектора вручную (без вызова createBezierVector,
+    // потому что он сам считает control1/control2; нам нужны точные из де Кастельо)
+    const vector1 = {
+        from: vector.from,
+        to: newPoint.index,
+        control1: {
+            x: split.first.c1.x,
+            y: split.first.c1.y,
+            belongsTo: vector.from
+        },
+        control2: {
+            x: split.first.c2.x,
+            y: split.first.c2.y,
+            belongsTo: newPoint.index
+        },
+        path: null,
+        guideElements: {}
+    };
+    
+    const vector2 = {
+        from: newPoint.index,
+        to: vector.to,
+        control1: {
+            x: split.second.c1.x,
+            y: split.second.c1.y,
+            belongsTo: newPoint.index
+        },
+        control2: {
+            x: split.second.c2.x,
+            y: split.second.c2.y,
+            belongsTo: vector.to
+        },
+        path: null,
+        guideElements: {}
+    };
+    
+    // Создаём path для каждого
+    vector1.path = this.createBezierPath(
+        fromPoint.x, fromPoint.y,
+        vector1.control1.x, vector1.control1.y,
+        vector1.control2.x, vector1.control2.y,
+        newPoint.x, newPoint.y
+    );
+    vector1.path.setAttribute('stroke', strokeColor);
+    vector1.path.setAttribute('stroke-width', strokeWidth);
+    
+    vector2.path = this.createBezierPath(
+        newPoint.x, newPoint.y,
+        vector2.control1.x, vector2.control1.y,
+        vector2.control2.x, vector2.control2.y,
+        toPoint.x, toPoint.y
+    );
+    vector2.path.setAttribute('stroke', strokeColor);
+    vector2.path.setAttribute('stroke-width', strokeWidth);
+    
+    // Сохраняем старый path для возможного восстановления/удаления
+    // Вставляем новые пути в SVG
+    this.svg.appendChild(vector1.path);
+    this.svg.appendChild(vector2.path);
+    
+    // Удаляем старый вектор (но НЕ точку vector.from и vector.to!)
+    const oldIndex = this.state.bezierVectors.indexOf(vector);
+    if (oldIndex !== -1) {
+        if (vector.path && vector.path.parentNode) vector.path.remove();
+        // Направляющие элементы — удалим, но пересоздадим ниже
+        if (vector.guideElements) {
+            if (vector.guideElements.line1) vector.guideElements.line1.remove();
+            if (vector.guideElements.control1) vector.guideElements.control1.remove();
+            if (vector.guideElements.line2) vector.guideElements.line2.remove();
+            if (vector.guideElements.control2) vector.guideElements.control2.remove();
+        }
+        this.state.bezierVectors.splice(oldIndex, 1);
+    }
+    
+    // Создаём направляющие для новых векторов
+    this.createVectorGuides(vector1, fromPoint, newPoint);
+    this.createVectorGuides(vector2, newPoint, toPoint);
+    
+    // Скрываем направляющие, если инструмент не безье
+    if (this.state.currentTool !== 'bezier-points') {
+        Object.values(vector1.guideElements).forEach(el => {
+            if (el) el.style.display = 'none';
+        });
+        Object.values(vector2.guideElements).forEach(el => {
+            if (el) el.style.display = 'none';
+        });
+    }
+    
+    // Добавляем новые векторы в массив
+    this.state.bezierVectors.push(vector1, vector2);
+    
+    return { first: vector1, second: vector2 };
+}
+
+// После разбиения — удаляем векторы, которые целиком внутри маски.
+cleanupInnerBezierSegments(imageData) {
+    let removed = 0;
+    const vectorsToRemove = [];
+    
+    for (const vector of this.state.bezierVectors) {
+        const fromPoint = this.state.bezierPoints[vector.from];
+        const toPoint = this.state.bezierPoints[vector.to];
+        if (!fromPoint || !toPoint) continue;
+        
+        // Проверяем середину кривой (t=0.5)
+        const mid = this.evaluateCubicBezier(
+            fromPoint.x, fromPoint.y,
+            vector.control1.x, vector.control1.y,
+            vector.control2.x, vector.control2.y,
+            toPoint.x, toPoint.y,
+            0.5
+        );
+        
+        if (this.isPointInMask(imageData, mid.x, mid.y)) {
+            vectorsToRemove.push(vector);
+        }
+    }
+    
+    for (const vector of vectorsToRemove) {
+        this.deleteBezierVector(vector);
+        removed++;
+    }
+    
+    return removed;
+}
 // Парсинг пути в точки
 parsePathToPoints(d) {
     if (!d || d.trim() === '') {
@@ -3987,17 +5349,23 @@ if (this.state.currentTool === 'select') {
     
     const tag = target.tagName?.toLowerCase();
     const isVectorElement = tag === 'path' || tag === 'line' || tag === 'rect' || tag === 'circle' || tag === 'ellipse';
-    
+
+// Клик по фейковому path безье-контура (уже выделен) — просто перетаскиваем
+if (target.dataset && target.dataset.isBezierContour === 'true') {
+    this.startElementDrag(e, target);
+    return;
+}
     // === БЕЗЬЕ-ВЕКТОР: выделяем и перетаскиваем весь контур ===
-    if (isBezierVector) {
-        this.startBezierContourDrag(e, target);
-        return;
-    }
+	if (isBezierVector) {
+		this.selectBezierContour(target);
+		this.startBezierContourDrag(e, target);
+		return;
+	}
     
     // === ОБЫЧНЫЙ ВЕКТОР: выделяем и перетаскиваем ===
     if (isVectorElement && target !== this.worksheetLayer) {
         if (this.selectedElement && this.selectedElement !== target) {
-            this.removeSelectionHandles();
+            this.clearSelection();
             this.selectionAngle = 0;
         }
         this.selectElement(target);
@@ -4006,8 +5374,7 @@ if (this.state.currentTool === 'select') {
     }
     
     // Пустое место
-    this.removeSelectionHandles();
-    this.selectedElement = null;
+    this.clearSelection();
     this.startPanning(e);
     return;
 }
@@ -4224,17 +5591,10 @@ if (this.state.currentTool === 'push') {
 if (this.state.currentTool === 'eraser') {
     e.preventDefault();
     
-    if (e.ctrlKey || e.metaKey) {
-        this.deleteEntireVectorAt(e);
-        return;
-    }
-    
     const coords = this.getSVGCoordinates(e);
-    
     this.state.isDrawing = true;
-    this.state.lastErasePoint = {x: coords.x, y: coords.y};
-    this.eraseVectorsAt(coords.x, coords.y);
-    
+    this._eraserDeleteMode = e.ctrlKey || e.metaKey;
+    this.startEraserStroke(coords.x, coords.y);
     return;
 }
 	
@@ -4419,38 +5779,15 @@ if (this.isDraggingPivot) {
 	
     //Для инструмента ластик onMouseMove
 if (this.state.currentTool === 'eraser') {
-    const radius = this.state.eraserSize / this.state.zoom;
-    
-    if (e.ctrlKey || e.metaKey) {
-        this.hideEraserIndicator();
-        this.svg.style.cursor = 'pointer';
-        if (this.state.isDrawing) {
-            this.state.isDrawing = false;
-            this.state.lastErasePoint = null;
-        }
-        return;
-    }
-    
     this.svg.style.cursor = 'none';
-    this.showEraserIndicator(coords.x, coords.y, radius);
     
-    if (this.state.isDrawing) {
-
-        if (this.state.lastErasePoint) {
-            const distance = Math.sqrt(
-                Math.pow(coords.x - this.state.lastErasePoint.x, 2) + 
-                Math.pow(coords.y - this.state.lastErasePoint.y, 2)
-            );
-            
-            if (distance > radius / 2) {
-                this.eraseVectorsAt(coords.x, coords.y);
-                this.state.lastErasePoint = {x: coords.x, y: coords.y};
-            }
-        } else {
-            this.eraseVectorsAt(coords.x, coords.y);
-            this.state.lastErasePoint = {x: coords.x, y: coords.y};
-        }
+    if (this.state.isDrawing && this._eraserMask) {
+        this.continueEraserStroke(coords.x, coords.y);
+    } else {
+		const radius = (this.state.eraserSize / 2) / this.getScreenScale();
+		this.showEraserIndicator(coords.x, coords.y, radius);
     }
+    return;
 }
 
     // Обновляем рисование (если рисуем)
@@ -4511,12 +5848,15 @@ onMouseUp() {
     }
 
     // Завершаем рисование ластиком
-    if (this.state.isDrawing && this.state.currentTool === 'eraser') {
-        this.state.isDrawing = false;
-        this.state.lastErasePoint = null;
-        this.lastEraseTime = null;
-        this.hideEraserIndicator();
-    } 
+if (this.state.isDrawing && this.state.currentTool === 'eraser') {
+    this.state.isDrawing = false;
+    this.hideEraserIndicator();
+    
+    if (this._eraserMask) {
+        this.finishEraserStroke(this._eraserDeleteMode);
+        this._eraserDeleteMode = false;
+    }
+}
     
     // Завершаем рисование других инструментов
     if (this.state.isDrawing) {
@@ -4631,566 +5971,67 @@ updatePathPointFast(path, pointIndex, newX, newY) {
     }
 }
 
-// Функция разрезания пути в местах пересечения с кругом ластика
-cutPathAtIntersections(path, x, y, radius) {
-    const d = path.getAttribute('d');
-    if (!d) return null;
+// Находит параметр t (0..1) на кубической безье, при котором точка кривой
+// ближе всего к (x, y). Использует грубый сэмплинг + уточнение.
+findClosestTOnBezier(fromPoint, control1, control2, toPoint, x, y) {
+    const SAMPLES = 100;
+    let bestT = 0.5;
+    let bestDistSq = Infinity;
     
-    const { points, isClosed } = this.parsePathToPoints(d);
-    if (points.length < 2) return null;
-    
-    const intersections = [];
-    
-    // Находим все пересечения отрезков пути с кругом ластика
-    for (let i = 0; i < points.length; i++) {
-        const p1 = points[i];
-        const p2 = points[(i + 1) % points.length];
+    // Грубый проход
+    for (let i = 0; i <= SAMPLES; i++) {
+        const t = i / SAMPLES;
+        const p = this.evaluateCubicBezier(
+            fromPoint.x, fromPoint.y,
+            control1.x, control1.y,
+            control2.x, control2.y,
+            toPoint.x, toPoint.y,
+            t
+        );
+        const dx = p.x - x;
+        const dy = p.y - y;
+        const distSq = dx * dx + dy * dy;
         
-        // Пропускаем если это последний отрезок в незамкнутом пути
-        if (!isClosed && i === points.length - 1) break;
-        
-        const intersection = this.lineCircleIntersection(p1, p2, {x, y}, radius);
-        if (intersection.length > 0) {
-            // Добавляем информацию о том, с какой стороны отрезка находится круг
-            intersection.forEach(inter => {
-                // Проверяем, находится ли какая-то из концевых точек внутри радиуса
-                const p1InRadius = this.pointDistance(p1, {x, y}) <= radius;
-                const p2InRadius = this.pointDistance(p2, {x, y}) <= radius;
-                
-                intersections.push({
-                    point: inter,
-                    segmentIndex: i,
-                    p1: p1,
-                    p2: p2,
-                    p1InRadius: p1InRadius,
-                    p2InRadius: p2InRadius
-                });
-            });
-        } else {
-            // Проверяем, находятся ли концевые точки внутри радиуса
-            const p1InRadius = this.pointDistance(p1, {x, y}) <= radius;
-            const p2InRadius = this.pointDistance(p2, {x, y}) <= radius;
-            
-            if (p1InRadius || p2InRadius) {
-                intersections.push({
-                    point: p1InRadius ? p1 : p2,
-                    segmentIndex: i,
-                    p1: p1,
-                    p2: p2,
-                    p1InRadius: p1InRadius,
-                    p2InRadius: p2InRadius,
-                    isEndpoint: true
-                });
-            }
+        if (distSq < bestDistSq) {
+            bestDistSq = distSq;
+            bestT = t;
         }
     }
     
-    // Если нет пересечений - проверяем, полностью ли путь внутри радиуса
-    if (intersections.length === 0) {
-        const allPointsInRadius = points.every(point => 
-            this.pointDistance(point, {x, y}) <= radius
+    // Уточнение бинарным поиском вокруг bestT
+    let lo = Math.max(0, bestT - 1 / SAMPLES);
+    let hi = Math.min(1, bestT + 1 / SAMPLES);
+    
+    for (let iter = 0; iter < 25; iter++) {
+        const mid1 = lo + (hi - lo) / 3;
+        const mid2 = hi - (hi - lo) / 3;
+        
+        const p1 = this.evaluateCubicBezier(
+            fromPoint.x, fromPoint.y,
+            control1.x, control1.y,
+            control2.x, control2.y,
+            toPoint.x, toPoint.y,
+            mid1
+        );
+        const p2 = this.evaluateCubicBezier(
+            fromPoint.x, fromPoint.y,
+            control1.x, control1.y,
+            control2.x, control2.y,
+            toPoint.x, toPoint.y,
+            mid2
         );
         
-        if (allPointsInRadius) {
-            return 'delete';
-        }
-        return null;
-    }
-    
-    // Сортируем точки пересечения вдоль пути
-    const allIntersectionPoints = [];
-    intersections.forEach(item => {
-        // Рассчитываем позицию на отрезке (0-1)
-        let t = 0;
-        if (!item.isEndpoint) {
-            t = this.pointOnSegmentParameter(item.p1, item.p2, item.point);
+        const d1 = (p1.x - x) ** 2 + (p1.y - y) ** 2;
+        const d2 = (p2.x - x) ** 2 + (p2.y - y) ** 2;
+        
+        if (d1 < d2) {
+            hi = mid2;
         } else {
-            t = item.p1InRadius ? 0 : 1;
-        }
-        
-        allIntersectionPoints.push({
-            point: item.point,
-            segmentIndex: item.segmentIndex,
-            t: t,
-            isEndpoint: item.isEndpoint || false,
-            p1InRadius: item.p1InRadius,
-            p2InRadius: item.p2InRadius
-        });
-    });
-    
-    // Сортируем по индексу сегмента и позиции на нем
-    allIntersectionPoints.sort((a, b) => {
-        if (a.segmentIndex !== b.segmentIndex) {
-            return a.segmentIndex - b.segmentIndex;
-        }
-        return a.t - b.t;
-    });
-    
-    // Разрезаем путь на части
-    const pathParts = this.splitPathAtIntersections(points, allIntersectionPoints, isClosed);
-    
-    // Фильтруем части: удаляем те, что полностью внутри радиуса, оставляем остальные
-    const filteredParts = pathParts.filter(part => {
-        if (part.points.length === 0) return false;
-        
-        // Проверяем несколько точек вдоль части пути
-        const checkPoints = [
-            part.points[0],
-            part.points[Math.floor(part.points.length / 2)],
-            part.points[part.points.length - 1]
-        ];
-        
-        // Если все проверяемые точки внутри радиуса - удаляем часть
-        const allInside = checkPoints.every(point => 
-            this.pointDistance(point, {x, y}) <= radius
-        );
-        
-        return !allInside;
-    });
-    
-    // Если все части удалены - удаляем весь путь
-    if (filteredParts.length === 0) {
-        return 'delete';
-    }
-    
-    // Создаем новые пути из оставшихся частей
-    const newPaths = [];
-    filteredParts.forEach(part => {
-        if (part.points.length >= 2) {
-            newPaths.push(this.pointsToPath(part.points, false));
-        }
-    });
-    
-    return newPaths;
-}
-
-// Поиск пересечения линии с кругом
-lineCircleIntersection(p1, p2, center, radius) {
-    const intersections = [];
-    
-    const dx = p2.x - p1.x;
-    const dy = p2.y - p1.y;
-    const A = dx * dx + dy * dy;
-    const B = 2 * (dx * (p1.x - center.x) + dy * (p1.y - center.y));
-    const C = (p1.x - center.x) * (p1.x - center.x) + 
-              (p1.y - center.y) * (p1.y - center.y) - 
-              radius * radius;
-    
-    const discriminant = B * B - 4 * A * C;
-    
-    if (discriminant < 0) {
-        return intersections;
-    }
-    
-    const t1 = (-B - Math.sqrt(discriminant)) / (2 * A);
-    const t2 = (-B + Math.sqrt(discriminant)) / (2 * A);
-    
-    if (t1 >= 0 && t1 <= 1) {
-        intersections.push({
-            x: p1.x + t1 * dx,
-            y: p1.y + t1 * dy
-        });
-    }
-    
-    if (t2 >= 0 && t2 <= 1 && Math.abs(t1 - t2) > 0.001) {
-        intersections.push({
-            x: p1.x + t2 * dx,
-            y: p1.y + t2 * dy
-        });
-    }
-    
-    return intersections;
-}
-
-// Параметр точки на отрезке (0-1)
-pointOnSegmentParameter(p1, p2, point) {
-    const dx = p2.x - p1.x;
-    const dy = p2.y - p1.y;
-    
-    if (Math.abs(dx) > Math.abs(dy)) {
-        return (point.x - p1.x) / dx;
-    } else {
-        return (point.y - p1.y) / dy;
-    }
-}
-
-// Разделение пути на части по точкам пересечения
-splitPathAtIntersections(originalPoints, intersections, isClosed) {
-    const parts = [];
-    let currentPart = { points: [] };
-    
-    for (let i = 0; i < originalPoints.length; i++) {
-        currentPart.points.push(originalPoints[i]);
-        
-        const nextPointIndex = (i + 1) % originalPoints.length;
-        const segmentIntersections = intersections.filter(
-            inter => inter.segmentIndex === i
-        ).sort((a, b) => a.t - b.t);
-        
-        if (segmentIntersections.length > 0) {
-            segmentIntersections.forEach(inter => {
-                currentPart.points.push(inter.point);
-                if (currentPart.points.length >= 2) {
-                    parts.push({...currentPart});
-                }
-                currentPart = { points: [inter.point] };
-            });
-        }
-        
-        if (!isClosed && i === originalPoints.length - 1) {
-            if (currentPart.points.length >= 2) {
-                parts.push({...currentPart});
-            }
+            lo = mid1;
         }
     }
     
-    if (isClosed && parts.length > 0 && currentPart.points.length > 0) {
-        parts[0].points = [...currentPart.points, ...parts[0].points.slice(1)];
-    } else if (currentPart.points.length >= 2) {
-        parts.push({...currentPart});
-    }
-    
-    return parts;
-}
-
-eraseVectorsAt(x, y) {
-    const now = Date.now();
-    if (this.lastEraseTime && (now - this.lastEraseTime) < 16) {
-        return;
-    }
-    this.lastEraseTime = now;
-    const radius = this.state.eraserSize / this.state.zoom;
-    
-    this.hideEraserIndicator();
-    // Сначала обрабатываем Безье-векторы
-	let bezierProcessed = false;
-for (let v = this.state.bezierVectors.length - 1; v >= 0; v--) {
-    const vec = this.state.bezierVectors[v];
-    const from = this.state.bezierPoints[vec.from];
-    const to = this.state.bezierPoints[vec.to];
-    if (!from || !to) continue;
-    
-    const fromDist = Math.hypot(from.x - x, from.y - y);
-    const toDist = Math.hypot(to.x - x, to.y - y);
-    
-    let enterT = null;
-    let exitT = null;
-    const steps = 100;
-    
-    for (let s = 0; s < steps; s++) {
-        const t1 = s / steps;
-        const t2 = (s + 1) / steps;
-        const p1 = this.evaluateCubicBezier(from.x, from.y, vec.control1.x, vec.control1.y, vec.control2.x, vec.control2.y, to.x, to.y, t1);
-        const p2 = this.evaluateCubicBezier(from.x, from.y, vec.control1.x, vec.control1.y, vec.control2.x, vec.control2.y, to.x, to.y, t2);
-        const d1 = Math.hypot(p1.x - x, p1.y - y);
-        const d2 = Math.hypot(p2.x - x, p2.y - y);
-        
-        if (d1 > radius && d2 <= radius && enterT === null) enterT = t1;
-        if (d1 <= radius && d2 > radius && enterT !== null) { exitT = t2; break; }
-    }
-    
-    // Начало внутри ластика — ищем выход
-    if (fromDist <= radius && enterT === null) {
-        for (let s = 0; s < steps; s++) {
-            const t2 = (s + 1) / steps;
-            const p2 = this.evaluateCubicBezier(from.x, from.y, vec.control1.x, vec.control1.y, vec.control2.x, vec.control2.y, to.x, to.y, t2);
-            if (Math.hypot(p2.x - x, p2.y - y) > radius) {
-                exitT = t2;
-                enterT = 0;
-                break;
-            }
-        }
-    }
-    
-    if (toDist <= radius && exitT === null) {
-        for (let s = steps - 1; s >= 0; s--) {
-            const t1 = s / steps;
-            const p1 = this.evaluateCubicBezier(from.x, from.y, vec.control1.x, vec.control1.y, vec.control2.x, vec.control2.y, to.x, to.y, t1);
-            if (Math.hypot(p1.x - x, p1.y - y) > radius) {
-                enterT = t1;
-                exitT = 1;
-                break;
-            }
-        }
-    }
-    
-    if (enterT !== null && exitT !== null && exitT - enterT > 0.01) {
-        if (enterT > 0.01 && exitT < 0.99) {
-            const p1 = this.evaluateCubicBezier(from.x, from.y, vec.control1.x, vec.control1.y, vec.control2.x, vec.control2.y, to.x, to.y, enterT);
-            const p2 = this.evaluateCubicBezier(from.x, from.y, vec.control1.x, vec.control1.y, vec.control2.x, vec.control2.y, to.x, to.y, exitT);
-            this.createSingleBezierPoint(p1.x, p1.y);
-            this.createSingleBezierPoint(p2.x, p2.y);
-            const idx1 = this.state.bezierPoints.length - 2;
-            const idx2 = this.state.bezierPoints.length - 1;
-            this.createBezierVector(from, this.state.bezierPoints[idx1], null, true);
-            this.createBezierVector(this.state.bezierPoints[idx2], to, null, true);
-        } else if (enterT <= 0.01) {
-            // Начало внутри
-            const p2 = this.evaluateCubicBezier(from.x, from.y, vec.control1.x, vec.control1.y, vec.control2.x, vec.control2.y, to.x, to.y, exitT);
-            this.createSingleBezierPoint(p2.x, p2.y);
-            const idx = this.state.bezierPoints.length - 1;
-            this.createBezierVector(this.state.bezierPoints[idx], to, null, true);
-        } else if (exitT >= 0.99) {
-            // Конец внутри
-            const p1 = this.evaluateCubicBezier(from.x, from.y, vec.control1.x, vec.control1.y, vec.control2.x, vec.control2.y, to.x, to.y, enterT);
-            this.createSingleBezierPoint(p1.x, p1.y);
-            const idx = this.state.bezierPoints.length - 1;
-            this.createBezierVector(from, this.state.bezierPoints[idx], null, true);
-        }
-        
-        if (document.getElementById('bezierSettings')?.style.display === 'none') {
-            this.hideBezierHelpers();
-            this.toggleBezierPoints(false);
-        }
-        
-        if (vec.path) vec.path.remove();
-        Object.values(vec.guideElements).forEach(el => { if (el) el.remove(); });
-        this.state.bezierVectors.splice(v, 1);
-    }
-}
-  // ============ КОНЕЦ БЛОКА БЕЗЬЕ ============
-    // === ОБЫЧНЫЕ ВЕКТОРЫ ===
-    // 1. Пути (НЕ Безье)
-const allPaths = Array.from(this.svg.querySelectorAll('path'))
-    .filter(path => !path.id || !path.id.includes('background') && 
-                   !path.id.includes('eraser-indicator') && 
-                   !path.id.includes('push-indicator') &&
-                   !path.classList?.contains('bezier-vector'));
-    
-    allPaths.forEach(path => {
-        const result = this.cutPathAtIntersections(path, x, y, radius);
-        
-        if (result === 'delete') {
-            if (path.parentNode) {
-                path.parentNode.removeChild(path);
-            }
-        } else if (result && result.length > 0) {
-            const parent = path.parentNode;
-            if (parent) {
-                const stroke = path.getAttribute('stroke');
-                const strokeWidth = path.getAttribute('stroke-width');
-                const fill = path.getAttribute('fill');
-                const linecap = path.getAttribute('stroke-linecap');
-                const linejoin = path.getAttribute('stroke-linejoin');
-                
-                parent.removeChild(path);
-
-                result.forEach((pathData) => {
-                    const points = this.parsePathToPoints(pathData).points;
-                    if (points.length >= 2) {
-                        const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                        newPath.setAttribute('d', pathData);
-                        newPath.setAttribute('stroke', stroke || 'black');
-                        newPath.setAttribute('stroke-width', strokeWidth || '1');
-                        newPath.setAttribute('fill', fill || 'none');
-                        newPath.setAttribute('stroke-linecap', linecap || 'round');
-                        newPath.setAttribute('stroke-linejoin', linejoin || 'round');
-                        parent.appendChild(newPath);
-                    }
-                });
-            }
-        }
-    });
-    
-    // 2. Обработка ЛИНИЙ (lines) - конвертируем их в пути для лучшего контроля
-    const lines = Array.from(this.svg.querySelectorAll('line'))
-        .filter(el => !el.id || !el.id.includes('background') &&
-                   !(el.getAttribute('class') || '').includes('bezier-guide-line'));
-    
-    lines.forEach(line => {
-        const path = this.convertToPath(line);
-        if (path) {
-            const parent = line.parentNode;
-            if (parent) {
-                parent.removeChild(line);
-                parent.appendChild(path);
-                
-                // Теперь обрабатываем как путь
-                const result = this.cutPathAtIntersections(path, x, y, radius);
-                if (result === 'delete') {
-                    parent.removeChild(path);
-                } else if (result && result.length > 0) {
-                    parent.removeChild(path);
-                    result.forEach(pathData => {
-                        const points = this.parsePathToPoints(pathData).points;
-                        if (points.length >= 2) {
-                            const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                            newPath.setAttribute('d', pathData);
-                            newPath.setAttribute('stroke', line.getAttribute('stroke') || 'black');
-                            newPath.setAttribute('stroke-width', line.getAttribute('stroke-width') || '1');
-                            newPath.setAttribute('fill', 'none');
-                            parent.appendChild(newPath);
-                        }
-                    });
-                }
-            }
-        }
-    });
-    
-    // 3. Обработка ПРЯМОУГОЛЬНИКОВ (rects)
-    const rects = Array.from(this.svg.querySelectorAll('rect'))
-        .filter(el => !el.id || !el.id.includes('background'));
-    
-    rects.forEach(rect => {
-        const rectX = parseFloat(rect.getAttribute('x'));
-        const rectY = parseFloat(rect.getAttribute('y'));
-        const rectWidth = parseFloat(rect.getAttribute('width'));
-        const rectHeight = parseFloat(rect.getAttribute('height'));
-        
-        // Проверяем расстояние от центра ластика до прямоугольника
-        const distance = this.pointToRectDistance(x, y, 
-            {x: rectX, y: rectY, width: rectWidth, height: rectHeight});
-        
-        // Если ластик касается прямоугольника - конвертируем и обрабатываем
-        if (distance <= radius) {
-            const path = this.convertToPath(rect);
-            if (path) {
-                const parent = rect.parentNode;
-                if (parent) {
-                    parent.removeChild(rect);
-                    parent.appendChild(path);
-                    
-                    const result = this.cutPathAtIntersections(path, x, y, radius);
-                    if (result === 'delete') {
-                        parent.removeChild(path);
-                    } else if (result && result.length > 0) {
-                        parent.removeChild(path);
-                        result.forEach(pathData => {
-                            const points = this.parsePathToPoints(pathData).points;
-                            if (points.length >= 2) {
-                                const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                                newPath.setAttribute('d', pathData);
-                                newPath.setAttribute('stroke', rect.getAttribute('stroke') || 'black');
-                                newPath.setAttribute('stroke-width', rect.getAttribute('stroke-width') || '1');
-                                newPath.setAttribute('fill', 'none');
-                                parent.appendChild(newPath);
-                            }
-                        });
-                    }
-                }
-            }
-        }
-    });
-    
-    // 4. Обработка КРУГОВ (circles)
-    const circles = Array.from(this.svg.querySelectorAll('circle'))
-        .filter(el => !el.id || !el.id.includes('background'));
-    
-    circles.forEach(circle => {
-        const cx = parseFloat(circle.getAttribute('cx'));
-        const cy = parseFloat(circle.getAttribute('cy'));
-        const r = parseFloat(circle.getAttribute('r'));
-        
-        // Расстояние от центра ластика до центра круга
-        const distance = Math.sqrt((x - cx)**2 + (y - cy)**2);
-        
-        // Если ластик пересекает или касается круга
-        if (distance <= radius + r && distance >= Math.abs(radius - r)) {
-            const path = this.convertToPath(circle);
-            if (path) {
-                const parent = circle.parentNode;
-                if (parent) {
-                    parent.removeChild(circle);
-                    parent.appendChild(path);
-                    
-                    const result = this.cutPathAtIntersections(path, x, y, radius);
-                    if (result === 'delete') {
-                        parent.removeChild(path);
-                    } else if (result && result.length > 0) {
-                        parent.removeChild(path);
-                        result.forEach(pathData => {
-                            const points = this.parsePathToPoints(pathData).points;
-                            if (points.length >= 2) {
-                                const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                                newPath.setAttribute('d', pathData);
-                                newPath.setAttribute('stroke', circle.getAttribute('stroke') || 'black');
-                                newPath.setAttribute('stroke-width', circle.getAttribute('stroke-width') || '1');
-                                newPath.setAttribute('fill', 'none');
-                                parent.appendChild(newPath);
-                            }
-                        });
-                    }
-                }
-            }
-        } else if (distance < Math.abs(radius - r)) {
-            // Ластик полностью внутри круга или круг внутри ластика
-            if (radius >= r) {
-                // Ластик больше круга - удаляем круг полностью
-                if (circle.parentNode) {
-                    circle.parentNode.removeChild(circle);
-                }
-            } else {
-                // Круг больше ластика - нужно вырезать отверстие
-                const path = this.convertToPath(circle);
-                if (path) {
-                    const parent = circle.parentNode;
-                    if (parent) {
-                        parent.removeChild(circle);
-                        parent.appendChild(path);
-                        
-                        // Для больших кругов лучше использовать другой подход
-                        const result = this.cutPathAtIntersections(path, x, y, radius);
-                        if (result === 'delete') {
-                            parent.removeChild(path);
-                        } else if (result && result.length > 0) {
-                            parent.removeChild(path);
-                            result.forEach(pathData => {
-                                const points = this.parsePathToPoints(pathData).points;
-                                if (points.length >= 2) {
-                                    const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                                    newPath.setAttribute('d', pathData);
-                                    newPath.setAttribute('stroke', circle.getAttribute('stroke') || 'black');
-                                    newPath.setAttribute('stroke-width', circle.getAttribute('stroke-width') || '1');
-                                    newPath.setAttribute('fill', 'none');
-                                    parent.appendChild(newPath);
-                                }
-                            });
-                        }
-                    }
-                }
-            }
-        }
-    });
-    
-    // 5. Обработка ЭЛЛИПСОВ (ellipses)
-    const ellipses = Array.from(this.svg.querySelectorAll('ellipse'))
-        .filter(el => !el.id || !el.id.includes('background'));
-    
-    ellipses.forEach(ellipse => {
-        const path = this.convertToPath(ellipse);
-        if (path) {
-            const parent = ellipse.parentNode;
-            if (parent) {
-                parent.removeChild(ellipse);
-                parent.appendChild(path);
-                
-                const result = this.cutPathAtIntersections(path, x, y, radius);
-                if (result === 'delete') {
-                    parent.removeChild(path);
-                } else if (result && result.length > 0) {
-                    parent.removeChild(path);
-                    result.forEach(pathData => {
-                        const points = this.parsePathToPoints(pathData).points;
-                        if (points.length >= 2) {
-                            const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                            newPath.setAttribute('d', pathData);
-                            newPath.setAttribute('stroke', ellipse.getAttribute('stroke') || 'black');
-                            newPath.setAttribute('stroke-width', ellipse.getAttribute('stroke-width') || '1');
-                            newPath.setAttribute('fill', 'none');
-                            parent.appendChild(newPath);
-                        }
-                    });
-                }
-            }
-        }
-    });
-    
-    this.showEraserIndicator(x, y, radius);
-    
-    // Сохраняем состояние только если что-то изменилось
-    if (bezierProcessed) {
-        setTimeout(() => this.saveSnapshot(), 100);
-    }
+    return (lo + hi) / 2;
 }
 
 // Вычисление точки на кубической Безье
@@ -5225,58 +6066,6 @@ pointToRectDistance(px, py, rect) {
 // Расстояние между двумя точками
 pointDistance(p1, p2) {
     return Math.sqrt((p2.x - p1.x)**2 + (p2.y - p1.y)**2);
-}
-
-// Новая функция: пересечение круга с отрезком
-circleSegmentIntersections(cx, cy, radius, x1, y1, x2, y2) {
-    const intersections = [];
-    
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    
-    const A = dx * dx + dy * dy;
-    const B = 2 * (dx * (x1 - cx) + dy * (y1 - cy));
-    const C = (x1 - cx) * (x1 - cx) + (y1 - cy) * (y1 - cy) - radius * radius;
-    
-    const discriminant = B * B - 4 * A * C;
-    
-    if (discriminant < 0) {
-        return intersections;
-    }
-    
-    const sqrtDiscriminant = Math.sqrt(discriminant);
-    const t1 = (-B - sqrtDiscriminant) / (2 * A);
-    const t2 = (-B + sqrtDiscriminant) / (2 * A);
-    
-    // Проверяем что точка на отрезке (0 <= t <= 1)
-    if (t1 >= 0 && t1 <= 1) {
-        intersections.push({
-            x: x1 + t1 * dx,
-            y: y1 + t1 * dy,
-            t: t1
-        });
-    }
-    
-    if (t2 >= 0 && t2 <= 1 && Math.abs(t1 - t2) > 0.001) {
-        intersections.push({
-            x: x1 + t2 * dx,
-            y: y1 + t2 * dy,
-            t: t2
-        });
-    }
-    
-    // Если отрезок полностью внутри круга - добавляем начало и конец
-    if (intersections.length === 0) {
-        const d1 = Math.sqrt(Math.pow(x1 - cx, 2) + Math.pow(y1 - cy, 2));
-        const d2 = Math.sqrt(Math.pow(x2 - cx, 2) + Math.pow(y2 - cy, 2));
-        
-        if (d1 <= radius && d2 <= radius) {
-            intersections.push({x: x1, y: y1, t: 0});
-            intersections.push({x: x2, y: y2, t: 1});
-        }
-    }
-    
-    return intersections;
 }
 
             // РИСОВАНИЕ
@@ -5559,22 +6348,147 @@ addPointToBezierPath(pathElement, x, y) {
     const toPoint = this.state.bezierPoints[vector.to];
     if (!fromPoint || !toPoint) return;
     
+    const createSmooth = document.getElementById('bezierSmoothToggle')?.checked ?? true;
+    
+    // 1. t на кривой
+    const t = this.findClosestTOnBezier(
+        fromPoint, vector.control1, vector.control2, toPoint, x, y
+    );
+    
+    // 2. Точка на кривой
+    const newPos = this.evaluateCubicBezier(
+        fromPoint.x, fromPoint.y,
+        vector.control1.x, vector.control1.y,
+        vector.control2.x, vector.control2.y,
+        toPoint.x, toPoint.y,
+        t
+    );
+    
+    // 3. Создаём точку
     const newPoint = {
-        x: x,
-        y: y,
+        x: newPos.x,
+        y: newPos.y,
         element: null,
         index: this.state.bezierPoints.length
     };
-    
     newPoint.element = this.createBezierPointElement(newPoint);
     this.svg.appendChild(newPoint.element);
     this.state.bezierPoints.push(newPoint);
     
-    // Создаём с направляющими (обычное редактирование)
-    const vector1 = this.createBezierVector(fromPoint, newPoint, null, true);
-    const vector2 = this.createBezierVector(newPoint, toPoint, null, true);
+    // 4. Стиль
+    const strokeColor = vector.path.getAttribute('stroke') || this.state.strokeColor;
+    const strokeWidth = vector.path.getAttribute('stroke-width') || this.state.strokeWidth;
     
+    // 5. Control-точки
+    let c1_first, c2_first, c1_second, c2_second;
+    
+    if (createSmooth) {
+        // Гладкая — де Кастельо
+        const split = this.splitCubicBezier(
+            { x: fromPoint.x, y: fromPoint.y },
+            { x: vector.control1.x, y: vector.control1.y },
+            { x: vector.control2.x, y: vector.control2.y },
+            { x: toPoint.x, y: toPoint.y },
+            t
+        );
+        c1_first  = { x: split.first.c1.x,  y: split.first.c1.y  };
+        c2_first  = { x: split.first.c2.x,  y: split.first.c2.y  };
+        c1_second = { x: split.second.c1.x, y: split.second.c1.y };
+        c2_second = { x: split.second.c2.x, y: split.second.c2.y };
+    } else {
+        // Угловая:
+        // control1 первого = исходный control1 (сохраняем касательную from)
+        // control2 первого = new (схлопнут)
+        // control1 второго = new (схлопнут)
+        // control2 второго = исходный control2 (сохраняем касательную to)
+        c1_first  = { x: vector.control1.x, y: vector.control1.y };
+        c2_first  = { x: newPoint.x, y: newPoint.y };
+        c1_second = { x: newPoint.x, y: newPoint.y };
+        c2_second = { x: vector.control2.x, y: vector.control2.y };
+    }
+    
+    // 6. Два вектора
+    const vector1 = {
+        from: vector.from,
+        to: newPoint.index,
+        control1: { x: c1_first.x, y: c1_first.y, belongsTo: vector.from },
+        control2: { x: c2_first.x, y: c2_first.y, belongsTo: newPoint.index },
+        path: null,
+        guideElements: {}
+    };
+    const vector2 = {
+        from: newPoint.index,
+        to: vector.to,
+        control1: { x: c1_second.x, y: c1_second.y, belongsTo: newPoint.index },
+        control2: { x: c2_second.x, y: c2_second.y, belongsTo: vector.to },
+        path: null,
+        guideElements: {}
+    };
+    
+    // 7. Пути
+    vector1.path = this.createBezierPath(
+        fromPoint.x, fromPoint.y,
+        vector1.control1.x, vector1.control1.y,
+        vector1.control2.x, vector1.control2.y,
+        newPoint.x, newPoint.y
+    );
+    vector1.path.setAttribute('stroke', strokeColor);
+    vector1.path.setAttribute('stroke-width', strokeWidth);
+    
+    vector2.path = this.createBezierPath(
+        newPoint.x, newPoint.y,
+        vector2.control1.x, vector2.control1.y,
+        vector2.control2.x, vector2.control2.y,
+        toPoint.x, toPoint.y
+    );
+    vector2.path.setAttribute('stroke', strokeColor);
+    vector2.path.setAttribute('stroke-width', strokeWidth);
+    
+    this.svg.appendChild(vector1.path);
+    this.svg.appendChild(vector2.path);
+    
+    // 8. Удаляем старый вектор
     this.deleteBezierVector(vector);
+    
+    // 9. Пуш в массив ДО создания направляющих
+    this.state.bezierVectors.push(vector1);
+    this.state.bezierVectors.push(vector2);
+    
+    // 10. Создаём направляющие
+    this.createVectorGuides(vector1, fromPoint, newPoint);
+    this.createVectorGuides(vector2, newPoint, toPoint);
+    
+    // 11. Прячем направляющие, если не в bezier-points
+    const inBezierMode = (this.state.currentTool === 'bezier-points');
+    
+    if (!inBezierMode) {
+        // Полностью скрываем всё
+        [vector1, vector2].forEach(v => {
+            const ge = v.guideElements;
+            if (!ge) return;
+            if (ge.line1) ge.line1.style.display = 'none';
+            if (ge.control1) ge.control1.style.display = 'none';
+            if (ge.line2) ge.line2.style.display = 'none';
+            if (ge.control2) ge.control2.style.display = 'none';
+        });
+    } else if (!createSmooth) {
+        // В режиме безье, но угловая — прячем направляющие ТОЛЬКО новой точки
+        // У vector1 direction новая точка = control2 (line2)
+        // У vector2 direction новая точка = control1 (line1)
+        const ge1 = vector1.guideElements;
+        if (ge1) {
+            if (ge1.line2) ge1.line2.style.display = 'none';
+            if (ge1.control2) ge1.control2.style.display = 'none';
+        }
+        const ge2 = vector2.guideElements;
+        if (ge2) {
+            if (ge2.line1) ge2.line1.style.display = 'none';
+            if (ge2.control1) ge2.control1.style.display = 'none';
+        }
+    }
+    // Гладкая в bezier-points — все направляющие видны.
+    
+    // 12. Выделяем новую точку
     this.selectBezierPoint(newPoint.index);
     
     setTimeout(() => this.saveSnapshot(), 100);
@@ -6157,7 +7071,38 @@ updateBezierControlDrag(x, y) {
         this.state.draggingBezierControlVectorIndex = null;
         this.state.draggingBezierControlType = null;
     }
-        
+
+updateVectorGuides(vector) {
+    const fromPoint = this.state.bezierPoints[vector.from];
+    const toPoint = this.state.bezierPoints[vector.to];
+    if (!fromPoint || !toPoint) return;
+    
+    const ge = vector.guideElements || {};
+    
+    if (ge.line1) {
+        ge.line1.setAttribute('x1', fromPoint.x);
+        ge.line1.setAttribute('y1', fromPoint.y);
+        ge.line1.setAttribute('x2', vector.control1.x);
+        ge.line1.setAttribute('y2', vector.control1.y);
+    }
+    
+    if (ge.control1) {
+        ge.control1.setAttribute('cx', vector.control1.x);
+        ge.control1.setAttribute('cy', vector.control1.y);
+    }
+    
+    if (ge.line2) {
+        ge.line2.setAttribute('x1', toPoint.x);
+        ge.line2.setAttribute('y1', toPoint.y);
+        ge.line2.setAttribute('x2', vector.control2.x);
+        ge.line2.setAttribute('y2', vector.control2.y);
+    }
+    
+    if (ge.control2) {
+        ge.control2.setAttribute('cx', vector.control2.x);
+        ge.control2.setAttribute('cy', vector.control2.y);
+    }
+}
     // ОБНОВЛЕНИЕ ПУТИ БЕЗЬЕ (после перемещения контрольной точки)
 updateBezierVectorPath(vector) {
     const startPoint = this.state.bezierPoints[vector.from];
@@ -6278,6 +7223,65 @@ updatePointDrag(x, y) {
         this.state.draggingPointIndex = null;
     }
 
+mergeTwoBezierVectors(v_in, v_out) {
+    const A = this.state.bezierPoints[v_in.from];
+    const B = this.state.bezierPoints[v_in.to];
+    const C = this.state.bezierPoints[v_out.to];
+    
+    if (!A || !B || !C) return null;
+    
+    const c1_old = { x: v_in.control1.x, y: v_in.control1.y };
+    const c2_old = { x: v_out.control2.x, y: v_out.control2.y };
+    
+    // Направления касательных (от A к c1_old и от C к c2_old)
+    let d1 = { x: c1_old.x - A.x, y: c1_old.y - A.y };
+    let d2 = { x: c2_old.x - C.x, y: c2_old.y - C.y };
+    
+    const len1 = Math.hypot(d1.x, d1.y) || 1;
+    const len2 = Math.hypot(d2.x, d2.y) || 1;
+    
+    d1 = { x: d1.x / len1, y: d1.y / len1 };
+    d2 = { x: d2.x / len2, y: d2.y / len2 };
+    
+    // Правая часть: R = (8B - A - C)/3 - A - C
+    const Rx = (8 * B.x - A.x - C.x) / 3 - A.x - C.x;
+    const Ry = (8 * B.y - A.y - C.y) / 3 - A.y - C.y;
+    
+    // Система:
+    //   a·d1.x + b·d2.x = Rx
+    //   a·d1.y + b·d2.y = Ry
+    const det = d1.x * d2.y - d1.y * d2.x;
+    
+    let a, b;
+    if (Math.abs(det) > 1e-6) {
+        a = (Rx * d2.y - Ry * d2.x) / det;
+        b = (d1.x * Ry - d1.y * Rx) / det;
+    } else {
+        // Касательные коллинеарны — упрощённый случай
+        a = (Rx * d1.x + Ry * d1.y);
+        b = (Rx * d2.x + Ry * d2.y);
+    }
+    
+    // Ограничения: a, b должны быть положительны (иначе кривая "вывернется")
+    const minA = len1 * 0.1;
+    const maxA = len1 * 3;
+    const minB = len2 * 0.1;
+    const maxB = len2 * 3;
+    
+    if (a < minA || a > maxA) a = Math.max(minA, Math.min(maxA, a));
+    if (b < minB || b > maxB) b = Math.max(minB, Math.min(maxB, b));
+    
+    const c1 = { x: A.x + a * d1.x, y: A.y + a * d1.y };
+    const c2 = { x: C.x + b * d2.x, y: C.y + b * d2.y };
+    
+    return {
+        from: v_in.from,
+        to: v_out.to,
+        control1: { x: c1.x, y: c1.y, belongsTo: v_in.from },
+        control2: { x: c2.x, y: c2.y, belongsTo: v_out.to }
+    };
+}
+
     // УДАЛЕНИЕ ТОЧКИ
 deleteBezierPoint(pointIndex) {
     const deletedPoint = this.state.bezierPoints[pointIndex];
@@ -6309,16 +7313,20 @@ deleteBezierPoint(pointIndex) {
         
         // Определяем, какая точка A (начало входящего) и C (конец исходящего)
         let pointAIndex, pointCIndex;
-        
-        if (v1.to === pointIndex && v2.from === pointIndex) {
-            // v1 -> удаляемая, v2 -> от удаляемой
-            pointAIndex = v1.from;
-            pointCIndex = v2.to;
-        } else if (v2.to === pointIndex && v1.from === pointIndex) {
-            // v2 -> удаляемая, v1 -> от удаляемой
-            pointAIndex = v2.from;
-            pointCIndex = v1.to;
-        } else {
+        let v_in = null, v_out = null;
+		if (v1.to === pointIndex && v2.from === pointIndex) {
+			// v1 -> удаляемая, v2 -> от удаляемой
+			pointAIndex = v1.from;
+			pointCIndex = v2.to;
+			v_in = v1;
+			v_out = v2;
+		} else if (v2.to === pointIndex && v1.from === pointIndex) {
+			// v2 -> удаляемая, v1 -> от удаляемой
+			pointAIndex = v2.from;
+			pointCIndex = v1.to;
+			v_in = v2;
+			v_out = v1;
+		} else {
             // Оба входят или оба исходят — просто удаляем
             relatedVectors.forEach(({ vector, index }) => {
                 this.removeVectorAndGuides(vector);
@@ -6327,27 +7335,74 @@ deleteBezierPoint(pointIndex) {
             // Продолжаем удаление точки
         }
         
-        if (pointAIndex !== undefined && pointCIndex !== undefined) {
-            // Удаляем старые векторы (с конца, чтобы индексы не сбились)
-            const indices = relatedVectors.map(v => v.index).sort((a, b) => b - a);
-            indices.forEach(idx => {
-                const vector = this.state.bezierVectors[idx];
-                this.removeVectorAndGuides(vector);
-                this.state.bezierVectors.splice(idx, 1);
-            });
+if (pointAIndex !== undefined && pointCIndex !== undefined) {
+    // Сохраняем стиль от старых векторов ДО удаления
+    const savedStroke = (v_in && v_in.path) 
+        ? v_in.path.getAttribute('stroke') 
+        : this.state.strokeColor;
+    const savedStrokeWidth = (v_in && v_in.path) 
+        ? v_in.path.getAttribute('stroke-width') 
+        : this.state.strokeWidth;
+    const savedLinecap = (v_in && v_in.path)
+        ? (v_in.path.getAttribute('stroke-linecap') || 'round')
+        : 'round';
+    const savedLinejoin = (v_in && v_in.path)
+        ? (v_in.path.getAttribute('stroke-linejoin') || 'round')
+        : 'round';
+    
+    // Удаляем старые векторы (с конца, чтобы индексы не сбились)
+    const indices = relatedVectors.map(v => v.index).sort((a, b) => b - a);
+    indices.forEach(idx => {
+        const vector = this.state.bezierVectors[idx];
+        this.removeVectorAndGuides(vector);
+        this.state.bezierVectors.splice(idx, 1);
+    });
+    
+    // Получаем точки A и C
+    const pointA = this.state.bezierPoints[pointAIndex];
+    const pointC = this.state.bezierPoints[pointCIndex];
+    
+    if (pointA && pointC && v_in && v_out) {
+        const merged = this.mergeTwoBezierVectors(v_in, v_out);
+        
+        if (merged) {
+            const newVector = {
+                from: merged.from,
+                to: merged.to,
+                control1: merged.control1,
+                control2: merged.control2,
+                path: null,
+                guideElements: {}
+            };
             
-            // Получаем точки A и C
-            const pointA = this.state.bezierPoints[pointAIndex];
-            const pointC = this.state.bezierPoints[pointCIndex];
+            newVector.path = this.createBezierPath(
+                pointA.x, pointA.y,
+                newVector.control1.x, newVector.control1.y,
+                newVector.control2.x, newVector.control2.y,
+                pointC.x, pointC.y
+            );
             
-            if (pointA && pointC) {
-                // Создаём новый вектор A-C
-                const newVector = this.createBezierVector(pointA, pointC, null);
-                
-                // Обновляем путь
-                this.updateBezierVectorPath(newVector);
+            // Используем СОХРАНЁННЫЙ стиль
+            if (savedStroke) newVector.path.setAttribute('stroke', savedStroke);
+            if (savedStrokeWidth) newVector.path.setAttribute('stroke-width', savedStrokeWidth);
+            newVector.path.setAttribute('stroke-linecap', savedLinecap);
+            newVector.path.setAttribute('stroke-linejoin', savedLinejoin);
+            
+            this.svg.appendChild(newVector.path);
+            this.state.bezierVectors.push(newVector);
+            
+            this.createVectorGuides(newVector, pointA, pointC);
+            
+            if (this.state.currentTool !== 'bezier-points') {
+                const ge = newVector.guideElements;
+                if (ge.line1) ge.line1.style.display = 'none';
+                if (ge.control1) ge.control1.style.display = 'none';
+                if (ge.line2) ge.line2.style.display = 'none';
+                if (ge.control2) ge.control2.style.display = 'none';
             }
         }
+    }
+}
     }
     // СЛУЧАЙ 3: Больше двух векторов (развилка)
     else {
@@ -8461,7 +9516,446 @@ getFullBezierContour(clickedPath) {
         pt.y = e.clientY;
         return pt.matrixTransform(this.svg.getScreenCTM().inverse());
     }
-      
+	
+getScreenScale() {
+    const ctm = this.svg.getScreenCTM();
+    return ctm ? ctm.a : 1;
+}
+// ============================================================
+// БЛОК 0: ХЕЛПЕРЫ ЗАПЕКАНИЯ TRANSFORM
+// ============================================================
+
+// Возвращает полную матрицу трансформации элемента — с учётом всех
+// родительских <g transform> и собственного transform.
+// Результат: { a, b, c, d, e, f } — аффинная матрица 2x3:
+//   | a c e |
+//   | b d f |
+//   | 0 0 1 |
+getElementTransformMatrix(element) {
+    let a = 1, b = 0, c = 0, d = 1, e = 0, f = 0;
+    
+    // Собираем цепочку: сам элемент + все родители до <svg>
+    const chain = [];
+    let node = element;
+    while (node && node !== this.svg && node.nodeType === 1) {
+        chain.unshift(node); // вставляем в начало — от корня к элементу
+        node = node.parentNode;
+    }
+    
+    // Умножаем матрицы слева направо (родитель * потомок)
+    for (const el of chain) {
+        const transform = el.getAttribute && el.getAttribute('transform');
+        if (!transform) continue;
+        
+        const m = this.parseTransformString(transform);
+        if (!m) continue;
+        
+        // result = result * m
+        const newA = a * m.a + c * m.b;
+        const newB = b * m.a + d * m.b;
+        const newC = a * m.c + c * m.d;
+        const newD = b * m.c + d * m.d;
+        const newE = a * m.e + c * m.f + e;
+        const newF = b * m.e + d * m.f + f;
+        
+        a = newA; b = newB; c = newC; d = newD; e = newE; f = newF;
+    }
+    
+    return { a, b, c, d, e, f };
+}
+
+// Парсит строку transform и возвращает одну матрицу
+// Поддерживает: translate, scale, rotate, skewX, skewY, matrix
+// (если несколько команд — они перемножаются)
+parseTransformString(transformStr) {
+    if (!transformStr) return null;
+    
+    const commands = transformStr.match(/(\w+)\s*\(([^)]*)\)/g) || [];
+    if (commands.length === 0) return null;
+    
+    let a = 1, b = 0, c = 0, d = 1, e = 0, f = 0;
+    
+    for (const cmd of commands) {
+        const match = cmd.match(/(\w+)\s*\(([^)]*)\)/);
+        if (!match) continue;
+        
+        const name = match[1];
+        const args = match[2].split(/[\s,]+/).map(parseFloat).filter(n => !isNaN(n));
+        
+        let m;
+        
+        switch (name) {
+            case 'translate': {
+                const tx = args[0] || 0;
+                const ty = args[1] || 0;
+                m = { a: 1, b: 0, c: 0, d: 1, e: tx, f: ty };
+                break;
+            }
+            case 'scale': {
+                const sx = args[0] !== undefined ? args[0] : 1;
+                const sy = args[1] !== undefined ? args[1] : sx;
+                m = { a: sx, b: 0, c: 0, d: sy, e: 0, f: 0 };
+                break;
+            }
+            case 'rotate': {
+                const angle = (args[0] || 0) * Math.PI / 180;
+                const cx = args[1] !== undefined ? args[1] : 0;
+                const cy = args[2] !== undefined ? args[2] : 0;
+                const cos = Math.cos(angle);
+                const sin = Math.sin(angle);
+                // rotate вокруг (cx, cy) = translate(cx,cy) * rotate(a) * translate(-cx,-cy)
+                // Итог:
+                // a=cos, b=sin, c=-sin, d=cos
+                // e = cx - cos*cx + sin*cy
+                // f = cy - sin*cx - cos*cy
+                m = {
+                    a: cos,
+                    b: sin,
+                    c: -sin,
+                    d: cos,
+                    e: cx - cos * cx + sin * cy,
+                    f: cy - sin * cx - cos * cy
+                };
+                break;
+            }
+            case 'skewX': {
+                const angle = (args[0] || 0) * Math.PI / 180;
+                m = { a: 1, b: 0, c: Math.tan(angle), d: 1, e: 0, f: 0 };
+                break;
+            }
+            case 'skewY': {
+                const angle = (args[0] || 0) * Math.PI / 180;
+                m = { a: 1, b: Math.tan(angle), c: 0, d: 1, e: 0, f: 0 };
+                break;
+            }
+            case 'matrix': {
+                if (args.length >= 6) {
+                    m = { a: args[0], b: args[1], c: args[2], d: args[3], e: args[4], f: args[5] };
+                }
+                break;
+            }
+            default:
+                continue;
+        }
+        
+        if (!m) continue;
+        
+        // Умножаем: result = result * m
+        const newA = a * m.a + c * m.b;
+        const newB = b * m.a + d * m.b;
+        const newC = a * m.c + c * m.d;
+        const newD = b * m.c + d * m.d;
+        const newE = a * m.e + c * m.f + e;
+        const newF = b * m.e + d * m.f + f;
+        
+        a = newA; b = newB; c = newC; d = newD; e = newE; f = newF;
+    }
+    
+    return { a, b, c, d, e, f };
+}
+
+// Применяет матрицу к точке
+applyMatrixToPoint(matrix, x, y) {
+    return {
+        x: matrix.a * x + matrix.c * y + matrix.e,
+        y: matrix.b * x + matrix.d * y + matrix.f
+    };
+}
+
+// Проверяет, является ли матрица единичной (нет изменений)
+isIdentityMatrix(m) {
+    return m.a === 1 && m.b === 0 && m.c === 0 && m.d === 1 && m.e === 0 && m.f === 0;
+}
+
+// Запекает transform в геометрию элемента (для path, line, rect, circle, ellipse)
+// После вызова: element без transform, координаты в глобальной системе
+// Возвращает true, если что-то было запечено
+bakeTransformInElement(element) {
+    if (!element || element.nodeType !== 1) return false;
+    
+    const tag = element.tagName.toLowerCase();
+    
+    // Только для геометрических фигур
+    if (!['path', 'line', 'rect', 'circle', 'ellipse', 'polyline', 'polygon'].includes(tag)) {
+        return false;
+    }
+    
+    const matrix = this.getElementTransformMatrix(element);
+    if (this.isIdentityMatrix(matrix)) return false;
+    
+    // Применяем матрицу к координатам
+    switch (tag) {
+        case 'path': {
+            const d = element.getAttribute('d');
+            if (d) {
+                const newD = this.transformPathD(d, matrix);
+                element.setAttribute('d', newD);
+            }
+            break;
+        }
+        case 'line': {
+            const x1 = parseFloat(element.getAttribute('x1')) || 0;
+            const y1 = parseFloat(element.getAttribute('y1')) || 0;
+            const x2 = parseFloat(element.getAttribute('x2')) || 0;
+            const y2 = parseFloat(element.getAttribute('y2')) || 0;
+            const p1 = this.applyMatrixToPoint(matrix, x1, y1);
+            const p2 = this.applyMatrixToPoint(matrix, x2, y2);
+            element.setAttribute('x1', p1.x);
+            element.setAttribute('y1', p1.y);
+            element.setAttribute('x2', p2.x);
+            element.setAttribute('y2', p2.y);
+            break;
+        }
+        case 'rect': {
+            const x = parseFloat(element.getAttribute('x')) || 0;
+            const y = parseFloat(element.getAttribute('y')) || 0;
+            const w = parseFloat(element.getAttribute('width')) || 0;
+            const h = parseFloat(element.getAttribute('height')) || 0;
+            
+            // Для прямоугольника — преобразуем в path, так как поворот
+            // делает его уже не прямоугольником в осях
+            const p1 = this.applyMatrixToPoint(matrix, x, y);
+            const p2 = this.applyMatrixToPoint(matrix, x + w, y);
+            const p3 = this.applyMatrixToPoint(matrix, x + w, y + h);
+            const p4 = this.applyMatrixToPoint(matrix, x, y + h);
+            
+            const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            newPath.setAttribute('d', 
+                `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y} L ${p3.x} ${p3.y} L ${p4.x} ${p4.y} Z`
+            );
+            this.copyStyleAttributes(element, newPath);
+            newPath.removeAttribute('transform');
+            
+            // Замена в DOM
+            if (element.parentNode) {
+                element.parentNode.replaceChild(newPath, element);
+            }
+            return { replaced: true, newElement: newPath };
+        }
+        case 'circle': {
+            const cx = parseFloat(element.getAttribute('cx')) || 0;
+            const cy = parseFloat(element.getAttribute('cy')) || 0;
+            const r = parseFloat(element.getAttribute('r')) || 0;
+            
+            // Проверяем, есть ли в матрице поворот или скос.
+            // Если матрица не вырожденная (равномерный масштаб) — можно остаться circle.
+            // Если есть скос или неравномерный масштаб — станет ellipse или path.
+            
+            // Самый простой путь: аппроксимируем круг полигоном в 60 точек
+            // и заменяем на path. Это универсально.
+            const points = [];
+            const numPoints = 60;
+            for (let i = 0; i < numPoints; i++) {
+                const angle = (i / numPoints) * Math.PI * 2;
+                const px = cx + Math.cos(angle) * r;
+                const py = cy + Math.sin(angle) * r;
+                points.push(this.applyMatrixToPoint(matrix, px, py));
+            }
+            
+            let d = `M ${points[0].x} ${points[0].y}`;
+            for (let i = 1; i < points.length; i++) {
+                d += ` L ${points[i].x} ${points[i].y}`;
+            }
+            d += ' Z';
+            
+            const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            newPath.setAttribute('d', d);
+            this.copyStyleAttributes(element, newPath);
+            newPath.removeAttribute('transform');
+            
+            if (element.parentNode) {
+                element.parentNode.replaceChild(newPath, element);
+            }
+            return { replaced: true, newElement: newPath };
+        }
+        case 'ellipse': {
+            const cx = parseFloat(element.getAttribute('cx')) || 0;
+            const cy = parseFloat(element.getAttribute('cy')) || 0;
+            const rx = parseFloat(element.getAttribute('rx')) || 0;
+            const ry = parseFloat(element.getAttribute('ry')) || 0;
+            
+            const points = [];
+            const numPoints = 60;
+            for (let i = 0; i < numPoints; i++) {
+                const angle = (i / numPoints) * Math.PI * 2;
+                const px = cx + Math.cos(angle) * rx;
+                const py = cy + Math.sin(angle) * ry;
+                points.push(this.applyMatrixToPoint(matrix, px, py));
+            }
+            
+            let d = `M ${points[0].x} ${points[0].y}`;
+            for (let i = 1; i < points.length; i++) {
+                d += ` L ${points[i].x} ${points[i].y}`;
+            }
+            d += ' Z';
+            
+            const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            newPath.setAttribute('d', d);
+            this.copyStyleAttributes(element, newPath);
+            newPath.removeAttribute('transform');
+            
+            if (element.parentNode) {
+                element.parentNode.replaceChild(newPath, element);
+            }
+            return { replaced: true, newElement: newPath };
+        }
+        case 'polyline':
+        case 'polygon': {
+            const pointsStr = element.getAttribute('points') || '';
+            const nums = pointsStr.split(/[\s,]+/).map(parseFloat).filter(n => !isNaN(n));
+            const newPoints = [];
+            for (let i = 0; i < nums.length; i += 2) {
+                if (i + 1 < nums.length) {
+                    const p = this.applyMatrixToPoint(matrix, nums[i], nums[i + 1]);
+                    newPoints.push(`${p.x},${p.y}`);
+                }
+            }
+            element.setAttribute('points', newPoints.join(' '));
+            break;
+        }
+    }
+    
+    // Удаляем transform (собственный — родительские не трогаем,
+    // их координаты уже учтены в матрице)
+    element.removeAttribute('transform');
+    
+    return { replaced: false, newElement: element };
+}
+
+// Копирует стилевые атрибуты (stroke, fill, stroke-width и т.д.)
+copyStyleAttributes(source, target) {
+    const attrs = ['stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
+                   'stroke-dasharray', 'fill', 'fill-rule', 'opacity',
+                   'class', 'id', 'style'];
+    for (const attr of attrs) {
+        const val = source.getAttribute(attr);
+        if (val !== null) {
+            // id копировать не нужно, чтобы не было дублей
+            if (attr === 'id') continue;
+            target.setAttribute(attr, val);
+        }
+    }
+}
+
+// Преобразует строку path 'd' через матрицу.
+// Поддерживает M, L, C, Q, Z (абсолютные и относительные).
+transformPathD(d, matrix) {
+    if (!d) return d;
+    
+    // Разбираем на команды
+    const commands = d.match(/[a-df-zA-DF-Z][^a-df-zA-DF-Z]*/g) || [];
+    let result = '';
+    let curX = 0, curY = 0;   // текущая точка (абсолютная)
+    
+    for (const cmd of commands) {
+        const letter = cmd[0];
+        const upper = letter.toUpperCase();
+        const isRelative = letter !== upper;
+        const nums = cmd.substring(1).trim().split(/[\s,]+/).filter(n => n !== '').map(Number);
+        
+        if (upper === 'Z') {
+            result += letter + ' ';
+            continue;
+        }
+        
+        let newNums = [];
+        
+        switch (upper) {
+            case 'M':
+            case 'L':
+            case 'T': {
+                // Пары координат
+                for (let i = 0; i < nums.length; i += 2) {
+                    if (i + 1 >= nums.length) break;
+                    let x = nums[i], y = nums[i + 1];
+                    if (isRelative) { x += curX; y += curY; }
+                    const p = this.applyMatrixToPoint(matrix, x, y);
+                    newNums.push(p.x, p.y);
+                    curX = x; curY = y;
+                }
+                break;
+            }
+            case 'C': {
+                // 6 чисел на сегмент
+                for (let i = 0; i < nums.length; i += 6) {
+                    if (i + 5 >= nums.length) break;
+                    let x1 = nums[i],   y1 = nums[i+1];
+                    let x2 = nums[i+2], y2 = nums[i+3];
+                    let x  = nums[i+4], y  = nums[i+5];
+                    if (isRelative) {
+                        x1 += curX; y1 += curY;
+                        x2 += curX; y2 += curY;
+                        x  += curX; y  += curY;
+                    }
+                    const p1 = this.applyMatrixToPoint(matrix, x1, y1);
+                    const p2 = this.applyMatrixToPoint(matrix, x2, y2);
+                    const p  = this.applyMatrixToPoint(matrix, x, y);
+                    newNums.push(p1.x, p1.y, p2.x, p2.y, p.x, p.y);
+                    curX = x; curY = y;
+                }
+                break;
+            }
+            case 'S': {
+                // 4 числа на сегмент (гладкая кубическая)
+                for (let i = 0; i < nums.length; i += 4) {
+                    if (i + 3 >= nums.length) break;
+                    let x2 = nums[i],   y2 = nums[i+1];
+                    let x  = nums[i+2], y  = nums[i+3];
+                    if (isRelative) {
+                        x2 += curX; y2 += curY;
+                        x  += curX; y  += curY;
+                    }
+                    const p2 = this.applyMatrixToPoint(matrix, x2, y2);
+                    const p  = this.applyMatrixToPoint(matrix, x, y);
+                    newNums.push(p2.x, p2.y, p.x, p.y);
+                    curX = x; curY = y;
+                }
+                break;
+            }
+            case 'Q': {
+                // 4 числа на сегмент (квадратичная)
+                for (let i = 0; i < nums.length; i += 4) {
+                    if (i + 3 >= nums.length) break;
+                    let x1 = nums[i],   y1 = nums[i+1];
+                    let x  = nums[i+2], y  = nums[i+3];
+                    if (isRelative) {
+                        x1 += curX; y1 += curY;
+                        x  += curX; y  += curY;
+                    }
+                    const p1 = this.applyMatrixToPoint(matrix, x1, y1);
+                    const p  = this.applyMatrixToPoint(matrix, x, y);
+                    newNums.push(p1.x, p1.y, p.x, p.y);
+                    curX = x; curY = y;
+                }
+                break;
+            }
+            case 'A': {
+                // Эллиптическая дуга: rx ry x-axis-rotation large-arc-flag sweep-flag x y
+                // Матрицу применяем только к конечной точке.
+                // Радиусы/флаги — не трогаем (это приближение, но для большинства случаев ок).
+                for (let i = 0; i < nums.length; i += 7) {
+                    if (i + 6 >= nums.length) break;
+                    const rx = nums[i], ry = nums[i+1], rot = nums[i+2];
+                    const laf = nums[i+3], sf = nums[i+4];
+                    let x = nums[i+5], y = nums[i+6];
+                    if (isRelative) { x += curX; y += curY; }
+                    const p = this.applyMatrixToPoint(matrix, x, y);
+                    newNums.push(rx, ry, rot, laf, sf, p.x, p.y);
+                    curX = x; curY = y;
+                }
+                break;
+            }
+            default:
+                // Неизвестная команда — оставляем как есть
+                newNums = nums;
+        }
+        
+        result += letter + ' ' + newNums.map(n => (Math.round(n * 1000) / 1000)).join(' ') + ' ';
+    }
+    
+    return result.trim();
+}
+     
 // УПРОЩЕННАЯ функция привязки (оптимизированная)
 snapToNonWhiteLine(x, y) {
     if (!this.state.image || !this.snapSettings.enabled) return null;
