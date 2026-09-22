@@ -769,8 +769,6 @@ input[type="range"] {
 .bezier-point {
     fill: #4dabf7;
     stroke: #1971c2;
-    stroke-width: 2;
-    r: 1%;
 	opacity: 0.5;
     cursor: move;
 }
@@ -787,7 +785,7 @@ input[type="range"] {
 
 .bezier-guide-line {
     stroke: #868e96;
-    stroke-width: 1;
+
     stroke-dasharray: 3,3;
     opacity: 0.5;
 }
@@ -796,7 +794,6 @@ input[type="range"] {
     fill: #ffd43b;
     stroke: #f08c00;
     stroke-width: 1;
-	r: 0.5%;
     opacity: 0.5;
     cursor: pointer;
 }
@@ -1147,7 +1144,7 @@ input[type="range"] {
 					<span class="zoom-level" id="zoomLevel">100%</span>
 					<button id="zoomInBtn" title="Увеличить">+</button>
 					<button id="zoom100Btn" title="100%">100</button>
-					<button id="zoom200Btn" title="200%">200</button>
+					<button id="zoom200Btn" title="250%">250</button>
 				</div>
 <div class="canvas-wrapper">
     <canvas id="mainCanvas"></canvas>
@@ -1417,29 +1414,29 @@ this.setupSimpleUndoRedo();
 this.updateSvgSize();
 
 }			
-		// ВИЗУАЛЬНЫЙ ИНДИКАТОР ЛАСТИКА
-		showEraserIndicator(x, y, radius) {
-			let indicator = document.getElementById('eraser-indicator');
-			
-			if (!indicator) {
-				indicator = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-				indicator.id = 'eraser-indicator';
-				indicator.setAttribute('stroke', '#ff6b6b');
-				indicator.setAttribute('stroke-width', '2');
-				indicator.setAttribute('fill', 'rgba(255, 107, 107, 0.2)');
-				indicator.setAttribute('stroke-dasharray', '5,5');
-				indicator.style.pointerEvents = 'none';
+// ВИЗУАЛЬНЫЙ ИНДИКАТОР ЛАСТИКА
+showEraserIndicator(x, y, radius) {
+	let indicator = document.getElementById('eraser-indicator');
+	
+	if (!indicator) {
+		indicator = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+		indicator.id = 'eraser-indicator';
+		indicator.setAttribute('stroke', '#ff6b6b');
+		indicator.setAttribute('stroke-width', (1 / this.getHelperScale()).toFixed(3));
+		indicator.setAttribute('fill', 'rgba(255, 107, 107, 0.2)');
+		indicator.setAttribute('stroke-dasharray', '5,5');
+		indicator.style.pointerEvents = 'none';
 
 this.helperLayer.appendChild(indicator);
-			}
-			
-			indicator.setAttribute('cx', x);
-			indicator.setAttribute('cy', y);
-			indicator.setAttribute('r', radius);
-			indicator.style.display = 'block';
-			indicator.style.animation = 'none';
-			indicator.style.zIndex = '9999';
-		}
+	}
+	
+	indicator.setAttribute('cx', x);
+	indicator.setAttribute('cy', y);
+	indicator.setAttribute('r', radius);
+	indicator.style.display = 'block';
+	indicator.style.animation = 'none';
+	indicator.style.zIndex = '9999';
+}
 
 // ============================================================
 // ЛАСТИК ЧЕРЕЗ МАСКУ
@@ -1841,6 +1838,13 @@ init() {
     
     // Стартовый снимок
     setTimeout(() => this.saveSnapshot(), 100);
+	setTimeout(() => {
+        const ctm = this.svg.getScreenCTM();
+        if (ctm) {
+            this._baseCtmScale = ctm.a;
+            console.log('Базовый масштаб установлен:', this._baseCtmScale);
+        }
+    }, 200);
 }
 
 setupSimpleUndoRedo() {
@@ -1888,6 +1892,7 @@ updateSvgSize() {
     // Смещение — над canvas
     this.svg.style.left = '0';
     this.svg.style.top = '0';
+	this._baseCtmScale = null;
 }
 
 // Синхронизация с общими настройками плоттерного редактора
@@ -3097,6 +3102,7 @@ showBezierContourVisuals(vectors) {
 }
 
 showSelectionHandles(element) {
+const k = this.getHelperScale();
     this.removeSelectionHandles();
     
     const bbox = this.getElementBBox(element);
@@ -3117,7 +3123,7 @@ showSelectionHandles(element) {
     frame.setAttribute('height', bbox.height);
     frame.setAttribute('fill', 'none');
     frame.setAttribute('stroke', '#4dabf7');
-    frame.setAttribute('stroke-width', '0.5');
+    frame.setAttribute('stroke-width', (0.5 / k).toFixed(3));
     frame.setAttribute('stroke-dasharray', '5,5');
     frame.setAttribute('pointer-events', 'none');
     
@@ -3128,7 +3134,8 @@ showSelectionHandles(element) {
     handles.appendChild(frame);
     
     // === 8 ТОЧЕК МАСШТАБИРОВАНИЯ ===
-    const handleSize = 3;
+
+const handleSize = 4 / k;
     const positions = [
         { x: bbox.x, y: bbox.y, cursor: 'nw-resize', type: 'nw' },
         { x: bbox.x + bbox.width / 2, y: bbox.y, cursor: 'n-resize', type: 'n' },
@@ -3170,7 +3177,7 @@ showSelectionHandles(element) {
 const centerPoint = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
 centerPoint.setAttribute('cx', center.x);
 centerPoint.setAttribute('cy', center.y);
-centerPoint.setAttribute('r', 2);
+centerPoint.setAttribute('r', (2 / k).toFixed(3));
 centerPoint.setAttribute('fill', 'rgba(255, 107, 107, 0.3)');
 centerPoint.setAttribute('stroke', '#ff6b6b');
 centerPoint.setAttribute('stroke-width', '1');
@@ -3185,12 +3192,12 @@ centerPoint.addEventListener('mousedown', (e) => {
 
 handles.appendChild(centerPoint);
     // === ТОЧКА ПОВОРОТА ===
-    const rotateHandleY = bbox.y - 30;
+    const rotateHandleY = bbox.y - (30 / k);
     const rotateHandle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
 	//rotateHandle.setAttribute('cx', bbox.x + bbox.width / 2);
     rotateHandle.setAttribute('cx', center.x);
 	rotateHandle.setAttribute('cy', rotateHandleY);
-    rotateHandle.setAttribute('r', 3);
+    rotateHandle.setAttribute('r', (3 / k).toFixed(3));
     rotateHandle.setAttribute('fill', '#ff6b6b');
     rotateHandle.setAttribute('stroke', 'white');
     rotateHandle.setAttribute('stroke-width', '1');
@@ -4311,7 +4318,7 @@ showPushIndicator(x, y, radius) {
         indicator = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         indicator.id = 'push-indicator';
         indicator.setAttribute('stroke', '#ff6b6b');
-        indicator.setAttribute('stroke-width', '1');
+        indicator.setAttribute('stroke-width', (1 / this.getHelperScale()).toFixed(3));
         indicator.setAttribute('fill', 'rgba(255, 107, 107, 0.1)');
         indicator.setAttribute('stroke-dasharray', '3,3');
         indicator.style.pointerEvents = 'none';
@@ -8669,7 +8676,8 @@ if (!vector || !vector.path) return;
     vector.guideElements.control1.setAttribute('class', 'bezier-control-point');
     vector.guideElements.control1.setAttribute('cx', vector.control1.x);
     vector.guideElements.control1.setAttribute('cy', vector.control1.y);
-    vector.guideElements.control1.setAttribute('r', '4');
+    const ctrlR = (2 / this.getHelperScale()).toFixed(3);
+	vector.guideElements.control1.setAttribute('r', ctrlR);
     vector.guideElements.control1.setAttribute('data-vector-index', vectorIndex);
     vector.guideElements.control1.setAttribute('data-control-type', 'control1');
     vector.guideElements.control1.setAttribute('data-belongs-to', fromPoint.index);
@@ -8690,7 +8698,7 @@ if (!vector || !vector.path) return;
     vector.guideElements.control2.setAttribute('class', 'bezier-control-point');
     vector.guideElements.control2.setAttribute('cx', vector.control2.x);
     vector.guideElements.control2.setAttribute('cy', vector.control2.y);
-    vector.guideElements.control2.setAttribute('r', '4');
+    vector.guideElements.control2.setAttribute('r', ctrlR);
     vector.guideElements.control2.setAttribute('data-vector-index', vectorIndex);
     vector.guideElements.control2.setAttribute('data-control-type', 'control2');
     vector.guideElements.control2.setAttribute('data-belongs-to', toPoint.index);
@@ -8873,7 +8881,7 @@ createBezierPointElement(point) {
     element.setAttribute('class', 'bezier-point');
     element.setAttribute('cx', point.x);
     element.setAttribute('cy', point.y);
-    element.setAttribute('r', '6');
+    element.setAttribute('r', (3 / this.getHelperScale()).toFixed(3));
     element.setAttribute('data-index', point.index);
     
     // Добавляем обработчик для начала перетаскивания
@@ -12675,6 +12683,45 @@ hideAllHelperElements() {
     this.hideEraserIndicator();
 }
 
+getHelperScale() {
+    const ctm = this.svg.getScreenCTM();
+    if (!ctm) return 1;
+
+    if (!this._baseCtmScale) {
+        return 1;
+    }
+    const k = ctm.a / this._baseCtmScale;
+    return Math.max(0.2, Math.min(10, k));
+}
+
+updateHelperScales() {
+    const k = this.getHelperScale();
+    
+    // Точки безье
+    this.state.bezierPoints.forEach(point => {
+        if (point.element) {
+            point.element.setAttribute('r', (3 / k).toFixed(3));
+        }
+    });
+    
+    // Control-точки
+    this.state.bezierVectors.forEach(v => {
+        const ge = v.guideElements || {};
+        if (ge.control1) ge.control1.setAttribute('r', (2 / k).toFixed(3));
+        if (ge.control2) ge.control2.setAttribute('r', (2 / k).toFixed(3));
+    });
+    
+    // Толщина направляющих линий
+    document.querySelectorAll('.bezier-guide-line').forEach(line => {
+       line.setAttribute('stroke-width', (this.state.strokeWidth / k).toFixed(3));
+    });
+    
+    // Рамка выделения и хендлы
+    if (this.selectedElement) {
+        this.showSelectionHandles(this.selectedElement);
+    }
+}
+
 }
  
 // fin vectorEditor
@@ -15539,6 +15586,9 @@ function setZoom(newZoom) {
 	zoomLevel = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newZoom));
 	updateCanvasSize();
 	updatePenCrosshair();
+	if (window.vectorEditor) {
+        window.vectorEditor.updateHelperScales();
+    }
 }
 
 function setupEventListeners() {
@@ -15711,7 +15761,7 @@ function setupEventListeners() {
 		document.getElementById('zoom200Btn').addEventListener('click', () => {
 			// Вычисляем зум для отображения 1:1 (пиксель = мм)
 			const container = canvasContainer;
-			const newZoom = 2.0;
+			const newZoom = 2.5;
 			setZoom(newZoom);
 		});
 		// Зум колёсиком мыши с Ctrl
