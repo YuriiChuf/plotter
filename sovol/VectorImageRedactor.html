@@ -1099,6 +1099,7 @@ input[type="range"] {
             <button id="redoBtn">↷ Вернуть</button>
             <button id="clearBtn" style="background: #6c757d;">Очистить векторы</button>
             <button id="toBezierBtn" style="display: none;">→ В кривые Безье</button>
+			<button id="toPenBtn" style="display: none;">→ В карандаш</button>
 			<button id="vectorToSvgBtn" style="background: #28a745;">📦 Собрать в SVG-объект</button>
         </div>
     </div>
@@ -1760,7 +1761,7 @@ init() {
         console.warn('vectorCanvas не найден');
         return;
     }
-    
+
     this.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     
     // Слои
@@ -1832,7 +1833,11 @@ init() {
     if (toBezierBtn) {
         toBezierBtn.onclick = () => this.convertSelectionToBezier();
     }
-    
+    const toPenBtn = document.getElementById('toPenBtn');
+	if (toPenBtn) {
+		toPenBtn.onclick = () => this.convertSelectionToPen();
+	}
+	
     // Глобальные обработчики перетаскивания
     this.setupGlobalDragHandlers();
     
@@ -1883,16 +1888,29 @@ updateSvgSize() {
     const sheetWidth = parseInt(document.getElementById('sheetWidth').value) || 210;
     const sheetHeight = parseInt(document.getElementById('sheetHeight').value) || 297;
     
+    // 1. viewBox — по новым размерам листа
     this.svg.setAttribute('viewBox', `0 0 ${sheetWidth} ${sheetHeight}`);
+    
+    // 2. width/height в пикселях — как у canvas
     this.svg.setAttribute('width', mainCanvas.width);
     this.svg.setAttribute('height', mainCanvas.height);
     this.svg.style.width = mainCanvas.width + 'px';
     this.svg.style.height = mainCanvas.height + 'px';
     
-    // Смещение — над canvas
-    this.svg.style.left = '0';
-    this.svg.style.top = '0';
-	this._baseCtmScale = null;
+    // 3. ГЛАВНОЕ: пересчитываем transform для слоёв Y-инверсии
+    const yFlip = `scale(1, -1) translate(0, ${-sheetHeight})`;
+    if (this.vectorLayer) this.vectorLayer.setAttribute('transform', yFlip);
+    if (this.helperLayer) this.helperLayer.setAttribute('transform', yFlip);
+    
+    // 4. Сбрасываем кэш масштаба и пересчитываем
+    this._baseCtmScale = null;
+    requestAnimationFrame(() => {
+        const ctm = this.svg.getScreenCTM();
+        if (ctm) {
+            this._baseCtmScale = ctm.a;
+        }
+        this.updateHelperScales();
+    });
 }
 
 // Синхронизация с общими настройками плоттерного редактора
@@ -2942,13 +2960,28 @@ selectElement(element) {
 
 // Показывает/прячет кнопку «В безье» в зависимости от выделенного элемента
 updateToBezierButtonVisibility(element) {
-    const btn = document.getElementById('toBezierBtn');
-    if (!btn) return;
+    const toBezBtn = document.getElementById('toBezierBtn');
+    const toPenBtn = document.getElementById('toPenBtn');
     
-    if (element && this.canConvertToBezier(element)) {
-        btn.style.display = 'block';
-    } else {
-        btn.style.display = 'none';
+    // Скрываем обе по умолчанию
+    if (toBezBtn) toBezBtn.style.display = 'none';
+    if (toPenBtn) toPenBtn.style.display = 'none';
+    
+    if (!element) return;
+    
+    const cls = element.getAttribute('class') || '';
+    const isBezierVector = cls.includes('bezier-vector');
+    const isBezierContour = element.dataset && element.dataset.isBezierContour === 'true';
+    
+    // Если это безье-контур (фейковый path или сам вектор)
+    if (isBezierVector || isBezierContour) {
+        if (toPenBtn) toPenBtn.style.display = 'block';
+        return;
+    }
+    
+    // Если это обычный вектор — показываем «В безье»
+    if (this.canConvertToBezier(element)) {
+        if (toBezBtn) toBezBtn.style.display = 'block';
     }
 }
 
@@ -3027,21 +3060,15 @@ deleteSelectedBezierContour() {
 // строит фейковый path и вызывает стандартный механизм выделения.
 selectBezierContour(clickedVectorPath) {
     const vector = this.state.bezierVectors.find(v => v.path === clickedVectorPath);
-    if (!vector) {
-        console.warn('Вектор не найден по path');
-        return;
-    }
+    if (!vector) return;
     
-    // Сбрасываем предыдущее выделение (с запеканием)
     this.clearSelection();
     
     const contour = this.buildBezierContourFakePath(vector);
     if (!contour) return;
     
-    // Скрываем оригинальные визуальные элементы контура
     this.hideBezierContourVisuals(contour.vectors);
     
-    // Сохраняем
     this.selectedBezierContour = {
         fakePath: contour.fakePath,
         vectors: contour.vectors,
@@ -3049,8 +3076,8 @@ selectBezierContour(clickedVectorPath) {
     };
     this.selectedElement = contour.fakePath;
     
-    // Рамка
     this.showSelectionHandles(contour.fakePath);
+    this.updateToBezierButtonVisibility(contour.fakePath);
 }
 
 // Скрывает path безье, точки и направляющие
@@ -3221,13 +3248,21 @@ handles.appendChild(centerPoint);
     this.helperLayer.appendChild(handles);
 }
 
+clearSelectionButtons() {
+    const toBezBtn = document.getElementById('toBezierBtn');
+    const toPenBtn = document.getElementById('toPenBtn');
+    if (toBezBtn) toBezBtn.style.display = 'none';
+    if (toPenBtn) toPenBtn.style.display = 'none';
+}
+
 removeSelectionHandles() {
     const handles = document.getElementById('selection-handles');
-    if (handles) {
-        handles.remove();
-    }
-	const toBezierBtn = document.getElementById('toBezierBtn');
-    if (toBezierBtn) toBezierBtn.style.display = 'none';
+    if (handles) handles.remove();
+    
+    //const toBezBtn = document.getElementById('toBezierBtn');
+    //const toPenBtn = document.getElementById('toPenBtn');
+    //if (toBezBtn) toBezBtn.style.display = 'none';
+    //if (toPenBtn) toPenBtn.style.display = 'none';
 }
 
 // Полная очистка выделения — рамка + фейковый path + сброс ссылок
@@ -3238,6 +3273,7 @@ clearSelection() {
     }
     
     this.removeSelectionHandles();
+	this.clearSelectionButtons();  
     
     if (this.selectedBezierContour && this.selectedBezierContour.fakePath) {
         this.selectedBezierContour.fakePath.remove();
@@ -4922,6 +4958,7 @@ convertSelectionToBezier() {
     
     // Сбрасываем выделение ПЕРЕД конвертацией (чтобы не было конфликтов)
     this.removeSelectionHandles();
+	this.clearSelectionButtons(); 
     this.selectedElement = null;
     
     // Шаг 1: получаем единый <path> с d
@@ -5136,6 +5173,178 @@ if (originalTag === 'circle' || originalTag === 'ellipse') {
     
     this.saveSnapshot();
     return true;
+}
+
+adaptiveSampleBezier(p0, c1, c2, p3, maxError = 0.1) {
+    const points = [];
+    
+    const evalAt = (t) => this.evaluateCubicBezier(
+        p0.x, p0.y,
+        c1.x, c1.y,
+        c2.x, c2.y,
+        p3.x, p3.y,
+        t
+    );
+    
+    const recurse = (t0, t1, depth) => {
+        if (depth > 10) return;
+        
+        const tm = (t0 + t1) / 2;
+        const mid = evalAt(tm);
+        const pStart = evalAt(t0);
+        const pEnd = evalAt(t1);
+        
+        // Середина хорды
+        const chordMid = {
+            x: (pStart.x + pEnd.x) / 2,
+            y: (pStart.y + pEnd.y) / 2
+        };
+        
+        const error = Math.hypot(mid.x - chordMid.x, mid.y - chordMid.y);
+        
+        if (error < maxError) {
+            points.push(pEnd);
+        } else {
+            recurse(t0, tm, depth + 1);
+            recurse(tm, t1, depth + 1);
+        }
+    };
+    
+    points.push({ x: p0.x, y: p0.y }); 
+    recurse(0, 1, 0);
+    return points;
+}
+
+convertSelectionToPen() {
+    // ─── 1. Определяем выделение ───
+    let vectors = null;
+    
+    if (this.selectedBezierContour) {
+        vectors = this.selectedBezierContour.vectors;
+        
+        // Скрываем/удаляем фейковый path
+        if (this.selectedBezierContour.fakePath) {
+            this.selectedBezierContour.fakePath.remove();
+        }
+        this.selectedBezierContour = null;
+    } else if (this.selectedElement) {
+        const vector = this.state.bezierVectors.find(v => v.path === this.selectedElement);
+        if (vector) {
+            vectors = this.findAllConnectedBezierVectors(vector);
+        }
+    }
+    
+    if (!vectors || vectors.length === 0) {
+        console.warn('Нет выделенного безье-контура');
+        return false;
+    }
+    
+    // ─── 2. Сбрасываем выделение и кнопки ───
+    this.removeSelectionHandles();
+    this.clearSelectionButtons();
+    
+    // ─── 3. Упорядочиваем в цепочки ───
+    const chains = this.orderVectorsIntoChains(vectors);
+    if (chains.length === 0) return false;
+    
+    // ─── 4. Сэмплируем каждую цепочку в полилинию ───
+    const polylines = [];
+    for (const chain of chains) {
+        const points = [];
+        
+        for (let i = 0; i < chain.length; i++) {
+            const v = chain[i];
+            const fromPoint = this.state.bezierPoints[v.from];
+            const toPoint = this.state.bezierPoints[v.to];
+            if (!fromPoint || !toPoint) continue;
+            
+            const samples = this.adaptiveSampleBezier(
+                { x: fromPoint.x, y: fromPoint.y },
+                { x: v.control1.x, y: v.control1.y },
+                { x: v.control2.x, y: v.control2.y },
+                { x: toPoint.x, y: toPoint.y },
+                0.1
+            );
+            
+            const startIdx = (points.length > 0 &&
+                Math.hypot(points[points.length-1].x - samples[0].x,
+                           points[points.length-1].y - samples[0].y) < 0.01)
+                ? 1 : 0;
+            
+            for (let k = startIdx; k < samples.length; k++) {
+                points.push(samples[k]);
+            }
+        }
+        
+        if (points.length >= 2) {
+            polylines.push(points);
+        }
+    }
+    
+    // ─── 5. Стиль ───
+    const firstVec = vectors[0];
+    const strokeColor = firstVec.path?.getAttribute('stroke') || this.state.strokeColor;
+    const strokeWidth = firstVec.path?.getAttribute('stroke-width') || this.state.strokeWidth;
+    const linecap = firstVec.path?.getAttribute('stroke-linecap') || 'round';
+    const linejoin = firstVec.path?.getAttribute('stroke-linejoin') || 'round';
+    
+    // ─── 6. Создаём новые обычные path'ы ───
+    const newPaths = [];
+    for (const points of polylines) {
+        let d = `M ${points[0].x.toFixed(3)} ${points[0].y.toFixed(3)}`;
+        for (let i = 1; i < points.length; i++) {
+            d += ` L ${points[i].x.toFixed(3)} ${points[i].y.toFixed(3)}`;
+        }
+        
+        const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        newPath.setAttribute('d', d);
+        newPath.setAttribute('stroke', strokeColor);
+        newPath.setAttribute('stroke-width', strokeWidth);
+        newPath.setAttribute('stroke-linecap', linecap);
+        newPath.setAttribute('stroke-linejoin', linejoin);
+        newPath.setAttribute('fill', 'none');
+        
+        this.vectorLayer.appendChild(newPath);
+        newPaths.push(newPath);
+    }
+    
+    // ─── 7. УДАЛЯЕМ безье-структуры: векторы + хелперы ───
+    for (const v of vectors) {
+        if (v.path && v.path.parentNode) v.path.remove();
+        
+        const ge = v.guideElements || {};
+        if (ge.line1) ge.line1.remove();
+        if (ge.control1) ge.control1.remove();
+        if (ge.line2) ge.line2.remove();
+        if (ge.control2) ge.control2.remove();
+        
+        const idx = this.state.bezierVectors.indexOf(v);
+        if (idx !== -1) this.state.bezierVectors.splice(idx, 1);
+    }
+    
+    // ─── 8. УДАЛЯЕМ ВСЕ ТОЧКИ, которые больше не используются ───
+    this.cleanupOrphanBezierPoints();
+    
+    // ─── 9. ВЫХОДИМ из режима безье ───
+    if (this.state.currentTool === 'bezier-points') {
+        this.setTool('select');
+    } else {
+        // Даже если мы не в режиме безье — скрываем хелперы на всякий случай
+        this.hideBezierHelpers();
+        this.toggleBezierPoints(false);
+    }
+    
+    // ─── 10. Сброс ссылок ───
+    this.selectedElement = null;
+    this.selectedBezierContour = null;
+    this.state.pendingConnectPoint = null;
+    this.state.bezierSelectedPoint = null;
+    
+    // ─── 11. Снимок ───
+    this.saveSnapshot();
+    
+    console.log(`Сконвертировано в карандаш: ${newPaths.length} путей`);
+    return newPaths.length > 0;
 }
 
 // Импортирует существующие кривые (M+C) как безье-структуру
@@ -5948,13 +6157,13 @@ cleanupOrphanBezierPoints() {
         usedIndices.add(v.from);
         usedIndices.add(v.to);
     }
-    
+
     // Собираем индексы сирот
     const orphans = [];
     for (let i = 0; i < this.state.bezierPoints.length; i++) {
         if (!usedIndices.has(i)) orphans.push(i);
     }
-    
+  
     // Удаляем с конца, чтобы индексы не сбивались
     orphans.sort((a, b) => b - a);
     for (const idx of orphans) {
@@ -5964,7 +6173,6 @@ cleanupOrphanBezierPoints() {
         }
         this.state.bezierPoints.splice(idx, 1);
     }
-    
     // Обновляем индексы оставшихся
     if (orphans.length > 0) {
         this.state.bezierPoints.forEach((point, i) => {
@@ -17129,16 +17337,26 @@ function updateCoordinatesDisplay(event) {
 }
 
 function updateSheetSize() {
-	sheetWidth = parseInt(sheetWidthInput.value);
-	sheetHeight = parseInt(sheetHeightInput.value);
-	updateCanvasSize();
-	updateStatus(`Размер листа обновлен: ${sheetWidth}×${sheetHeight} мм`, 'success');
-	updatePenCrosshair();
-	if (window.vectorEditor) {
-		window.vectorEditor.updateSvgSize();
-	}
-}
+    sheetWidth = parseInt(sheetWidthInput.value);
+    sheetHeight = parseInt(sheetHeightInput.value);
+    
+    updateCanvasSize();
+    updatePenCrosshair();
+    
+    if (window.vectorEditor) {
+        // Сначала обновляем размеры главного canvas → потом SVG-слой
+        window.vectorEditor.updateSvgSize();
         
+        // Синхронизируем также размер vectorCanvas (width/height/left/top)
+        if (typeof updateVectorCanvasSize === 'function') {
+            updateVectorCanvasSize();
+        }
+    }
+    
+    updateStatus(`Размер листа обновлен: ${sheetWidth}×${sheetHeight} мм`, 'success');
+    drawScene();
+}
+   
 function updateTextElementsList() {
 	textElementsList.innerHTML = '';
 	
@@ -18623,7 +18841,7 @@ function generateGCode(textElements, svgElements, qrElements, penStartX, penStar
     if (allPaths.length === 0) {
         gcode.push('M280 P0 S30.00');
         gcode.push('G4 P' + pauseTime);
-        gcode.push('G1 X' + penStartX.toFixed(2) + ' Y' + penStartY.toFixed(2) + ' F' + travelSpeed);
+        gcode.push('G0 X' + penStartX.toFixed(2) + ' Y' + penStartY.toFixed(2) + ' F' + travelSpeed);
         gcode.push('G4 P' + pauseTime);
         gcode.push('M2');
         return gcode.join('\n');
@@ -18748,7 +18966,7 @@ function generateGCode(textElements, svgElements, qrElements, penStartX, penStar
                 isPenDown = false;
             }
             
-            gcode.push('G1 X' + path[0].x.toFixed(2) + ' Y' + path[0].y.toFixed(2) + ' F' + travelSpeed);
+            gcode.push('G0 X' + path[0].x.toFixed(2) + ' Y' + path[0].y.toFixed(2) + ' F' + travelSpeed);
             currentX = path[0].x;
             currentY = path[0].y;
         }
@@ -18779,7 +18997,7 @@ function generateGCode(textElements, svgElements, qrElements, penStartX, penStar
         gcode.push('M280 P0 S30.00');
         gcode.push('G4 P' + pauseTime);
     }
-    gcode.push('G1 X' + penStartX.toFixed(2) + ' Y' + penStartY.toFixed(2) + ' F' + travelSpeed);
+    gcode.push('G0 X' + penStartX.toFixed(2) + ' Y' + penStartY.toFixed(2) + ' F' + travelSpeed);
     gcode.push('G4 P' + pauseTime);
     gcode.push('M2');
     
