@@ -167,7 +167,8 @@ h1, h2, h3 {
 .compact-group {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 15px;
+    column-gap: 15px;
+	row-gap: 6px;
     align-items: end;
 }
 
@@ -554,13 +555,7 @@ h1, h2, h3 {
                         </select>
 						</div>
 						<div><button id="resetBottomSettings" title="Сбросить настройки трассировки" class="butsett">⟲ Сброс</button>
-						<div id="combinedOptions" style="display: none; margin-top: 6px;">
-							<label for="combinedThickness" >Порог толщины (px):</label>
-							<input type="number" id="combinedThickness" value="3" min="1" max="20" step="1" style="width: 35%;">
-							<div class="info-text" >
-								Тоньше — трассировка, толще — заливка
-							</div>
-						</div>
+
                         </div>
 						<div>
                             <label>Расширение(мм): Сужение(мм):</label>
@@ -617,15 +612,34 @@ h1, h2, h3 {
                             </select>
                             <div class="info-text">белое это черное</div>
                         </div>
-                        <div>
+						<div>
+						<label>Уровни цвета:</label>
+						<div style="align-items: center;display: flex;">
+						<input type="range" id="levelsLeft" min="0" max="254" value="0" style="width: 31%">
+						<input type="number" id="levelsGamma" min="0.1" max="3.0" step="0.1" value="1.0" style="width: 20%">
+						<input type="range" id="levelsRight" min="1" max="255" value="255" style="width: 31%">
+						</div>
+						<div class="info-text" id="levelsinfo">Настройка изображения</div>
+						</div>
+                        
+						<div >
+						<div id="combinedOptions" style="display: flex; 
+						flex-direction: column; gap: 10px">
+							<label for="combinedThickness" >Порог толщины (px):</label>
+							<input type="number" id="combinedThickness" value="3" min="1" max="20" step="1" >
+							<div class="info-text" >Тоньше — трассировка, толще — заливка</div>
+						</div>
+						</div>
+
+						
+						<div>
                             <label>Порог яркости (0-255):</label>
-                            <input type="number" id="threshold" value="128" min="0" max="255">
+							<div style="align-items: center;display: flex;">
+                            <input type="number" id="threshold" value="128" min="0" max="255" style="width: 20%"><input type="range" id="thresholdSlider" min="0" max="255" value="128" style="width: 80%"></div>
                             <div class="info-text">Интенсивность света</div>
                         </div>
                     </div>
-                    <div style="margin-top: 5px;">
-                        <input type="range" id="thresholdSlider" min="0" max="255" value="128" style="width: 100%; margin-top: 4px;">
-                    </div>
+
 
                 </div>
             </div>
@@ -785,7 +799,7 @@ h1, h2, h3 {
 			areaHeight: 297
 		};
 		const ERASE_THROTTLE = 16; 
-		const VECTOR_UPDATE_DELAY = 1000; 
+		const VECTOR_UPDATE_DELAY = 5000; 
 		const VECTOR_UPDATE_DELAY_AFTER_ERASE = 1000; 
 
 		const PERFORMANCE_SETTINGS = {
@@ -819,7 +833,7 @@ function toggleCenterlineOptions() {
     
     const combinedOptions = document.getElementById('combinedOptions');
     if (combinedOptions) {
-        combinedOptions.style.display = (method === 'combined') ? 'block' : 'none';
+        combinedOptions.style.display = (method === 'combined') ? 'flex' : 'none';
     }
 }
 
@@ -973,6 +987,7 @@ function toggleCenterlineOptions() {
 
 		});
 
+
 		// Настройки толщины линий
 		function getLineSettings(type) {
 			const settings = {
@@ -1068,7 +1083,13 @@ function toggleCenterlineOptions() {
 			
 			drawCrosshair(vectorCtx, vectorPreview, sheetWidth, sheetHeight);
 		}
-
+function showLevelsImage() {
+    if (!originalImage || isSvgFile) return;
+    vectorCtx.fillStyle = 'white';
+    vectorCtx.fillRect(0, 0, vectorPreview.width, vectorPreview.height);
+    drawImageWithLevels();
+    updateFrameSizes();
+}
 		// Функция для показа временного изображения с текущим порогом
 		function showTemporaryImage() {
 			if (!originalImage || isSvgFile) return;
@@ -1079,8 +1100,6 @@ function toggleCenterlineOptions() {
 			drawImageWithThreshold();
 			updateFrameSizes();
 		}
-
-		// Функция для отрисовки изображения с примененным порогом
 		function drawImageWithThreshold() {
 			if (!originalImage || isSvgFile) return;
 			
@@ -1145,6 +1164,79 @@ function toggleCenterlineOptions() {
 					data[i+2] = 255;
 				}
 			}
+			
+			tempCtx.putImageData(tempImageData, 0, 0);
+			
+			vectorCtx.drawImage(tempCanvas, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+			vectorCtx.globalAlpha = 1.0;
+			
+			vectorCtx.restore();
+			
+			updateStatus('Показано изображение с текущим порогом.', 'success');
+		}
+		// Функция для отрисовки изображения с примененным порогом
+		function drawImageWithLevels() {
+			if (!originalImage || isSvgFile) return;
+			
+			const areaWidth = parseInt(areaWidthInput.value);
+			const areaHeight = parseInt(areaHeightInput.value);
+			const sheetWidth = parseInt(sheetWidthInput.value);
+			const sheetHeight = parseInt(sheetHeightInput.value);
+			const offsetX = parseFloat(offsetXInput.value);
+			const offsetY = parseFloat(offsetYInput.value);
+			const rotation = parseFloat(rotationInput.value);
+			
+			const scaleX = vectorPreview.width / sheetWidth;
+			const scaleY = vectorPreview.height / sheetHeight;
+			
+			const areaCanvasX = offsetX * scaleX;
+			const areaCanvasY = vectorPreview.height - (offsetY * scaleY) - (areaHeight * scaleY);
+			const areaCanvasWidth = areaWidth * scaleX;
+			const areaCanvasHeight = areaHeight * scaleY;
+			
+			vectorCtx.save();
+			
+			vectorCtx.translate(areaCanvasX + areaCanvasWidth / 2, areaCanvasY + areaCanvasHeight / 2);
+			
+			vectorCtx.rotate(rotation * Math.PI / 180);
+			
+			const imageRatio = originalImage.width / originalImage.height;
+			const areaRatio = areaWidth / areaHeight;
+			
+			let drawWidth, drawHeight;
+			
+			if (areaRatio > imageRatio) {
+				drawHeight = areaCanvasHeight;
+				drawWidth = drawHeight * imageRatio;
+			} else {
+				drawWidth = areaCanvasWidth;
+				drawHeight = drawWidth / imageRatio;
+			}
+			
+			const tempCanvas = document.createElement('canvas');
+			const tempCtx = tempCanvas.getContext('2d');
+			tempCanvas.width = originalImage.width;
+			tempCanvas.height = originalImage.height;
+			
+			tempCtx.drawImage(originalImage, 0, 0);
+			const tempImageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+			
+const threshold = parseInt(thresholdInput.value);
+const invert = document.getElementById('invertImage').value === 'true';
+const left = parseFloat(document.getElementById('levelsLeft').value);
+const right = parseFloat(document.getElementById('levelsRight').value);
+const gamma = parseFloat(document.getElementById('levelsGamma').value);
+const data = tempImageData.data;
+
+for (let i = 0; i < data.length; i += 4) {
+    const b0 = (data[i] + data[i+1] + data[i+2]) / 3;
+    const b1 = applyLevels(b0, left, right, gamma);
+    
+    // Если хочешь видеть картинку ПОСЛЕ Levels в градациях серого:
+    data[i] = b1;
+    data[i+1] = b1;
+    data[i+2] = b1;
+}
 			
 			tempCtx.putImageData(tempImageData, 0, 0);
 			
@@ -1307,7 +1399,7 @@ function toggleCenterlineOptions() {
 		});
 		document.getElementById('combinedThickness').addEventListener('input', function() {
     debouncedExpansionUpdate();
-});
+		});
 
         // Обработчик блокировки пропорций
 		lockProportions.addEventListener('change', function() {
@@ -1342,6 +1434,39 @@ function toggleCenterlineOptions() {
 		}, 600);
 		const debouncedRebuildPaths = debounce(rebuildPathsFromRaw, 600);
 
+document.getElementById('levelsLeft').addEventListener('input', function() {
+    let left = parseFloat(this.value);
+    const right = parseFloat(document.getElementById('levelsRight').value);
+    
+    // Ограничение: left не должен доходить до right
+    if (left >= right) {
+        // Откатываем на предыдущее валидное значение
+        left = right - 1;
+        this.value = left;
+    }
+    document.getElementById('levelsinfo').textContent = `Настройка: ${left} – ${right}`;
+    showLevelsImage();
+    scheduleVectorUpdate();
+});
+
+document.getElementById('levelsRight').addEventListener('input', function() {
+    let right = parseFloat(this.value);
+    const left = parseFloat(document.getElementById('levelsLeft').value);
+    
+    if (right <= left) {
+        right = left + 1;
+        this.value = right;
+    }
+
+    document.getElementById('levelsinfo').textContent = `Настройка: ${left} – ${right}`;
+    showLevelsImage();
+    scheduleVectorUpdate();
+});
+
+document.getElementById('levelsGamma').addEventListener('input', function() {
+    showLevelsImage();
+    scheduleVectorUpdate();
+});
 document.getElementById('simplifyEpsilon').addEventListener('input', debouncedRebuildPaths);
 document.getElementById('smoothStrength').addEventListener('input', debouncedRebuildPaths);
 	
@@ -1363,6 +1488,7 @@ document.getElementById('doorOffsetMM').addEventListener('input', debouncedBridg
 				processAndDrawVectors();
 			}
 		}, 500);
+
 
 		function rebuildPathsFromRaw() {
 			if (!window.cachedRawPathsInternal) return;
@@ -1406,10 +1532,14 @@ document.getElementById('doorOffsetMM').addEventListener('input', debouncedBridg
 				document.getElementById('connectDistance').value = 0.5;
 				document.getElementById('minLineLength').value = 0.5;
 				document.getElementById('invertImage').value = 'false';
+				document.getElementById('showRemovedPaths').value = 'true';
 				document.getElementById('threshold').value = 128;
 				document.getElementById('thresholdSlider').value = 128;
 				document.getElementById('doorOffsetMM').value = 0.2;
 				document.getElementById('maxBridgeLengthMM').value = 2;
+				document.getElementById('levelsLeft').value = 0;
+				document.getElementById('levelsGamma').value = 1;
+				document.getElementById('levelsRight').value = 255;
 				
 			if (originalImage || isSvgFile) {
 				const img = originalImage;
@@ -2139,7 +2269,12 @@ document.getElementById('doorOffsetMM').addEventListener('input', debouncedBridg
 			vectorPaths = [];
 			
 			try {
-					const binary = createBinaryImage(threshold, invert);
+			    const left = parseFloat(document.getElementById('levelsLeft').value);
+				const right = parseFloat(document.getElementById('levelsRight').value);
+				const gamma = parseFloat(document.getElementById('levelsGamma').value);
+    
+				const binary = createBinaryImage(threshold, invert, left, right, gamma);
+					
 					const width = originalImage.width;
 					const height = originalImage.height;
 					const lineThicknessMM = parseFloat(document.getElementById('lineThickness').value);
@@ -4325,36 +4460,43 @@ function findRealNodeCandidates(skeleton, width, height) {
 			return cross < 0 ? -angleDeg : angleDeg;
 		}
 
-	
-		function createBinaryImage(threshold, invert) {
+function applyLevels(brightness, left, right, gamma) {
+    if (left >= right) return brightness;
+    let v = (brightness - left) / (right - left);
+    if (v < 0) v = 0;
+    if (v > 1) v = 1;
+    v = Math.pow(v, 1 / gamma);
+    return v * 255;
+}
 
-			const imageToProcess = isSvgFile && originalImage ? originalImage : originalImage;
-			
-			if (!imageToProcess) {
-				console.error('Нет изображения для создания бинарного');
-				return [];
-			}
-			
-			const width = imageToProcess.width;
-			const height = imageToProcess.height;
-			const binary = new Array(width * height);
-			
-			for (let y = 0; y < height; y++) {
-				for (let x = 0; x < width; x++) {
-					const pixel = getPixel(imageData, x, y);
-					const brightness = (pixel[0] + pixel[1] + pixel[2]) / 3;
-					const alpha = pixel[3];
-					
-					if (alpha === 0) {
-						binary[y * width + x] = 0;
-					} else {
-						const value = invert ? brightness > threshold : brightness < threshold;
-						binary[y * width + x] = value ? 1 : 0;
-					}
-				}
-			}
-			return binary;
-		}
+function createBinaryImage(threshold, invert, left = 0, right = 255, gamma = 1) {
+    const imageToProcess = isSvgFile && originalImage ? originalImage : originalImage;
+    if (!imageToProcess) return [];
+
+    const width = imageToProcess.width;
+    const height = imageToProcess.height;
+    const binary = new Array(width * height);
+
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const pixel = getPixel(imageData, x, y);
+            const b0 = (pixel[0] + pixel[1] + pixel[2]) / 3;
+            const alpha = pixel[3];
+
+            if (alpha === 0) {
+                binary[y * width + x] = 0;
+                continue;
+            }
+
+            // ← применяем Levels
+            const b = applyLevels(b0, left, right, gamma);
+
+            const value = invert ? b > threshold : b < threshold;
+            binary[y * width + x] = value ? 1 : 0;
+        }
+    }
+    return binary;
+}
 
 // Превращает бинарную маску (0/1) в ImageData (0=чёрный, 255=белый),
 // чтобы существующие генераторы (которые читают imageData) могли с ней работать.
