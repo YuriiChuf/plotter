@@ -7525,48 +7525,46 @@ function canvasToImageCoordinates(canvasX, canvasY) {
     const scaleX = imagePreview.width / sheetWidth;
     const scaleY = imagePreview.height / sheetHeight;
     
+    // Область на canvas
     const areaCanvasX = offsetX * scaleX;
     const areaCanvasY = imagePreview.height - (offsetY * scaleY) - (areaHeight * scaleY);
-    const areaCanvasWidth = areaWidth * scaleX;
+    const areaCanvasWidth  = areaWidth  * scaleX;
     const areaCanvasHeight = areaHeight * scaleY;
+    
+    // Центр области на canvas
+    const centerX = areaCanvasX + areaCanvasWidth / 2;
+    const centerY = areaCanvasY + areaCanvasHeight / 2;
+    
+    // ── 1. Обратное вращение: точка из системы листа → система рисунка (до поворота)
+    // Вектор от центра области к точке
+    const dx = canvasX - centerX;
+    const dy = canvasY - centerY;
+    
+    const rad = -rotation * Math.PI / 180;   // ← минус, чтобы отменить вращение
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    
+    const rotatedX = dx * cos - dy * sin;
+    const rotatedY = dx * sin + dy * cos;
+    
+    // Координаты в системе "рисунка до поворота"
+    // Центр — по-прежнему в (0,0), переводим в локальную область
+    const relX = rotatedX + areaCanvasWidth / 2;
+    const relY = rotatedY + areaCanvasHeight / 2;
+    
+    // ── 2. Проверка попадания в область (в системе рисунка)
+    if (relX < 0 || relX > areaCanvasWidth ||
+        relY < 0 || relY > areaCanvasHeight) {
+        return { x: -1, y: -1 };
+    }
     
     const width = originalImage.width;
     const height = originalImage.height;
     const lockProportions = document.getElementById('lockProportions').checked;
 
-    // Проверяем, попадает ли точка в область изображения
-    if (canvasX < areaCanvasX || canvasX > areaCanvasX + areaCanvasWidth ||
-        canvasY < areaCanvasY || canvasY > areaCanvasY + areaCanvasHeight) {
-        return { x: -1, y: -1 };
-    }
-
-    // Координаты относительно области (0,0 в левом верхнем углу области)
-    let relX = canvasX - areaCanvasX;
-    let relY = canvasY - areaCanvasY;
-
-    // Учитываем вращение
-    if (rotation !== 0) {
-        const centerX = areaCanvasWidth / 2;
-        const centerY = areaCanvasHeight / 2;
-        const rad = -rotation * Math.PI / 180;
-        const cos = Math.cos(rad);
-        const sin = Math.sin(rad);
-        
-        // Смещаем к центру, вращаем, возвращаем обратно
-        const tempX = relX - centerX;
-        const tempY = relY - centerY;
-        
-        const rotatedX = tempX * cos - tempY * sin;
-        const rotatedY = tempX * sin + tempY * cos;
-        
-        relX = rotatedX + centerX;
-        relY = rotatedY + centerY;
-    }
-
     let imageX, imageY;
 
     if (lockProportions) {
-        // С ПРОПОРЦИЯМИ - изображение вписывается с сохранением соотношения
         const imageRatio = width / height;
         const areaRatio = areaCanvasWidth / areaCanvasHeight;
         
@@ -7574,18 +7572,15 @@ function canvasToImageCoordinates(canvasX, canvasY) {
         let offsetXDraw = 0, offsetYDraw = 0;
         
         if (areaRatio > imageRatio) {
-            // Область шире - ограничение по высоте
             drawHeight = areaCanvasHeight;
             drawWidth = drawHeight * imageRatio;
             offsetXDraw = (areaCanvasWidth - drawWidth) / 2;
         } else {
-            // Область уже - ограничение по ширине
             drawWidth = areaCanvasWidth;
             drawHeight = drawWidth / imageRatio;
             offsetYDraw = (areaCanvasHeight - drawHeight) / 2;
         }
         
-        // Проверяем, попадает ли точка в изображение (после центрирования)
         if (relX >= offsetXDraw && relX <= offsetXDraw + drawWidth &&
             relY >= offsetYDraw && relY <= offsetYDraw + drawHeight) {
             
@@ -7595,12 +7590,10 @@ function canvasToImageCoordinates(canvasX, canvasY) {
             return { x: -1, y: -1 };
         }
     } else {
-        // БЕЗ ПРОПОРЦИЙ - прямое растягивание
         imageX = Math.round(relX * (width / areaCanvasWidth));
         imageY = Math.round(relY * (height / areaCanvasHeight));
     }
 
-    // Ограничиваем координаты размерами изображения
     return { 
         x: Math.max(0, Math.min(width - 1, imageX)), 
         y: Math.max(0, Math.min(height - 1, imageY)) 
