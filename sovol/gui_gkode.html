@@ -471,12 +471,12 @@ h1, h2, h3 {
                     
                         <div>
                             <label>Начало X (мм):</label>
-                            <input type="number" id="startX" value="0" step="1">
+                            <input type="number" id="startX" value="0" step="1" min="0">
 							<label for="showCrosshair" style="font-size: 10px;">Прицел:</label><input type="checkbox" id="showCrosshair" checked>
                         </div>
                         <div>
                             <label>Начало Y (мм):</label>
-                            <input type="number" id="startY" value="0" step="1">
+                            <input type="number" id="startY" value="0" step="1" min="0">
                         </div>
 
                         <div>
@@ -6508,13 +6508,13 @@ if (bestIndex !== -1) {
 			// Инициализация
 			gcode.push('G21');
 			gcode.push('G90');
-			gcode.push('G92 X0.00 Y0.00 Z0.00');
+			gcode.push('G92 X' + startX.toFixed(2) + ' Y' + startY.toFixed(2)+' Z0');
 			gcode.push('M280 P0 S30.00');
 			gcode.push('G4 P' + pauseTime);
 			gcode.push('');
 			
 			if (filteredPaths.length === 0) {
-				gcode.push('G1 X0 Y0 F' + travelSpeed);
+				gcode.push('G0 X' + startX.toFixed(2) + ' Y' + startY.toFixed(2) + ' F' + travelSpeed);
 				gcode.push('M2');
 				gcode.push('; Нет путей для рисования');
 				return gcode.join('\n');
@@ -6639,7 +6639,7 @@ if (bestIndex !== -1) {
 			const returnTime = (returnDistance / travelSpeed) * 60;
 			totalTravelTime += returnTime;
 			
-			gcode.push('G0 X0 Y0 F' + travelSpeed);
+			gcode.push('G0 X' + startX.toFixed(2) + ' Y' + startY.toFixed(2) + ' F' + travelSpeed);
 			gcode.push('M2');
 			
 			// Расчет общего времени печати
