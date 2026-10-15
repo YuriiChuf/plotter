@@ -2350,7 +2350,10 @@ vectorPaths = smoothedPaths.map(p => douglasPeucker(p, simplifyTolerance));
 			vectorPaths = [];
 			
 			try {
-				const binary = createBinaryImage(threshold, invert);
+const left = parseFloat(document.getElementById('levelsLeft').value);
+const right = parseFloat(document.getElementById('levelsRight').value);
+const gamma = parseFloat(document.getElementById('levelsGamma').value);
+const binary = createBinaryImage(threshold, invert, left, right, gamma);
 				const width = originalImage.width;
 				const height = originalImage.height;
 				
@@ -2658,7 +2661,10 @@ vectorPaths = smoothedPaths.map(p => douglasPeucker(p, simplifyTolerance));
 			const height = originalImage.height;
 			
 			// 1. Общая бинарная маска
-			const binary = createBinaryImage(threshold, invert);
+const left = parseFloat(document.getElementById('levelsLeft').value);
+const right = parseFloat(document.getElementById('levelsRight').value);
+const gamma = parseFloat(document.getElementById('levelsGamma').value);
+const binary = createBinaryImage(threshold, invert, left, right, gamma);
 			
 			// 2. Порог толщины берём из UI (слайдер добавим в блоке 6),
 			//    по умолчанию 3 пикселя
