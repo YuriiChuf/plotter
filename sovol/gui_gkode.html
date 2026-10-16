@@ -1140,11 +1140,11 @@ function showLevelsImage() {
 			
 			const tempCanvas = document.createElement('canvas');
 			const tempCtx = tempCanvas.getContext('2d');
-			tempCanvas.width = originalImage.width;
-			tempCanvas.height = originalImage.height;
-			
-			tempCtx.drawImage(originalImage, 0, 0);
-			const tempImageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+const src = window.previewSmallImage || originalImage;
+tempCanvas.width = src.width;
+tempCanvas.height = src.height;
+tempCtx.drawImage(src, 0, 0);
+const tempImageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
 			
 			const threshold = parseInt(thresholdInput.value);
 			const invert = document.getElementById('invertImage').value === 'true';
@@ -1215,11 +1215,11 @@ function showLevelsImage() {
 			
 			const tempCanvas = document.createElement('canvas');
 			const tempCtx = tempCanvas.getContext('2d');
-			tempCanvas.width = originalImage.width;
-			tempCanvas.height = originalImage.height;
-			
-			tempCtx.drawImage(originalImage, 0, 0);
-			const tempImageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+const src = window.previewSmallImage || originalImage;
+tempCanvas.width = src.width;
+tempCanvas.height = src.height;
+tempCtx.drawImage(src, 0, 0);
+const tempImageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
 			
 const threshold = parseInt(thresholdInput.value);
 const invert = document.getElementById('invertImage').value === 'true';
@@ -1882,7 +1882,21 @@ document.getElementById('doorOffsetMM').addEventListener('input', debouncedBridg
 
 			updateCanvasSizes();
 			displayImage(img);
-			
+(function createPreviewSmall(img) {
+    const maxSize = 400;
+    const ratio = Math.min(maxSize / img.width, maxSize / img.height, 1);
+    const w = Math.max(1, Math.round(img.width * ratio));
+    const h = Math.max(1, Math.round(img.height * ratio));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, w, h);
+    window.previewSmallImage = canvas;
+    console.log(`[PREVIEW] маленькая копия: ${w}x${h} (из ${img.width}x${img.height})`);
+})(img);
 			processAndDrawVectors();
 			updateStatus('Изображение загружено' + (img.width > originalImage.width ? ' (увеличено для лучшего качества)' : ''), 'success');
 		}
