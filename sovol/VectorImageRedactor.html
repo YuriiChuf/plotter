@@ -11242,11 +11242,17 @@ fillShapeWithSnake(element) {
                 setTimeout(() => this.saveSnapshot(), 100);
                 this.svg.style.cursor = oldCursor;
                 return;
-            } else if (fillType === 'spiral') {
-                this.svg.style.cursor = oldCursor;
-                this.startSpiralFill();
-                return;
-            } else {
+			} else if (fillType === 'spiral') {
+				// Подготовка shapeForSpiral — как в startSpiralFill
+				let shapeForSpiral = element;
+				if (element.classList && element.classList.contains('bezier-vector')) {
+					const fullContour = this.getFullBezierContour(element);
+					if (fullContour) shapeForSpiral = fullContour;
+				}
+				
+				this.createSpiralPreview(shapeForSpiral);
+				return;
+			} else {
                 pathD = this.createHorizontalSnakeSimple(bbox, spacing);
             }
             
@@ -12534,21 +12540,22 @@ createSpiralPreview(shapeForSpiral) {
     // === ГРУППА СПИРАЛИ ===
     this._spiralGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     
-    if (points.length > 1) {
-        let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
-        for (let i = 1; i < points.length; i++) {
-            d += ` L ${points[i].x.toFixed(2)} ${points[i].y.toFixed(2)}`;
-        }
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('d', d);
-        path.setAttribute('stroke', '#4dabf7');
-        path.setAttribute('stroke-width', '2');
-        path.setAttribute('stroke-dasharray', '6,4');
-        path.setAttribute('fill', 'none');
-        path.setAttribute('opacity', '0.8');
-        this._spiralGroup.appendChild(path);
-        this._spiralPath = path;
+if (points.length > 1) {
+    let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+    for (let i = 1; i < points.length; i++) {
+        d += ` L ${points[i].x.toFixed(2)} ${points[i].y.toFixed(2)}`;
     }
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('stroke', '#000000'); 
+    path.setAttribute('stroke-width', '0.3'); 
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+    path.setAttribute('fill', 'none');
+    path.setAttribute('pointer-events', 'none');
+    this._spiralGroup.appendChild(path);
+    this._spiralPath = path;
+}
     
     this._spiralPoints = points;
     this._spiralOriginalBBox = originalBBox;
