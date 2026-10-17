@@ -8682,10 +8682,17 @@ if (this.state.currentTool === 'bezier-points') {
     }
     
     // Клик по пути Безье — добавляем точку на путь
-    if (target.classList && target.classList.contains('bezier-vector')) {
-        this.addPointToBezierPath(target, coords.x, coords.y);
-        return;
-    }
+	if (target.classList && target.classList.contains('bezier-vector')) {
+		// ✅ ЕСЛИ ЕСТЬ ВЫДЕЛЕННАЯ ТОЧКА → ПРОДОЛЖАЕМ ПУТЬ
+		if (this.state.bezierSelectedPoint !== null) {
+			this.createNewBezierVector(coords.x, coords.y);
+			return;
+		}
+		
+		// Иначе — вставляем точку в путь
+		this.addPointToBezierPath(target, coords.x, coords.y);
+		return;
+	}
     
     return;
 }
@@ -15451,24 +15458,40 @@ function switchMode(mode) {
                 window.vectorEditor.clearSelection();
             }
         }
-    } else {
-        if (plotterTools) plotterTools.classList.add('hidden');
-        if (vectorTools) vectorTools.classList.remove('hidden');
-        if (modeVectorBtn) modeVectorBtn.classList.add('active');
-        if (modePlotterBtn) modePlotterBtn.classList.remove('active');
-        if (vectorCanvas) vectorCanvas.style.pointerEvents = 'auto';
-        
-        // Возвращаем видимость по текущему инструменту
-        if (window.vectorEditor) {
-            if (window.vectorEditor.state.currentTool === 'bezier-points') {
-                window.vectorEditor.showBezierHelpers();
-                window.vectorEditor.toggleBezierPoints(true);
-            } else {
-                window.vectorEditor.hideBezierHelpers();
-                window.vectorEditor.toggleBezierPoints(false);
-            }
-        }
-    }
+	} else {
+		// ═══ Переключение в ВЕКТОР ═══
+		if (plotterTools) plotterTools.classList.add('hidden');
+		if (vectorTools) vectorTools.classList.remove('hidden');
+		if (modeVectorBtn) modeVectorBtn.classList.add('active');
+		if (modePlotterBtn) modePlotterBtn.classList.remove('active');
+		if (vectorCanvas) vectorCanvas.style.pointerEvents = 'auto';
+		
+		// ═══ СБРОС ПЛОТТЕРНОГО ВЫДЕЛЕНИЯ ═══
+		selectedElementIndex = -1;
+		isSVGSelected = false;
+		selectedSVGIndex = -1;
+		isQRSelected = false;
+		selectedQRIndex = -1;
+		
+		// Обновляем списки и панель свойств
+		if (typeof updateTextElementsList === 'function') updateTextElementsList();
+		if (typeof updateSVGElementsList === 'function') updateSVGElementsList();
+		if (typeof updateQRElementsList === 'function') updateQRElementsList();
+		if (typeof updateElementProperties === 'function') updateElementProperties();
+		if (typeof updateDeleteButtonsVisibility === 'function') updateDeleteButtonsVisibility();
+		if (typeof drawScene === 'function') drawScene();
+		
+		// ═══ Восстановление видимости безье-хелперов ═══
+		if (window.vectorEditor) {
+			if (window.vectorEditor.state.currentTool === 'bezier-points') {
+				window.vectorEditor.showBezierHelpers();
+				window.vectorEditor.toggleBezierPoints(true);
+			} else {
+				window.vectorEditor.hideBezierHelpers();
+				window.vectorEditor.toggleBezierPoints(false);
+			}
+		}
+	}
     
     updateVectorCanvasSize();
 }
@@ -20316,25 +20339,68 @@ function convertVectorToSvgElement() {
     
     // Собираем ВСЕ элементы: path, line, rect, circle, ellipse
     const paths = [];
+const ve = window.vectorEditor;
+
+if (ve.state.bezierVectors.length > 0) {
+    const chains = ve.orderVectorsIntoChains(ve.state.bezierVectors);
+
+    for (const chain of chains) {
+        const points = [];
+        
+        for (const v of chain) {
+            const fromPoint = ve.state.bezierPoints[v.from];
+            const toPoint = ve.state.bezierPoints[v.to];
+            if (!fromPoint || !toPoint) continue;
+            
+            const N = 20;
+            for (let i = 0; i <= N; i++) {
+                const t = i / N;
+                const p = ve.evaluateCubicBezier(
+                    fromPoint.x, fromPoint.y,
+                    v.control1.x, v.control1.y,
+                    v.control2.x, v.control2.y,
+                    toPoint.x, toPoint.y,
+                    t
+                );
+                
+                if (points.length > 0 && i === 0) {
+                    const last = points[points.length - 1];
+                    if (Math.hypot(last.x - p.x, last.y - p.y) < 0.01) continue;
+                }
+                
+                points.push(p);
+            }
+        }
+        
+        if (points.length >= 2) {
+            paths.push(points);
+        }
+    }
+
+}
+
+// ═══════════════════════════════════════════════
+// 2. Обычные path/line/rect/circle — обход DOM (безье пропускаем)
+// ═══════════════════════════════════════════════
+vectorLayer.querySelectorAll('path, line, rect, circle, ellipse').forEach(el => {
+    // Пропускаем безье (уже собрали выше)
+    if (el.classList?.contains('bezier-vector')) return;
     
-    vectorLayer.querySelectorAll('path, line, rect, circle, ellipse').forEach(el => {
-        const cls = el.getAttribute('class') || '';
-        const id = el.id || '';
-        
-        // Пропускаем вспомогательные
-        if (cls.includes('bezier-guide') || 
-            cls.includes('bezier-point') || 
-            cls.includes('bezier-control')) return;
-        if (id.includes('indicator') || id.includes('push') || 
-            id.includes('eraser') || id.includes('selection')) return;
-        
-        // Используем captureElementPoints для универсального сбора
-        const points = window.vectorEditor.captureElementPoints(el);
-        if (!points || points.length < 2) return;
-        
-        paths.push(points);
-    });
+    const cls = el.getAttribute('class') || '';
+    const id = el.id || '';
     
+    if (cls.includes('bezier-guide') || 
+        cls.includes('bezier-point') || 
+        cls.includes('bezier-control')) return;
+    if (id.includes('indicator') || id.includes('push') || 
+        id.includes('eraser') || id.includes('selection')) return;
+    
+    const points = ve.captureElementPoints(el);
+    if (!points || points.length < 2) return;
+    
+    paths.push(points);
+});
+
     if (paths.length === 0) {
         updateStatus('Нет векторных путей для конвертации', 'error');
         return;
@@ -20416,7 +20482,7 @@ function convertVectorToSvgElement() {
     // Добавляем в svgElements
     svgElements.push(newSvg);
     
-    // Удаляем все path/line/rect/circle/ellipse из vectorLayer (кроме вспомогательных)
+    // Удаляем все path/line/rect/circle/ellipse из vectorLayer 
     Array.from(vectorLayer.querySelectorAll('path, line, rect, circle, ellipse')).forEach(el => {
         const cls = el.getAttribute('class') || '';
         const id = el.id || '';
@@ -20428,7 +20494,51 @@ function convertVectorToSvgElement() {
         
         el.remove();
     });
+if (window.vectorEditor) {
+    const ve = window.vectorEditor;
     
+    // 1. Удаляем точки безье из DOM (на случай если что-то осталось)
+    ve.state.bezierPoints.forEach(p => {
+        if (p.element && p.element.parentNode) {
+            p.element.remove();
+        }
+    });
+    
+    // 2. Удаляем векторы безье из DOM (пути и направляющие)
+    ve.state.bezierVectors.forEach(v => {
+        if (v.path && v.path.parentNode) v.path.remove();
+        const ge = v.guideElements || {};
+        if (ge.line1) ge.line1.remove();
+        if (ge.control1) ge.control1.remove();
+        if (ge.line2) ge.line2.remove();
+        if (ge.control2) ge.control2.remove();
+    });
+    
+    // 3. Очищаем state
+    ve.state.bezierPoints = [];
+    ve.state.bezierVectors = [];
+    ve.state.bezierSelectedPoint = null;
+    ve.state.pendingConnectPoint = null;
+    ve.state.lastBezierDirection = null;
+    ve.state.lastBezierLength = null;
+    
+    // 4. Сбрасываем выделение (если было)
+    if (ve.selectedBezierContour) {
+        if (ve.selectedBezierContour.fakePath?.parentNode) {
+            ve.selectedBezierContour.fakePath.remove();
+        }
+        ve.selectedBezierContour = null;
+    }
+    ve.selectedElement = null;
+    
+    // 5. Скрываем хелперы
+    ve.hideBezierHelpers();
+    ve.toggleBezierPoints(false);
+    
+    // 6. Снимок «чистого» состояния
+    ve.saveSnapshot();
+}
+
     // Обновляем списки
     updateSVGElementsList();
     drawScene();
