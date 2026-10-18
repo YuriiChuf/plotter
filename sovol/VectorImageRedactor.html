@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Векторный редактор для плоттера</title>
+    <title>Векторный редактор для плоттера v3.8</title>
 <style>
 * {
     margin: 0;
@@ -1140,6 +1140,7 @@ input[type="range"] {
                 <option value="linear90">Вертикальная</option>
                 <option value="spiral">Спираль</option>
                 <option value="chaotic">Хаотичная</option>
+				<option value="contour">Контурная (сжатие)</option>
             </select>
 <div class="stroke-row">          
             <label>Шаг (мм): <span id="fillSpacingValue">2.0</span></label>
@@ -11252,6 +11253,9 @@ fillShapeWithSnake(element) {
 				
 				this.createSpiralPreview(shapeForSpiral);
 				return;
+			} else if (fillType === 'contour') {
+				this.fillWithContours(element, spacingMM, marginMM);
+				return;
 			} else {
                 pathD = this.createHorizontalSnakeSimple(bbox, spacing);
             }
@@ -11292,6 +11296,580 @@ fillShapeWithSnake(element) {
             this.updateCursor();
         }
     }, 10); // Небольшая задержка чтобы курсор обновился
+}
+
+
+simplifyContour(points, minDistance, isClosed = false) {
+    if (!points || points.length < 3) return points;
+    if (minDistance <= 0) return points;
+    
+    const result = [points[0]];
+    
+    for (let i = 1; i < points.length; i++) {
+        const last = result[result.length - 1];
+        const dist = Math.hypot(points[i].x - last.x, points[i].y - last.y);
+        
+        if (dist >= minDistance) {
+            result.push(points[i]);
+        }
+    }
+    
+    // Замыкание: проверяем, что последняя точка далеко от первой
+    if (isClosed && result.length >= 3) {
+        const first = result[0];
+        const last = result[result.length - 1];
+        const closeDist = Math.hypot(last.x - first.x, last.y - first.y);
+        
+        if (closeDist < minDistance) {
+            result.pop();   // убираем близкую к первой
+        }
+    }
+    
+    if (result.length < 3) return points;
+    
+    return result;
+}
+
+smoothContour(points, strength = 0.1, iterations = 1) {
+    if (points.length < 3) return points;
+    
+    const originalArea = this.polygonArea(points);
+    
+    let result = points.map(p => ({ x: p.x, y: p.y }));
+    
+    for (let iter = 0; iter < iterations; iter++) {
+        const smoothed = result.map((p, i) => {
+            const prev = result[(i - 1 + result.length) % result.length];
+            const next = result[(i + 1) % result.length];
+            
+            const midX = (prev.x + next.x) / 2;
+            const midY = (prev.y + next.y) / 2;
+            
+            return {
+                x: p.x + (midX - p.x) * strength,
+                y: p.y + (midY - p.y) * strength
+            };
+        });
+        result = smoothed;
+    }
+    
+    // ═══ НОРМАЛИЗАЦИЯ: масштабируем так, чтобы площадь вернулась ═══
+    const newArea = this.polygonArea(result);
+    if (newArea > 0.001 && Math.abs(newArea - originalArea) > 0.01) {
+        const scale = Math.sqrt(originalArea / newArea);
+        
+        // Центр масс
+        let cx = 0, cy = 0;
+        for (const p of result) {
+            cx += p.x;
+            cy += p.y;
+        }
+        cx /= result.length;
+        cy /= result.length;
+        
+        // Масштабируем относительно центра
+        result = result.map(p => ({
+            x: cx + (p.x - cx) * scale,
+            y: cy + (p.y - cy) * scale
+        }));
+    }
+    
+    return result;
+}
+
+closeGaps(points, maxGap, stepPx) {
+    if (!points || points.length < 2) return points;
+    
+    const result = [];
+    const n = points.length;
+    
+    for (let i = 0; i < n; i++) {
+        const a = points[i];
+        const b = points[(i + 1) % n];
+        
+        result.push(a);
+        
+        const dist = Math.hypot(b.x - a.x, b.y - a.y);
+        
+        if (dist > maxGap) {
+            const steps = Math.ceil(dist / (stepPx * 0.7));
+            
+            for (let s = 1; s < steps; s++) {
+                const t = s / steps;
+                result.push({
+                    x: a.x + (b.x - a.x) * t,
+                    y: a.y + (b.y - a.y) * t
+                });
+            }
+        }
+    }
+    
+    return result;
+}
+
+rasterizeShape(contourPoints, scale = 4, padding = 4) {
+    // bounding box контура
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of contourPoints) {
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+    }
+    
+    // Размер растра
+    const w = Math.ceil((maxX - minX + padding * 2) * scale);
+    const h = Math.ceil((maxY - minY + padding * 2) * scale);
+    
+    // Canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    
+    // Чёрная фигура на белом
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    
+    const offsetX = -minX * scale + padding * scale;
+    const offsetY = -minY * scale + padding * scale;
+    
+    ctx.moveTo(contourPoints[0].x * scale + offsetX, contourPoints[0].y * scale + offsetY);
+    for (let i = 1; i < contourPoints.length; i++) {
+        ctx.lineTo(contourPoints[i].x * scale + offsetX, contourPoints[i].y * scale + offsetY);
+    }
+    ctx.closePath();
+    ctx.fill();
+    
+    // Бинарная маска (1 = фигура)
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const binary = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+        binary[i] = imageData.data[i * 4] < 128 ? 1 : 0;
+    }
+    
+    return {
+        binary, w, h, scale, offsetX, offsetY,
+        minX, minY
+    };
+}
+
+extractContourAtLevel(dist, w, h, level, scale, offsetX, offsetY, minX, minY) {
+    const isInside = (x, y) => {
+        if (x < 0 || x >= w || y < 0 || y >= h) return false;
+        return dist[y * w + x] > level;
+    };
+    
+    // 1. Собираем рёбра границы
+    // Ребро — отрезок между двумя точками (углами пикселей)
+    // Ключ — координата угла, значение — список рёбер
+    const edges = [];   // {x1, y1, x2, y2}
+    
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            if (!isInside(x, y)) continue;
+            
+            // Проверяем 4 стороны
+            // Сверху
+            if (!isInside(x, y - 1)) {
+                edges.push({ x1: x, y1: y, x2: x + 1, y2: y });
+            }
+            // Справа
+            if (!isInside(x + 1, y)) {
+                edges.push({ x1: x + 1, y1: y, x2: x + 1, y2: y + 1 });
+            }
+            // Снизу
+            if (!isInside(x, y + 1)) {
+                edges.push({ x1: x + 1, y1: y + 1, x2: x, y2: y + 1 });
+            }
+            // Слева
+            if (!isInside(x - 1, y)) {
+                edges.push({ x1: x, y1: y + 1, x2: x, y2: y });
+            }
+        }
+    }
+    
+    if (edges.length === 0) return [];
+    
+    // 2. Собираем рёбра в замкнутый контур
+    // Ключ — точка (x,y), значение — список рёбер, начинающихся/заканчивающихся здесь
+    const pointsMap = new Map();
+    const keyOf = (x, y) => `${x},${y}`;
+    
+    for (const e of edges) {
+        const k1 = keyOf(e.x1, e.y1);
+        const k2 = keyOf(e.x2, e.y2);
+        
+        if (!pointsMap.has(k1)) pointsMap.set(k1, { x: e.x1, y: e.y1, edges: [] });
+        if (!pointsMap.has(k2)) pointsMap.set(k2, { x: e.x2, y: e.y2, edges: [] });
+        
+        pointsMap.get(k1).edges.push(e);
+        pointsMap.get(k2).edges.push(e);
+    }
+    
+    // 3. Обходим контур, начиная с первого ребра
+    const contour = [];
+    const usedEdges = new Set();
+    let currentEdge = edges[0];
+    let currentPoint = { x: currentEdge.x1, y: currentEdge.y1 };
+    const startPoint = currentPoint;
+    
+    const maxSteps = edges.length * 2;
+    let steps = 0;
+    
+    while (steps < maxSteps) {
+        // Преобразуем текущую точку в SVG
+        contour.push({
+            x: (currentPoint.x - offsetX) / scale,
+            y: (currentPoint.y - offsetY) / scale
+        });
+        
+        // Находим следующее ребро из currentPoint
+        const k = keyOf(currentPoint.x, currentPoint.y);
+        const point = pointsMap.get(k);
+        if (!point) break;
+        
+        // Ищем неиспользованное ребро
+        let nextEdge = null;
+        for (const e of point.edges) {
+            if (usedEdges.has(e)) continue;
+            nextEdge = e;
+            break;
+        }
+        
+        if (!nextEdge) break;
+        
+        usedEdges.add(nextEdge);
+        
+        // Определяем следующий конец ребра
+        if (nextEdge.x1 === currentPoint.x && nextEdge.y1 === currentPoint.y) {
+            currentPoint = { x: nextEdge.x2, y: nextEdge.y2 };
+        } else {
+            currentPoint = { x: nextEdge.x1, y: nextEdge.y1 };
+        }
+        
+        // Проверка на замыкание
+        if (currentPoint.x === startPoint.x && currentPoint.y === startPoint.y && contour.length > 2) {
+            break;
+        }
+        
+        steps++;
+    }
+    
+    return contour;
+}
+
+distanceTransform(binary, w, h) {
+    const INF = 1e9;
+    const dist = new Float32Array(w * h);
+    
+    // Инициализация
+    for (let i = 0; i < w * h; i++) {
+        dist[i] = binary[i] === 1 ? INF : 0;
+    }
+    
+    // Прямой проход (сверху-слева)
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const idx = y * w + x;
+            if (dist[idx] === 0) continue;
+            
+            let minVal = dist[idx];
+            
+            // Соседи сверху-слева
+            if (y > 0) {
+                if (x > 0) minVal = Math.min(minVal, dist[(y-1)*w + (x-1)] + 1.414);
+                minVal = Math.min(minVal, dist[(y-1)*w + x] + 1);
+                if (x < w - 1) minVal = Math.min(minVal, dist[(y-1)*w + (x+1)] + 1.414);
+            }
+            if (x > 0) minVal = Math.min(minVal, dist[y*w + (x-1)] + 1);
+            
+            dist[idx] = minVal;
+        }
+    }
+    
+    // Обратный проход (снизу-справа)
+    for (let y = h - 1; y >= 0; y--) {
+        for (let x = w - 1; x >= 0; x--) {
+            const idx = y * w + x;
+            if (dist[idx] === 0) continue;
+            
+            let minVal = dist[idx];
+            
+            if (y < h - 1) {
+                if (x < w - 1) minVal = Math.min(minVal, dist[(y+1)*w + (x+1)] + 1.414);
+                minVal = Math.min(minVal, dist[(y+1)*w + x] + 1);
+                if (x > 0) minVal = Math.min(minVal, dist[(y+1)*w + (x-1)] + 1.414);
+            }
+            if (x < w - 1) minVal = Math.min(minVal, dist[y*w + (x+1)] + 1);
+            
+            dist[idx] = minVal;
+        }
+    }
+    
+    return dist;
+}
+
+fillWithContours(element, stepMM, marginMM) {
+    // 1. Контур
+    const closedD = this.getClosedShapePath(element);
+    if (!closedD) return;
+    
+    let calcD = /[CcQq]/.test(closedD) 
+        ? this.convertBezierToPolylineForCalculation(closedD) 
+        : closedD;
+    
+    let contour = this.parseDToPoints(calcD);
+    if (!contour || contour.length < 3) return;
+    
+    const isClosed = true;
+    const stepPx = this.mmToSvgPixels(stepMM);
+    if (stepPx <= 0.1) return;
+    
+    // 2. Растеризация с масштабом (0.25мм точность)
+    const SCALE = 10;
+    const raster = this.rasterizeShape(contour, SCALE, 4);
+    
+    console.log('[CONTOUR] растр:', raster.w, 'x', raster.h);
+    
+    // 3. Distance transform (один раз!)
+    const t0 = performance.now();
+    const dist = this.distanceTransform(raster.binary, raster.w, raster.h);
+    console.log('[CONTOUR] distance transform:', (performance.now() - t0).toFixed(2), 'мс');
+    
+    // 4. Слои через порог
+    const stepRaster = stepPx * SCALE;
+    const layers = [];
+    const MAX_LAYERS = 200;
+    
+    // Порог начинаем с margin (или 0)
+    const marginPx = this.mmToSvgPixels(marginMM);
+    const startLevel = marginPx * SCALE;
+    
+    for (let i = 0; i < MAX_LAYERS; i++) {
+        const level = startLevel + i * stepRaster;
+        
+        // Есть ли пиксели с dist > level?
+        let hasAny = false;
+        for (let j = 0; j < dist.length; j++) {
+            if (dist[j] > level) { hasAny = true; break; }
+        }
+        if (!hasAny) break;
+        
+        const t1 = performance.now();
+        const layerContour = this.extractContourAtLevel(
+            dist, raster.w, raster.h, level,
+            SCALE, raster.offsetX, raster.offsetY,
+            raster.minX, raster.minY
+        );
+        console.log(`[CONTOUR] Слой ${i}: контур за ${(performance.now() - t1).toFixed(1)}мс, точек ${layerContour.length}`);
+        
+        if (layerContour.length < 3) break;
+        
+        // Упростить
+        const simplified = this.simplifyPolylineRDP(layerContour, stepPx * 0.1);
+        if (simplified.length < 3) break;
+        
+        layers.push(simplified);
+    }
+    
+    console.log('[CONTOUR] слоёв:', layers.length);
+    
+    // 5. Отрисовать
+    if (layers.length > 0) {
+        this.createSnakePaths(layers, element.getAttribute('transform') || '', isClosed);
+    }
+    
+    this.updateFillInfo(`✅ Контурная (${layers.length} слоёв, шаг ${stepMM}мм)`);
+    setTimeout(() => this.saveSnapshot(), 100);
+}
+
+removeDuplicates(points, tolerance = 0.1) {
+    if (!points || points.length < 2) return points;
+    
+    const result = [points[0]];
+    
+    for (let i = 1; i < points.length; i++) {
+        const last = result[result.length - 1];
+        const dist = Math.hypot(points[i].x - last.x, points[i].y - last.y);
+        
+        if (dist > tolerance) {
+            result.push(points[i]);
+        }
+    }
+    
+    // Если последняя близка к первой — убрать
+    if (result.length > 1) {
+        const first = result[0];
+        const last = result[result.length - 1];
+        if (Math.hypot(last.x - first.x, last.y - first.y) < tolerance) {
+            result.pop();
+        }
+    }
+    
+    return result;
+}
+
+resampleContour(points, maxSegmentLength) {
+    if (!points || points.length < 2) return points;
+    if (maxSegmentLength <= 0) return points;
+    
+    const result = [];
+    const n = points.length;
+    
+    for (let i = 0; i < n; i++) {
+        const a = points[i];
+        const b = points[(i + 1) % n];
+        
+        result.push({ x: a.x, y: a.y });
+        
+        // Расстояние между точками
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy);
+        
+        // Если длиннее maxSegmentLength — добавить промежуточные точки
+        if (dist > maxSegmentLength) {
+            const steps = Math.ceil(dist / maxSegmentLength);
+            for (let s = 1; s < steps; s++) {
+                const t = s / steps;
+                result.push({
+                    x: a.x + dx * t,
+                    y: a.y + dy * t
+                });
+            }
+        }
+    }
+    
+    return result;
+}
+
+resampleUniform(points, targetStep, isClosed = true) {
+    if (!points || points.length < 2) return points;
+    if (targetStep <= 0) return points;
+    
+    const n = points.length;
+    
+    // 1. Считаем периметр (для замкнутого — сумма всех сторон, для открытого — без замыкания)
+    const limit = isClosed ? n : n - 1;
+    let perimeter = 0;
+    const sideLengths = [];
+    
+    for (let i = 0; i < limit; i++) {
+        const a = points[i];
+        const b = points[(i + 1) % n];
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        sideLengths.push(len);
+        perimeter += len;
+    }
+    
+    if (perimeter < 0.001) return points;
+    
+    // 2. Сколько точек должно быть
+    const targetCount = Math.max(3, Math.round(perimeter / targetStep));
+    const actualStep = perimeter / targetCount;
+    
+    // 3. Идём по контуру, добавляем точки через actualStep
+    const result = [];
+    let accum = 0;
+    let target = 0;
+    
+    // Первая точка
+    result.push({ x: points[0].x, y: points[0].y });
+    target = actualStep;
+    
+    for (let i = 0; i < limit; i++) {
+        const a = points[i];
+        const b = points[(i + 1) % n];
+        const segLen = sideLengths[i];
+        
+        let posOnSeg = 0;
+        
+        while (accum + segLen - posOnSeg >= target) {
+            // Нашли точку на этом отрезке
+            const need = target - accum;
+            const t = (posOnSeg + need) / segLen;
+            
+            result.push({
+                x: a.x + (b.x - a.x) * t,
+                y: a.y + (b.y - a.y) * t
+            });
+            
+            posOnSeg += need;
+            target += actualStep;
+        }
+        
+        accum += segLen - posOnSeg;
+        target -= segLen - posOnSeg;
+    }
+    
+    // Для замкнутого — последняя точка не нужна (она = первой)
+    // Для открытого — добавляем последнюю
+    if (!isClosed) {
+        const last = points[n - 1];
+        const prevResult = result[result.length - 1];
+        if (Math.hypot(last.x - prevResult.x, last.y - prevResult.y) > 0.001) {
+            result.push({ x: last.x, y: last.y });
+        }
+    }
+    
+    return result;
+}
+
+// Разбивает контур на сегменты, исключая участки, где обе точки на скелете
+splitBySkeleton(points, onSkeleton, isClosed) {
+    const segments = [];
+    let currentSeg = [];
+    const n = points.length;
+    
+    for (let i = 0; i < n; i++) {
+        const curr = points[i];
+        const currOnSkel = onSkeleton[i];
+        
+        // Смотрим на предыдущую точку (для сегмента)
+        const prevIdx = (i - 1 + n) % n;
+        const prev = points[prevIdx];
+        const prevOnSkel = onSkeleton[prevIdx];
+        
+        // Сегмент активен, если хотя бы одна из точек (prev или curr) не на скелете
+        const segmentActive = !currOnSkel || !prevOnSkel;
+        
+        if (segmentActive) {
+            if (currentSeg.length === 0) {
+                // Начинаем новый сегмент с prev
+                currentSeg.push({ x: prev.x, y: prev.y });
+            }
+            currentSeg.push({ x: curr.x, y: curr.y });
+        } else {
+            // Сегмент неактивен — закрываем текущий
+            if (currentSeg.length >= 2) {
+                segments.push(currentSeg);
+            }
+            currentSeg = [];
+        }
+    }
+    
+    // Замыкание
+    if (currentSeg.length >= 2) {
+        segments.push(currentSeg);
+    }
+    
+    // Если контур замкнут и первый+последний сегменты стыкуются — объединяем
+    if (isClosed && segments.length > 1) {
+        const first = segments[0];
+        const last = segments[segments.length - 1];
+        const firstPt = first[0];
+        const lastPt = last[last.length - 1];
+        
+        if (Math.hypot(firstPt.x - lastPt.x, firstPt.y - lastPt.y) < 0.1) {
+            segments[0] = last.concat(first.slice(1));
+            segments.pop();
+        }
+    }
+    
+    return segments;
 }
 
 convertBezierToPolylineForCalculation(d) {
@@ -12208,7 +12786,7 @@ shuffleArray(array) {
     }
 }
 
-createSnakePaths(segments, transform = '') {
+createSnakePaths(segments, transform = '', closePath = false) {
     let count = 0;
     
     for (const segment of segments) {
@@ -12237,7 +12815,7 @@ createSnakePaths(segments, transform = '') {
         for (let i = 1; i < transformedPoints.length; i++) {
             d += ` L ${transformedPoints[i].x.toFixed(2)} ${transformedPoints[i].y.toFixed(2)}`;
         }
-        
+        if (closePath) d += ' Z';
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         path.setAttribute('d', d);
         path.setAttribute('stroke', this.state.strokeColor);
@@ -12540,22 +13118,22 @@ createSpiralPreview(shapeForSpiral) {
     // === ГРУППА СПИРАЛИ ===
     this._spiralGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     
-if (points.length > 1) {
-    let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
-    for (let i = 1; i < points.length; i++) {
-        d += ` L ${points[i].x.toFixed(2)} ${points[i].y.toFixed(2)}`;
-    }
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', d);
-    path.setAttribute('stroke', '#000000'); 
-    path.setAttribute('stroke-width', '0.3'); 
-    path.setAttribute('stroke-linecap', 'round');
-    path.setAttribute('stroke-linejoin', 'round');
-    path.setAttribute('fill', 'none');
-    path.setAttribute('pointer-events', 'none');
-    this._spiralGroup.appendChild(path);
-    this._spiralPath = path;
-}
+	if (points.length > 1) {
+		let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+		for (let i = 1; i < points.length; i++) {
+			d += ` L ${points[i].x.toFixed(2)} ${points[i].y.toFixed(2)}`;
+		}
+		const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+		path.setAttribute('d', d);
+		path.setAttribute('stroke', '#000000'); 
+		path.setAttribute('stroke-width', '0.3'); 
+		path.setAttribute('stroke-linecap', 'round');
+		path.setAttribute('stroke-linejoin', 'round');
+		path.setAttribute('fill', 'none');
+		path.setAttribute('pointer-events', 'none');
+		this._spiralGroup.appendChild(path);
+		this._spiralPath = path;
+	}
     
     this._spiralPoints = points;
     this._spiralOriginalBBox = originalBBox;
@@ -16053,9 +16631,78 @@ function enableSVGPartSelection() {
     updateStatus('Режим выделения: зажмите и перетащите мышь', 'success');
     drawScene();
 }
+function syncInputsFromHTML() {
+    console.log('[SYNC] Синхронизация input → переменные');
+    
+    // ═══ СЛАЙДЕРЫ С ПОДПИСЯМИ ═══
+    const sliderBindings = [
+        { id: 'fillSpacingSlider', valueId: 'fillSpacingValue', format: v => v },
+        { id: 'fillMarginSlider', valueId: 'fillMarginValue', format: v => v },
+        { id: 'strokeWidth', valueId: 'strokeWidthValue', format: v => parseFloat(v).toFixed(1) },
+        { id: 'smoothSlider', valueId: 'smoothValue', format: v => v },
+        { id: 'eraserSizeSlider', valueId: 'eraserSizeValue', format: v => v },
+        { id: 'pushRadiusSlider', valueId: 'pushRadiusValue', format: v => v },
+        { id: 'pushStrengthSlider', valueId: 'pushStrengthValue', format: v => (parseInt(v) / 100).toFixed(1) },
+        { id: 'bgopacitySlider', valueId: 'bgopacityValue', format: v => v },
+        { id: 'brightnessSlider', valueId: 'brightnessValue', format: v => v },
+        { id: 'contrastSlider', valueId: 'contrastValue', format: v => v }
+    ];
+    
+    for (const bind of sliderBindings) {
+        const input = document.getElementById(bind.id);
+        const label = document.getElementById(bind.valueId);
+        if (input && label) {
+            label.textContent = bind.format(input.value);
+        }
+    }
+    
+    // ═══ ЧЕКБОКСЫ ═══
+    // (значение читается из checkbox.checked — браузер обычно восстанавливает)
+    
+    // ═══ СИНХРОНИЗАЦИЯ ПЕРЕМЕННЫХ ═══
+    
+    // Размер листа
+    sheetWidth = parseInt(sheetWidthInput.value) || 210;
+    sheetHeight = parseInt(sheetHeightInput.value) || 297;
+    
+    // Цвет / толщина пера
+    const strokeColorInput = document.getElementById('strokeColor');
+    const strokeWidthInput = document.getElementById('strokeWidth');
+    if (strokeColorInput) strokeColor = strokeColorInput.value;
+    if (strokeWidthInput) strokeWidth = parseFloat(strokeWidthInput.value);
+    
+    // Фон подложки
+    const bgOpacityInput = document.getElementById('bgopacitySlider');
+    const brightnessInput = document.getElementById('brightnessSlider');
+    const contrastInput = document.getElementById('contrastSlider');
+    const invertInput = document.getElementById('invertBackground');
+    const stretchInput = document.getElementById('stretchImage');
+    
+    if (bgOpacityInput) backgroundOpacity = parseInt(bgOpacityInput.value);
+    if (brightnessInput) backgroundBrightness = parseInt(brightnessInput.value);
+    if (contrastInput) backgroundContrast = parseInt(contrastInput.value);
+    if (invertInput) backgroundInvert = invertInput.checked;
+    if (stretchInput) stretchBackground = stretchInput.checked;
+    
+    // G-code
+    // (значения читаются в generateGCode напрямую — не нужны переменные)
+    
+    // QR в свойствах
+    const qrHatchInput = document.getElementById('elementQRHatch');
+    // (читается в updateSelectedElement напрямую)
+    
+    // Режим заливки
+    // (читается в fillShapeWithSnake напрямую)
+    
+    console.log('[SYNC] Готово:', {
+        sheetWidth, sheetHeight, strokeColor, strokeWidth,
+        backgroundOpacity, backgroundBrightness, backgroundContrast
+    });
+}
 
 // Инициализация основная
 async function init() {
+	syncInputsFromHTML();
 	updateCanvasSize();
 	setupEventListeners();
 	setupCollapsible();
