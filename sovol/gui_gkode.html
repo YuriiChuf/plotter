@@ -2959,76 +2959,98 @@ const binary = createBinaryImage(threshold, invert, left, right, gamma);
 		}
 
         // Отображение изображения с учетом трансформаций
-		function displayImage(img) {
-			if (!img) return;
-			
-			const areaWidth  = parseInt(areaWidthInput.value);
-			const areaHeight = parseInt(areaHeightInput.value);
-			const sheetWidth = parseInt(sheetWidthInput.value);
-			const sheetHeight= parseInt(sheetHeightInput.value);
-			const offsetX    = parseFloat(offsetXInput.value);
-			const offsetY    = parseFloat(offsetYInput.value);
-			const rotation   = parseFloat(rotationInput.value);
-			
-			imageCtx.fillStyle = 'white';
-			imageCtx.fillRect(0, 0, imagePreview.width, imagePreview.height);
-			
-			const scaleX = imagePreview.width / sheetWidth;
-			const scaleY = imagePreview.height / sheetHeight;
-			
-			const areaCanvasX = offsetX * scaleX;
-			const areaCanvasY = imagePreview.height - (offsetY * scaleY) - (areaHeight * scaleY);
-			const areaCanvasWidth  = areaWidth * scaleX;
-			const areaCanvasHeight = areaHeight * scaleY;
-			
-			imageCtx.save();
-			imageCtx.translate(areaCanvasX + areaCanvasWidth / 2, areaCanvasY + areaCanvasHeight / 2);
-			imageCtx.rotate(rotation * Math.PI / 180);
-			
-			const imageRatio = img.width / img.height;
-			const areaRatio  = areaWidth / areaHeight;
-			const lockProp   = document.getElementById('lockProportions').checked;
-			
-			let drawWidth, drawHeight;
-			if (lockProp) {
-				if (areaRatio > imageRatio) {
-					drawHeight = areaCanvasHeight;
-					drawWidth  = drawHeight * imageRatio;
-				} else {
-					drawWidth  = areaCanvasWidth;
-					drawHeight = drawWidth / imageRatio;
-				}
-			} else {
-				drawWidth  = areaCanvasWidth;
-				drawHeight = areaCanvasHeight;
-			}
-			
-			// ← ГЛАВНОЕ: берём из кэша, не пересчитываем
-			const processedCanvas = getProcessedImageCanvas();
-			if (processedCanvas) {
-				imageCtx.drawImage(processedCanvas, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
-			} else {
-				// fallback: рисуем как есть (не должно происходить)
-				imageCtx.drawImage(img, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
-			}
-			imageCtx.restore();
-			
-			if (showCrosshair.checked) {
-				drawCrosshair(imageCtx, imagePreview, sheetWidth, sheetHeight);
-			}
-			
-			pixelToMM = Math.min(areaWidth / img.width, areaHeight / img.height);
-			
-			// Info-строка
-			const fileType = isSvgFile ? 'SVG' : 'Изображение';
-			const threshold = parseInt(thresholdInput.value);
-			const invert = document.getElementById('invertImage').value === 'true';
-			const lineThicknessMM = parseFloat(document.getElementById('lineThickness').value) || 0;
-			const borderOffsetMM  = parseFloat(document.getElementById('borderOffset').value)  || 0;
-			const processingInfo = ` | Порог: ${threshold} | Инвертирование: ${invert ? 'Да' : 'Нет'} | Расширение: ${lineThicknessMM}мм | Сужение: ${borderOffsetMM}мм`;
-			imageInfo.textContent = `${fileType}: ${img.width}×${img.height}px | Область: ${areaWidth}×${areaHeight}мм | Лист: ${sheetWidth}×${sheetHeight}мм | Смещение: X${offsetX}мм Y${offsetY}мм | Вращение: ${rotation}°${processingInfo}`;
-		}
+function displayImage(img) {
+    if (!img) return;
 
+    const method = document.getElementById('conversionMethod').value;
+    const isColorMethod = (method === 'edge' || method === 'quantize');
+
+    const areaWidth  = parseInt(areaWidthInput.value);
+    const areaHeight = parseInt(areaHeightInput.value);
+    const sheetWidth = parseInt(sheetWidthInput.value);
+    const sheetHeight= parseInt(sheetHeightInput.value);
+    const offsetX    = parseFloat(offsetXInput.value);
+    const offsetY    = parseFloat(offsetYInput.value);
+    const rotation   = parseFloat(rotationInput.value);
+
+    imageCtx.fillStyle = 'white';
+    imageCtx.fillRect(0, 0, imagePreview.width, imagePreview.height);
+
+    const scaleX = imagePreview.width / sheetWidth;
+    const scaleY = imagePreview.height / sheetHeight;
+
+    const areaCanvasX = offsetX * scaleX;
+    const areaCanvasY = imagePreview.height - (offsetY * scaleY) - (areaHeight * scaleY);
+    const areaCanvasWidth  = areaWidth * scaleX;
+    const areaCanvasHeight = areaHeight * scaleY;
+
+    imageCtx.save();
+    imageCtx.translate(areaCanvasX + areaCanvasWidth / 2, areaCanvasY + areaCanvasHeight / 2);
+    imageCtx.rotate(rotation * Math.PI / 180);
+
+    const imageRatio = img.width / img.height;
+    const areaRatio  = areaWidth / areaHeight;
+    const lockProp   = document.getElementById('lockProportions').checked;
+
+    let drawWidth, drawHeight;
+    if (lockProp) {
+        if (areaRatio > imageRatio) {
+            drawHeight = areaCanvasHeight;
+            drawWidth  = drawHeight * imageRatio;
+        } else {
+            drawWidth  = areaCanvasWidth;
+            drawHeight = drawWidth / imageRatio;
+        }
+    } else {
+        drawWidth  = areaCanvasWidth;
+        drawHeight = areaCanvasHeight;
+    }
+
+    // ── ВЫБОР ИСТОЧНИКА:
+    // edge/quantize → оригинал (без порога/levels/морфологии),
+    // остальные      → обработанное (порог + levels + морфология)
+    const source = isColorMethod ? img : getProcessedImageCanvas();
+
+    if (source) {
+        imageCtx.drawImage(source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+    } else {
+        imageCtx.drawImage(img, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+    }
+
+    imageCtx.restore();
+
+    if (showCrosshair.checked) {
+        drawCrosshair(imageCtx, imagePreview, sheetWidth, sheetHeight);
+    }
+
+    pixelToMM = Math.min(areaWidth / img.width, areaHeight / img.height);
+
+    // ── Info-строка
+    const fileType = isSvgFile ? 'SVG' : 'Изображение';
+    const threshold = parseInt(thresholdInput.value);
+    const invert = document.getElementById('invertImage').value === 'true';
+    const lineThicknessMM = parseFloat(document.getElementById('lineThickness').value) || 0;
+    const borderOffsetMM  = parseFloat(document.getElementById('borderOffset').value)  || 0;
+
+    let processingInfo;
+    if (isColorMethod) {
+        // Для edge/quantize порог/levels/морфология не используются
+        const methodName = method === 'edge' ? 'Границы цвета' : 'Квантование цвета';
+        const invertStr = invert ? ' | Инвертирование: Да' : '';
+        processingInfo = ` | Метод: ${methodName}${invertStr}`;
+    } else {
+        // Для centerline/fill/hatch/contour/combined — как раньше
+        processingInfo = ` | Порог: ${threshold} | Инвертирование: ${invert ? 'Да' : 'Нет'}`
+                       + ` | Расширение: ${lineThicknessMM}мм | Сужение: ${borderOffsetMM}мм`;
+    }
+
+    imageInfo.textContent = `${fileType}: ${img.width}×${img.height}px`
+        + ` | Область: ${areaWidth}×${areaHeight}мм`
+        + ` | Лист: ${sheetWidth}×${sheetHeight}мм`
+        + ` | Смещение: X${offsetX}мм Y${offsetY}мм`
+        + ` | Вращение: ${rotation}°`
+        + processingInfo;
+}
         // Обработка изображения с поддержкой прозрачности PNG
 		function processImage() {
 
@@ -6683,16 +6705,25 @@ if (bestIndex !== -1) {
 				}});
 					
 		conversionMethod.addEventListener('change', function() {
-		toggleCenterlineOptions();
-			
+			toggleCenterlineOptions();
+
 			if (document.getElementById('loadingIcon').style.display === 'block') {
 				updateStatus('Дождитесь завершения текущей обработки', 'error');
 				return;
 			}
-			
+
 			if (!originalImage && !isSvgFile) {
 				updateStatus('Сначала загрузите изображение', 'error');
 				return;
+			}
+			
+			showLoading();
+			// ── Обновить верхнее превью под новый метод
+			// (для edge/quantize — оригинал, для остальных — маска)
+			if (isSvgFile) {
+				displaySvg();
+			} else {
+				displayImage(originalImage);
 			}
 
 			processAndDrawVectors();
