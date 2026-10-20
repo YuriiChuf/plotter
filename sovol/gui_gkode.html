@@ -594,12 +594,12 @@ h1, h2, h3 {
 							</div>
                         </div>
 
-                        <div>
+                        <div id="connectline" style="display: none;">
                             <label>Соединение линий (мм):</label>
                             <input type="number" id="connectDistance" value="0.5" min="0" max="100" step="0.1" >
                             <div class="info-text">Макс. расстояние для непрерывного рисования</div>
                         </div>
-                        <div>
+                        <div id="minlenghtline" style="display: none;">
                             <label>Минимальная длина линии (мм):<input title='Показывать или нет&#10;Удаляются всегда' type="checkbox" id="showRemovedPaths" checked></label>
                             <input type="number" id="minLineLength" value="0.5" min="0" max="100" step="0.1">
                             <div class="info-text">Линии короче этой будут удалены</div>
@@ -612,7 +612,7 @@ h1, h2, h3 {
                             </select>
                             <div class="info-text">белое это черное</div>
                         </div>
-						<div id="levelsBlock">
+						<div id="levelsBlock" style="display: none;">
 						<label>Уровни цвета:</label>
 						<div style="align-items: center;display: flex;">
 						<input type="range" id="levelsLeft" min="0" max="254" value="0" style="width: 31%">
@@ -652,7 +652,7 @@ h1, h2, h3 {
     </label>
     <div class="info-text">Слабые границы остаются только если связаны с сильными</div>
 </div>
-<div id="edgeOptions2" style="display: none;padding-bottom: 49px;">
+<div id="edgeOptions2" style="display: none; padding-bottom: 49px;">
     <label>Сглаживание (σ):</label>
     <input type="number" id="edgeBlur" value="1.4" min="0" max="5" step="0.1">
     <div class="info-text">0 — без размытия, 1.4 — стандарт для фото</div>
@@ -876,22 +876,25 @@ h1, h2, h3 {
 // Для каждого метода — список id блоков, которые видны.
 // Всё, что не в списке — скрыто.
 const METHOD_BLOCKS = {
-    svg:        ['smoothingBlock'],
+    none:       [], 
+    svg:        ['smoothingBlock', 'connectline', 'minlenghtline'],
     centerline: ['thresholdBlock', 'levelsBlock', 'morphologyBlock',
-                 'smoothingBlock', 'doorOffsetBlock'],
+                 'smoothingBlock', 'doorOffsetBlock', 'connectline',
+				 'minlenghtline'],
     fill:       ['thresholdBlock', 'levelsBlock', 'morphologyBlock',
-                 'hatchBlock', 'thresholdzero'],
+                 'hatchBlock', 'thresholdzero', 'connectline', 'minlenghtline'],
     hatch:      ['thresholdBlock', 'levelsBlock', 'morphologyBlock',
-                 'hatchBlock', 'thresholdzero'],
+                 'hatchBlock', 'thresholdzero', 'connectline', 'minlenghtline'],
     contour:    ['thresholdBlock', 'levelsBlock', 
-				 'morphologyBlock',],
+				 'morphologyBlock', 'connectline', 'minlenghtline'],
     combined:   ['thresholdBlock', 'levelsBlock', 'morphologyBlock',
-                 'hatchBlock', 'smoothingBlock',
-                 'doorOffsetBlock', 'combinedOptions'],
-    edge:       ['smoothingBlock', 'doorOffsetBlock',
-                 'edgeOptions1', 'edgeOptions2', 'edgeOptions3'],
+                 'hatchBlock', 'smoothingBlock','doorOffsetBlock',
+                 'combinedOptions', 'connectline', 'minlenghtline'],
+    edge:       ['smoothingBlock', 'doorOffsetBlock', 'edgeOptions1',
+                 'edgeOptions2', 'edgeOptions3', 'connectline', 'minlenghtline'],
     quantize:   ['smoothingBlock', 'doorOffsetBlock',
-                 'quantizeOptions1', 'quantizeOptions2', 'quantizeOptions3'],
+                 'quantizeOptions1', 'quantizeOptions2', 'quantizeOptions3', 
+				 'connectline', 'minlenghtline'],
 };
 
 function toggleCenterlineOptions() {
@@ -1019,32 +1022,33 @@ function toggleCenterlineOptions() {
 		}
 		
         // Функция для обновления доступных методов в зависимости от типа файла
-		function updateConversionMethods() {
-			const currentValue = conversionMethod.value;
-			
-			conversionMethod.innerHTML = '';
-			
-			if (isSvgFile) {
-				conversionMethod.appendChild(new Option('SVG пути (прямая конвертация)', 'svg'));
-				conversionMethod.appendChild(new Option('Трассировка по центру линии', 'centerline'));
-				conversionMethod.appendChild(new Option('Заливка', 'fill'));
-				conversionMethod.appendChild(new Option('Штриховка', 'hatch'));
-				conversionMethod.appendChild(new Option('Контуры', 'contour'));
-				conversionMethod.appendChild(new Option('Трассировка + Заливка', 'combined'));
-			} else {
-				conversionMethod.appendChild(new Option('Трассировка по центру линии', 'centerline'));
-				conversionMethod.appendChild(new Option('Заливка', 'fill'));
-				conversionMethod.appendChild(new Option('Штриховка', 'hatch'));
-				conversionMethod.appendChild(new Option('Контуры', 'contour'));
-				conversionMethod.appendChild(new Option('Трассировка + Заливка', 'combined'));
-				conversionMethod.appendChild(new Option('Границы цвета (для фото)', 'edge'));
-				conversionMethod.appendChild(new Option('Квантование цвета', 'quantize'));
-			}
+function updateConversionMethods() {
+    const currentValue = conversionMethod.value;
+    conversionMethod.innerHTML = '';
 
-			if (conversionMethod.querySelector(`[value="${currentValue}"]`)) {
-				conversionMethod.value = currentValue;
-			}
-		}
+    // ── Новый метод: без обработки
+    conversionMethod.appendChild(new Option('Без обработки (только размещение)', 'none'));
+
+    if (isSvgFile) {
+        conversionMethod.appendChild(new Option('SVG пути (прямая конвертация)', 'svg'));
+    }
+
+    conversionMethod.appendChild(new Option('Трассировка по центру линии', 'centerline'));
+    conversionMethod.appendChild(new Option('Заливка', 'fill'));
+    conversionMethod.appendChild(new Option('Штриховка', 'hatch'));
+    conversionMethod.appendChild(new Option('Контуры', 'contour'));
+    conversionMethod.appendChild(new Option('Трассировка + Заливка', 'combined'));
+    conversionMethod.appendChild(new Option('Границы цвета (для фото)', 'edge'));
+    conversionMethod.appendChild(new Option('Квантование цвета', 'quantize'));
+
+    // ── При загрузке нового файла — всегда 'none' (быстро)
+    // Если пользователь явно выбрал метод раньше — сохраняем его
+    if (currentValue && conversionMethod.querySelector(`[value="${currentValue}"]`)) {
+        conversionMethod.value = currentValue;
+    } else {
+        conversionMethod.value = 'none';
+    }
+}
 
 		thresholdSlider.addEventListener('input', function() {
 			thresholdInput.value = this.value;
@@ -1974,7 +1978,6 @@ if (quantMinRegionEl) {
 								continueImageProcessing(upscaledImage);
 							};
 							upscaledImage.src = upscaleCanvas.toDataURL('image/png');
-							
 							return;
 						}
 						
@@ -1992,6 +1995,7 @@ if (quantMinRegionEl) {
 				updateStatus('Ошибка чтения файла', 'error');
 			};
 			reader.readAsDataURL(file);
+			hideLoading();
 		});
 
 		// НОВАЯ ФУНКЦИЯ: продолжение обработки после загрузки/увеличения изображения
@@ -2335,6 +2339,29 @@ if (quantMinRegionEl) {
 
         // Обработка и отрисовка векторов
 		async function processAndDrawVectors() {
+			const method = document.getElementById('conversionMethod').value;
+
+			// ── none — только превью, без векторов
+			if (method === 'none') {
+				vectorPaths = [];
+				optimizedPaths = [];
+				filteredPaths = [];
+				cachedOptimizedBeforeClip = null;
+				updatePathInfo();
+				// Очистить нижнее превью
+				vectorCtx.fillStyle = 'white';
+				vectorCtx.fillRect(0, 0, vectorPreview.width, vectorPreview.height);
+				if (showCrosshair.checked) {
+					const sheetWidth = parseInt(sheetWidthInput.value);
+					const sheetHeight = parseInt(sheetHeightInput.value);
+					drawCrosshair(vectorCtx, vectorPreview, sheetWidth, sheetHeight);
+				}
+				downloadSvgBtn.disabled = true;
+				convertBtn.disabled = true;
+				updateStatus('Метод "Без обработки": разместите фото и выберите метод конвертации', 'success');
+				return;
+			}
+
 			showLoading();
 			
 			await new Promise(resolve => setTimeout(resolve, 100));
@@ -2963,7 +2990,7 @@ function displayImage(img) {
     if (!img) return;
 
     const method = document.getElementById('conversionMethod').value;
-    const isColorMethod = (method === 'edge' || method === 'quantize');
+    const isColorMethod = (method === 'none' || method === 'edge' || method === 'quantize');
 
     const areaWidth  = parseInt(areaWidthInput.value);
     const areaHeight = parseInt(areaHeightInput.value);
@@ -3033,7 +3060,9 @@ function displayImage(img) {
     const borderOffsetMM  = parseFloat(document.getElementById('borderOffset').value)  || 0;
 
     let processingInfo;
-    if (isColorMethod) {
+	if (method === 'none') {
+		processingInfo = ' | Без обработки';
+	} else if (isColorMethod) {
         // Для edge/quantize порог/levels/морфология не используются
         const methodName = method === 'edge' ? 'Границы цвета' : 'Квантование цвета';
         const invertStr = invert ? ' | Инвертирование: Да' : '';
@@ -6704,7 +6733,7 @@ if (bestIndex !== -1) {
 					processAndDrawVectors();
 				}});
 					
-		conversionMethod.addEventListener('change', function() {
+		conversionMethod.addEventListener('change', async function() {
 			toggleCenterlineOptions();
 
 			if (document.getElementById('loadingIcon').style.display === 'block') {
@@ -6716,17 +6745,25 @@ if (bestIndex !== -1) {
 				updateStatus('Сначала загрузите изображение', 'error');
 				return;
 			}
-			
-			showLoading();
-			// ── Обновить верхнее превью под новый метод
-			// (для edge/quantize — оригинал, для остальных — маска)
-			if (isSvgFile) {
-				displaySvg();
-			} else {
-				displayImage(originalImage);
-			}
 
-			processAndDrawVectors();
+			showLoading();
+
+			// ── ГЛАВНОЕ: дать браузеру отрисовать иконку ДО тяжёлого displayImage
+			await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+			try {
+				if (isSvgFile) {
+					displaySvg();
+				} else {
+					displayImage(originalImage);
+				}
+				await processAndDrawVectors();
+			} catch (e) {
+				console.error(e);
+				updateStatus('Ошибка: ' + e.message, 'error');
+			} finally {
+				hideLoading();
+			}
 		});
 
 		// Добавляем функциональность переключения макета
