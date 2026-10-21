@@ -525,12 +525,14 @@ h1, h2, h3 {
             <label>Вращение</label>
             <div class="input-row">
                 <input type="number" id="rotation" value="0" min="-180" max="180" step="1" placeholder="°">
+				<button type="button" id="rotationPLUS" class="align-btn" title="Вращение" style = "font-size: 12px;">+90</button>
                 
             </div>
         </div>
 		<div>
 			<label>Центровка, сброс</label>
 			<div class="input-row">
+		
 		<button type="button" id="centerX" class="align-btn" title="Центровать по X">⬌</button>
 		<button type="button" id="centerY" class="align-btn" title="Центровать по Y">⬍</button>
 		<button type="button" id="resetPositionBtn" class="align-btn"title="Сбросить в 00">00</button>
@@ -683,6 +685,14 @@ h1, h2, h3 {
                             <input type="number" id="threshold" value="128" min="0" max="255" style="width: 20%"><input type="range" id="thresholdSlider" min="0" max="255" value="128" style="width: 80%"></div>
                             <div class="info-text">Интенсивность света</div>
                         </div>
+						<div id="dedupBlock" style="display: none;">
+							<label>Удалять дубли границ:</label>
+							<select id="dedupEnabled">
+								<option value="false">Нет</option>
+								<option value="true">Да</option>
+							</select>
+							<div class="info-text">Общие границы фигур</div>
+						</div>
                     </div>
 
 
@@ -877,7 +887,7 @@ h1, h2, h3 {
 // Всё, что не в списке — скрыто.
 const METHOD_BLOCKS = {
     none:       [], 
-    svg:        ['smoothingBlock', 'connectline', 'minlenghtline'],
+    svg:        ['smoothingBlock', 'connectline', 'minlenghtline', 'dedupBlock'],
     centerline: ['thresholdBlock', 'levelsBlock', 'morphologyBlock',
                  'smoothingBlock', 'doorOffsetBlock', 'connectline',
 				 'minlenghtline'],
@@ -1161,8 +1171,12 @@ function updateConversionMethods() {
 			drawCrosshair(vectorCtx, vectorPreview, sheetWidth, sheetHeight);
 		}
 
+		function isSvgVectorMethod() {
+			return isSvgFile && document.getElementById('conversionMethod').value === 'svg';
+		}
 		function showLevelsImage() {
-			if (!originalImage || isSvgFile) return;
+			if (!originalImage || !isSvgFile) return;
+			if (isSvgVectorMethod()) return;
 			vectorCtx.fillStyle = 'white';
 			vectorCtx.fillRect(0, 0, vectorPreview.width, vectorPreview.height);
 			drawImageWithLevels();
@@ -1330,19 +1344,16 @@ for (let i = 0; i < data.length; i += 4) {
 
 		// Функция для планирования обновления векторов
 		function scheduleVectorUpdate() {
-			if (vectorUpdateTimeout) {
-				clearTimeout(vectorUpdateTimeout);
-			}
-			
+			if (vectorUpdateTimeout) clearTimeout(vectorUpdateTimeout);
 			vectorUpdateTimeout = setTimeout(() => {
-				if (originalImage && !isSvgFile) {
-					processAndDrawVectors();
+				if ((!originalImage && !isSvgFile) || isSvgVectorMethod()) return;
+				processAndDrawVectors();
+				if (isSvgFile) {
+					displaySvg();
+				} else {
 					displayImage(originalImage);
-					updateStatus('Векторы обновлены с новым порогом', 'success');
 				}
 			}, VECTOR_UPDATE_DELAY);
-			
-			lastVectorUpdateTime = Date.now();
 		}
 
 		startXInput.addEventListener('input', function() {
@@ -1441,6 +1452,7 @@ for (let i = 0; i < data.length; i += 4) {
 			debouncedPositionRedraw();
 		});
 
+
 		// Обработчики расширения области 
 		const debouncedExpansionUpdate = debounce(function() {
 			if (originalImage && !isSvgFile) {
@@ -1480,7 +1492,14 @@ for (let i = 0; i < data.length; i += 4) {
 		document.getElementById('combinedThickness').addEventListener('input', function() {
     debouncedExpansionUpdate();
 		});
-
+		const dedupEnabledEl = document.getElementById('dedupEnabled');
+		if (dedupEnabledEl) {
+			dedupEnabledEl.addEventListener('change', function() {
+				if (!originalImage && !isSvgFile) return;
+				if (conversionMethod.value !== 'svg') return;
+				processAndDrawVectors();
+			});
+		}
         // Обработчик блокировки пропорций
 		lockProportions.addEventListener('change', function() {
 			if ((originalImage || isSvgFile) && this.checked) {
@@ -2201,32 +2220,38 @@ if (quantMinRegionEl) {
 		</svg>`;
 		}
 
-		function applyTransformationForSVG(path, offsetX, offsetY, rotation, scaleX, scaleY) {
-			const width = isSvgFile ? svgPaths.width : originalImage.width;
-			const height = isSvgFile ? svgPaths.height : originalImage.height;
-			
-			const centerX = width * scaleX / 2;
-			const centerY = height * scaleY / 2;
-			const rad = rotation * Math.PI / 180;
-			const cos = Math.cos(rad);
-			const sin = Math.sin(rad);
-			
-			return path.map(point => {
-				// ИНВЕРТИРУЕМ Y точки изображения, но не позиционирование
-				let x = point.x * scaleX;
-				let y = (height - point.y) * scaleY; // ИНВЕРСИЯ точки изображения
+function applyTransformationForSVG(path, offsetX, offsetY, rotation, scaleX, scaleY) {
+    const width = isSvgFile ? svgPaths.width : originalImage.width;
+    const height = isSvgFile ? svgPaths.height : originalImage.height;
 
-				// Применяем вращение относительно центра
-				const rotatedX = centerX + (x - centerX) * cos - (y - centerY) * sin;
-				const rotatedY = centerY + (x - centerX) * sin + (y - centerY) * cos;
+    // Центр вращения — центр области в координатах изображения
+    const centerX = width * scaleX / 2;
+    const centerY = height * scaleY / 2;
 
-				// Применяем смещение (без инверсии - позиционирование остается как есть)
-				x = offsetX + rotatedX;
-				y = offsetY + rotatedY;
-				
-				return { x: x.toFixed(2), y: y.toFixed(2) };
-			});
-		}
+    const rad = -rotation * Math.PI / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+
+    return path.map(point => {
+        // 1. Инверсия Y + масштаб
+        let x = point.x * scaleX;
+        let y = (height - point.y) * scaleY;
+
+        // 2. Вращение вокруг центра
+        const relX = x - centerX;
+        const relY = y - centerY;
+        const rotatedX = relX * cos - relY * sin;
+        const rotatedY = relX * sin + relY * cos;
+        x = centerX + rotatedX;
+        y = centerY + rotatedY;
+
+        // 3. Смещение
+        x = offsetX + x;
+        y = offsetY + y;
+
+        return { x: x.toFixed(2), y: y.toFixed(2) };
+    });
+}
 
 				// Функция для частичной отрисовки векторов
 		function drawPartialVectors(partialPaths, progress = 0, type = 'optimized') {
@@ -2337,6 +2362,185 @@ if (quantMinRegionEl) {
 			vectorCtx.restore();
 		}
 
+
+function deduplicatePaths(paths, epsilon = 0.1) {
+    if (!paths || paths.length === 0) return { paths: [], removedCount: 0 };
+    if (epsilon <= 0) return { paths, removedCount: 0 };
+
+    const cellSize = Math.max(epsilon * 4, 0.001);
+
+    // ── 1. Собираем все отрезки с их (pathIdx, segIdx)
+    const segments = [];
+    for (let p = 0; p < paths.length; p++) {
+        const path = paths[p];
+        if (!path || path.length < 2) continue;
+        for (let s = 1; s < path.length; s++) {
+            const a = path[s - 1];
+            const b = path[s];
+            if (!a || !b) continue;
+            if (a.x === b.x && a.y === b.y) continue;   // нулевой отрезок — пропускаем
+            segments.push({
+                p, s,
+                x1: a.x, y1: a.y,
+                x2: b.x, y2: b.y,
+                removed: false
+            });
+        }
+    }
+    if (segments.length === 0) return { paths, removedCount: 0 };
+
+    // ── 2. Grid: ячейка → массив индексов в segments
+    const grid = new Map();
+    const cellKey = (cx, cy) => cx + ',' + cy;
+
+    function segmentCells(seg) {
+        // Ячейки, через которые проходит отрезок (грубая растеризация по bbox)
+        const minX = Math.min(seg.x1, seg.x2);
+        const maxX = Math.max(seg.x1, seg.x2);
+        const minY = Math.min(seg.y1, seg.y2);
+        const maxY = Math.max(seg.y1, seg.y2);
+
+        const cx1 = Math.floor(minX / cellSize);
+        const cx2 = Math.floor(maxX / cellSize);
+        const cy1 = Math.floor(minY / cellSize);
+        const cy2 = Math.floor(maxY / cellSize);
+
+        const cells = [];
+        // Для длинных диагональных отрезков bbox может захватывать много ячеек.
+        // Ограничим разумно: если ячеек > 64, используем только концевые + среднюю.
+        const totalCells = (cx2 - cx1 + 1) * (cy2 - cy1 + 1);
+        if (totalCells > 64) {
+            // Концевые + середина
+            const midX = (seg.x1 + seg.x2) / 2;
+            const midY = (seg.y1 + seg.y2) / 2;
+            const pts = [
+                [seg.x1, seg.y1],
+                [seg.x2, seg.y2],
+                [midX, midY]
+            ];
+            for (const [x, y] of pts) {
+                cells.push([Math.floor(x / cellSize), Math.floor(y / cellSize)]);
+            }
+            return cells;
+        }
+
+        for (let cy = cy1; cy <= cy2; cy++) {
+            for (let cx = cx1; cx <= cx2; cx++) {
+                cells.push([cx, cy]);
+            }
+        }
+        return cells;
+    }
+
+    for (let i = 0; i < segments.length; i++) {
+        const cells = segmentCells(segments[i]);
+        for (const [cx, cy] of cells) {
+            const key = cellKey(cx, cy);
+            if (!grid.has(key)) grid.set(key, []);
+            grid.get(key).push(i);
+        }
+    }
+
+    // ── 3. Проверка: два отрезка совпадают?
+    function pointSegmentDist(px, py, x1, y1, x2, y2) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const len2 = dx * dx + dy * dy;
+        if (len2 === 0) return Math.hypot(px - x1, py - y1);
+        let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+        t = Math.max(0, Math.min(1, t));
+        const cx = x1 + t * dx;
+        const cy = y1 + t * dy;
+        return Math.hypot(px - cx, py - cy);
+    }
+
+    function segmentsCoincide(a, b) {
+        // Коллинеарность: все 4 конца лежат близко к прямой другого отрезка
+        const d1 = pointSegmentDist(a.x1, a.y1, b.x1, b.y1, b.x2, b.y2);
+        const d2 = pointSegmentDist(a.x2, a.y2, b.x1, b.y1, b.x2, b.y2);
+        const d3 = pointSegmentDist(b.x1, b.y1, a.x1, a.y1, a.x2, a.y2);
+        const d4 = pointSegmentDist(b.x2, b.y2, a.x1, a.y1, a.x2, a.y2);
+        if (Math.max(d1, d2, d3, d4) > epsilon) return false;
+
+        // Перекрытие проекций
+        const axMin = Math.min(a.x1, a.x2), axMax = Math.max(a.x1, a.x2);
+        const ayMin = Math.min(a.y1, a.y2), ayMax = Math.max(a.y1, a.y2);
+        const bxMin = Math.min(b.x1, b.x2), bxMax = Math.max(b.x1, b.x2);
+        const byMin = Math.min(b.y1, b.y2), byMax = Math.max(b.y1, b.y2);
+
+        const overlapX = Math.min(axMax, bxMax) - Math.max(axMin, bxMin);
+        const overlapY = Math.min(ayMax, byMax) - Math.max(ayMin, byMin);
+
+        // Перекрытие хотя бы по одной оси > epsilon
+        return overlapX > epsilon || overlapY > epsilon;
+    }
+
+    // ── 4. Поиск дублей (каждый отрезок сравниваем с соседями в grid)
+    for (const [, idxs] of grid) {
+        for (let ii = 0; ii < idxs.length; ii++) {
+            const i = idxs[ii];
+            if (segments[i].removed) continue;
+            for (let jj = ii + 1; jj < idxs.length; jj++) {
+                const j = idxs[jj];
+                if (i === j) continue;
+                if (segments[j].removed) continue;
+                if (segmentsCoincide(segments[i], segments[j])) {
+                    // Оставляем первый, удаляем второй
+                    segments[j].removed = true;
+                }
+            }
+        }
+    }
+
+    // ── 5. Собираем пути без удалённых отрезков + склеиваем
+    // Для каждого исходного пути — массив оставшихся отрезков в порядке s.
+    const removedCount = segments.filter(s => s.removed).length;
+
+    const segsByPath = new Map();
+    for (const seg of segments) {
+        if (seg.removed) continue;
+        if (!segsByPath.has(seg.p)) segsByPath.set(seg.p, []);
+        segsByPath.get(seg.p).push(seg);
+    }
+
+    const resultPaths = [];
+    for (const [, segs] of segsByPath) {
+        segs.sort((a, b) => a.s - b.s);
+
+        let currentPath = [];
+        let lastSegEnd = null;
+
+        for (const seg of segs) {
+            const a = { x: seg.x1, y: seg.y1 };
+            const b = { x: seg.x2, y: seg.y2 };
+
+            // Проверить, непрерывен ли с предыдущим
+            let continuous = false;
+            if (lastSegEnd) {
+                const dA = Math.hypot(lastSegEnd.x - a.x, lastSegEnd.y - a.y);
+                const dB = Math.hypot(lastSegEnd.x - b.x, lastSegEnd.y - b.y);
+                if (dA < epsilon * 2) {
+                    currentPath.push(b);
+                    lastSegEnd = b;
+                    continuous = true;
+                } else if (dB < epsilon * 2) {
+                    currentPath.push(a);
+                    lastSegEnd = a;
+                    continuous = true;
+                }
+            }
+
+            if (!continuous) {
+                if (currentPath.length >= 2) resultPaths.push(currentPath);
+                currentPath = [a, b];
+                lastSegEnd = b;
+            }
+        }
+        if (currentPath.length >= 2) resultPaths.push(currentPath);
+    }
+
+    return { paths: resultPaths, removedCount };
+}
+
         // Обработка и отрисовка векторов
 		async function processAndDrawVectors() {
 			const method = document.getElementById('conversionMethod').value;
@@ -2375,8 +2579,18 @@ if (quantMinRegionEl) {
 					
 					if (method === 'svg') {
 
-						vectorPaths = convertSvgPathsToVectorPaths();
+					vectorPaths = convertSvgPathsToVectorPaths();
+					const dedupEnabled = document.getElementById('dedupEnabled').value === 'true';
+					if (dedupEnabled) { 
 
+						const dedup = deduplicatePaths(vectorPaths, 0.1);
+						if (dedup.removedCount > 0) {
+							console.log(`[DEDUP] Удалено дублей-отрезков: ${dedup.removedCount}`);
+							vectorPaths = dedup.paths;
+							updateStatus(`Удалено дублей границ: ${dedup.removedCount}`, 'success');
+						}
+					 }
+						
 						optimizePaths();
 						filterPathsByLength();
 						saveVectorSnapshot();
@@ -6654,6 +6868,16 @@ if (bestIndex !== -1) {
 		}
 
         // Обработчики изменений
+		document.getElementById('rotationPLUS').addEventListener('click', function() {
+			const rotation = parseFloat(rotationInput.value);
+			if (rotation+90<360){
+			rotationInput.value = Math.round(rotation+90);
+			}else{
+			rotationInput.value = Math.round(rotation+90-360);
+			}
+			updatePositioningOnly();
+			setTimeout(updatePositioningWithRecalculation, 100);
+		});
 		document.getElementById('centerX').addEventListener('click', function() {
 			const sheetWidth = parseInt(sheetWidthInput.value);
 			const areaWidth = parseInt(areaWidthInput.value);
@@ -6797,7 +7021,8 @@ if (bestIndex !== -1) {
 					svgHeight = parseFloat(heightAttr.replace('mm', ''));
 				}
 				
-				const viewBox = svgElement.getAttribute('viewBox');
+				let viewBox = svgElement.getAttribute('viewBox');
+				if (!viewBox) viewBox = svgElement.getAttribute('viewbox');
 				if (viewBox) {
 					const viewBoxParts = viewBox.split(/[\s,]+/).filter(part => part !== '');
 					if (viewBoxParts.length >= 4) {
@@ -6826,18 +7051,45 @@ if (bestIndex !== -1) {
 		}
 
 		function setupSvgDisplay(svgWidth, svgHeight) {
-			
 			imageAspectRatio = svgWidth / svgHeight;
-			
-			areaWidthInput.value = Math.round(svgWidth);
-			areaHeightInput.value = Math.round(svgHeight);
-			
+
+			// ── Как у фото: вписать в лист или область
+			const fitToSheetRadio = document.getElementById('fitToSheet');
+			let targetWidth, targetHeight;
+
+			if (fitToSheetRadio && fitToSheetRadio.checked) {
+				targetWidth = parseInt(sheetWidthInput.value);
+				targetHeight = parseInt(sheetHeightInput.value);
+			} else {
+				targetWidth = parseInt(areaWidthInput.value);
+				targetHeight = parseInt(areaHeightInput.value);
+			}
+
+			const lockProportions = document.getElementById('lockProportions').checked;
+			let newAreaWidth, newAreaHeight;
+
+			if (lockProportions) {
+				// Вписать с сохранением пропорций
+				const scaleX = targetWidth / svgWidth;
+				const scaleY = targetHeight / svgHeight;
+				const scale = Math.min(scaleX, scaleY);
+				newAreaWidth = svgWidth * scale;
+				newAreaHeight = svgHeight * scale;
+				updateStatus('SVG вписан с сохранением пропорций', 'success');
+			} else {
+				// Растянуть
+				newAreaWidth = targetWidth;
+				newAreaHeight = targetHeight;
+				updateStatus('SVG растянут в выбранную область', 'success');
+			}
+
+			areaWidthInput.value = Math.round(newAreaWidth);
+			areaHeightInput.value = Math.round(newAreaHeight);
+
 			updateCanvasSizes();
-			
 			displaySvgVector();
 			updateStatus('SVG файл загружен', 'success');
 		}
-
 		// ОБНОВЛЯЕМ ФУНКЦИЮ СОЗДАНИЯ BMP - ФИКСИРУЕМ МАСШТАБ
 		function createBitmapFromSheet() {
 			if (!svgPaths || !svgPaths.paths) {
@@ -6945,6 +7197,14 @@ if (bestIndex !== -1) {
 						d: linePath,
 						transform: combinedTransform
 					});
+				} else if (tagName === 'circle') {
+					const cx = parseFloat(child.getAttribute('cx') || 0);
+					const cy = parseFloat(child.getAttribute('cy') || 0);
+					const r = parseFloat(child.getAttribute('r') || 0);
+					if (r > 0) {
+						const circlePath = `M ${cx - r} ${cy} A ${r} ${r} 0 1 0 ${cx + r} ${cy} A ${r} ${r} 0 1 0 ${cx - r} ${cy} Z`;
+						svgPaths.paths.push({ d: circlePath, transform: combinedTransform });
+					}
 				} else if (tagName === 'g') {
 					extractPathsFromSvg(child, combinedTransform);
 				}
@@ -7042,159 +7302,220 @@ if (bestIndex !== -1) {
 		function parseSvgPath(pathData) {
 			const paths = [];
 			if (!pathData) return paths;
-				
-			try {
 
-				const commands = pathData.split(/(?=[MmLlHhVvCcSsQqTtAaZz])/).filter(cmd => cmd.trim());
-				
+			try {
+				const normalized = pathData.replace(/([0-9.])-/g, '$1 -');
+				const commands = normalized
+					.split(/(?=[MmLlHhVvCcSsQqTtAaZz])/)
+					.filter(cmd => cmd.trim());
+
 				let currentPath = [];
-				let currentX = 0;
-				let currentY = 0;
-				let startX = 0;
-				let startY = 0;
-				
+				let currentX = 0, currentY = 0;
+				let startX = 0, startY = 0;
+
+				let lastCubicCX = 0, lastCubicCY = 0;
+				let lastQuadCX = 0, lastQuadCY = 0;
+				let lastCurveType = 'none';
+
+				// Плотность дискретизации кривых — визуально неотличимо от оригинала
+				const CURVE_SEGMENTS = 50;
+
 				for (let cmd of commands) {
 					const command = cmd[0];
 					const relative = command === command.toLowerCase();
 					const cmdType = command.toUpperCase();
-					const args = cmd.slice(1).trim().split(/[\s,]+/).map(parseFloat).filter(n => !isNaN(n));
-							  
+					const args = cmd.slice(1).match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi)?.map(parseFloat) || [];
+
 					switch (cmdType) {
-						case 'M': // MoveTo
-							if (currentPath.length > 0) {
-								paths.push(currentPath);
-							}
+						case 'M':
+							if (currentPath.length > 0) paths.push(currentPath);
 							currentPath = [];
 							if (args.length >= 2) {
 								currentX = relative ? currentX + args[0] : args[0];
 								currentY = relative ? currentY + args[1] : args[1];
 								startX = currentX;
 								startY = currentY;
-								currentPath.push({x: currentX, y: currentY});
-								
-								for (let i = 2; i < args.length; i += 2) {
-									if (i + 1 < args.length) {
-										currentX = relative ? currentX + args[i] : args[i];
-										currentY = relative ? currentY + args[i+1] : args[i+1];
-										currentPath.push({x: currentX, y: currentY});
-									}
-								}
-							}
-							break;
-							
-						case 'L': // LineTo
-							for (let i = 0; i < args.length; i += 2) {
-								if (i + 1 < args.length) {
+								currentPath.push({ x: currentX, y: currentY });
+								for (let i = 2; i + 1 < args.length; i += 2) {
 									currentX = relative ? currentX + args[i] : args[i];
-									currentY = relative ? currentY + args[i+1] : args[i+1];
-									currentPath.push({x: currentX, y: currentY});
+									currentY = relative ? currentY + args[i + 1] : args[i + 1];
+									currentPath.push({ x: currentX, y: currentY });
 								}
 							}
+							lastCurveType = 'none';
 							break;
-							
-						case 'H': // Horizontal LineTo
+
+						case 'L':
+							for (let i = 0; i + 1 < args.length; i += 2) {
+								currentX = relative ? currentX + args[i] : args[i];
+								currentY = relative ? currentY + args[i + 1] : args[i + 1];
+								currentPath.push({ x: currentX, y: currentY });
+							}
+							lastCurveType = 'none';
+							break;
+
+						case 'H':
 							for (let i = 0; i < args.length; i++) {
 								currentX = relative ? currentX + args[i] : args[i];
-								currentPath.push({x: currentX, y: currentY});
+								currentPath.push({ x: currentX, y: currentY });
 							}
+							lastCurveType = 'none';
 							break;
-							
-						case 'V': // Vertical LineTo
+
+						case 'V':
 							for (let i = 0; i < args.length; i++) {
 								currentY = relative ? currentY + args[i] : args[i];
-								currentPath.push({x: currentX, y: currentY});
+								currentPath.push({ x: currentX, y: currentY });
+							}
+							lastCurveType = 'none';
+							break;
+
+						case 'C':
+							for (let i = 0; i + 5 < args.length; i += 6) {
+								const x1 = relative ? currentX + args[i]     : args[i];
+								const y1 = relative ? currentY + args[i + 1] : args[i + 1];
+								const x2 = relative ? currentX + args[i + 2] : args[i + 2];
+								const y2 = relative ? currentY + args[i + 3] : args[i + 3];
+								const x  = relative ? currentX + args[i + 4] : args[i + 4];
+								const y  = relative ? currentY + args[i + 5] : args[i + 5];
+
+								const pts = approximateCubicBezierSimple(
+									currentX, currentY, x1, y1, x2, y2, x, y, CURVE_SEGMENTS
+								);
+								for (let j = 1; j < pts.length; j++) currentPath.push(pts[j]);
+
+								currentX = x; currentY = y;
+								lastCubicCX = x2; lastCubicCY = y2;
+								lastCurveType = 'cubic';
 							}
 							break;
-							
-						case 'Z': // ClosePath
+
+						case 'S':
+							for (let i = 0; i + 3 < args.length; i += 4) {
+								const x2 = relative ? currentX + args[i]     : args[i];
+								const y2 = relative ? currentY + args[i + 1] : args[i + 1];
+								const x  = relative ? currentX + args[i + 2] : args[i + 2];
+								const y  = relative ? currentY + args[i + 3] : args[i + 3];
+
+								let x1, y1;
+								if (lastCurveType === 'cubic') {
+									x1 = 2 * currentX - lastCubicCX;
+									y1 = 2 * currentY - lastCubicCY;
+								} else {
+									x1 = currentX;
+									y1 = currentY;
+								}
+
+								const pts = approximateCubicBezierSimple(
+									currentX, currentY, x1, y1, x2, y2, x, y, CURVE_SEGMENTS
+								);
+								for (let j = 1; j < pts.length; j++) currentPath.push(pts[j]);
+
+								currentX = x; currentY = y;
+								lastCubicCX = x2; lastCubicCY = y2;
+								lastCurveType = 'cubic';
+							}
+							break;
+
+						case 'Q':
+							for (let i = 0; i + 3 < args.length; i += 4) {
+								const qx = relative ? currentX + args[i]     : args[i];
+								const qy = relative ? currentY + args[i + 1] : args[i + 1];
+								const x  = relative ? currentX + args[i + 2] : args[i + 2];
+								const y  = relative ? currentY + args[i + 3] : args[i + 3];
+
+								const pts = approximateQuadraticBezier(
+									currentX, currentY, qx, qy, x, y, CURVE_SEGMENTS
+								);
+								for (let j = 1; j < pts.length; j++) currentPath.push(pts[j]);
+
+								currentX = x; currentY = y;
+								lastQuadCX = qx; lastQuadCY = qy;
+								lastCurveType = 'quad';
+							}
+							break;
+
+						case 'T':
+							for (let i = 0; i + 1 < args.length; i += 2) {
+								const x = relative ? currentX + args[i]     : args[i];
+								const y = relative ? currentY + args[i + 1] : args[i + 1];
+
+								let qx, qy;
+								if (lastCurveType === 'quad') {
+									qx = 2 * currentX - lastQuadCX;
+									qy = 2 * currentY - lastQuadCY;
+								} else {
+									qx = currentX;
+									qy = currentY;
+								}
+
+								const pts = approximateQuadraticBezier(
+									currentX, currentY, qx, qy, x, y, CURVE_SEGMENTS
+								);
+								for (let j = 1; j < pts.length; j++) currentPath.push(pts[j]);
+
+								currentX = x; currentY = y;
+								lastQuadCX = qx; lastQuadCY = qy;
+								lastCurveType = 'quad';
+							}
+							break;
+
+						case 'A':
+							for (let i = 0; i + 6 < args.length; i += 7) {
+								const rx = Math.abs(args[i]);
+								const ry = Math.abs(args[i + 1]);
+								const largeArcFlag = args[i + 3];
+								const sweepFlag = args[i + 4];
+								const x = relative ? currentX + args[i + 5] : args[i + 5];
+								const y = relative ? currentY + args[i + 6] : args[i + 6];
+
+								const pts = approximateArcSimple(
+									currentX, currentY, x, y, rx, ry,
+									largeArcFlag, sweepFlag, CURVE_SEGMENTS
+								);
+								for (let j = 1; j < pts.length; j++) currentPath.push(pts[j]);
+
+								currentX = x; currentY = y;
+								lastCurveType = 'none';
+							}
+							break;
+
+						case 'Z':
 						case 'z':
 							if (currentPath.length > 0) {
-								currentPath.push({x: startX, y: startY});
+								currentPath.push({ x: startX, y: startY });
 								paths.push(currentPath);
 								currentPath = [];
 							}
+							currentX = startX;
+							currentY = startY;
+							lastCurveType = 'none';
 							break;
-							
-		case 'C': // Cubic Bezier
 
-			for (let i = 0; i + 5 < args.length; i += 6) {
-				const x1 = relative ? currentX + args[i] : args[i];
-				const y1 = relative ? currentY + args[i+1] : args[i+1];
-				const x2 = relative ? currentX + args[i+2] : args[i+2];
-				const y2 = relative ? currentY + args[i+3] : args[i+3];
-				const x = relative ? currentX + args[i+4] : args[i+4];
-				const y = relative ? currentY + args[i+5] : args[i+5];
-				
-				const bezierPoints = approximateCubicBezierSimple(currentX, currentY, x1, y1, x2, y2, x, y, 10);
-				
-				for (let j = 1; j < bezierPoints.length; j++) {
-					currentPath.push(bezierPoints[j]);
-				}
-				
-				currentX = x;
-				currentY = y;
-			}
-			break;
-							
-		case 'A': // Arc
-
-			for (let i = 0; i + 6 < args.length; i += 7) {
-				const rx = Math.abs(args[i]);
-				const ry = Math.abs(args[i+1]);
-				const xAxisRotation = args[i+2] * Math.PI / 180;
-				const largeArcFlag = args[i+3];
-				const sweepFlag = args[i+4];
-				const x = relative ? currentX + args[i+5] : args[i+5];
-				const y = relative ? currentY + args[i+6] : args[i+6];
-
-				const arcPoints = approximateArcSimple(currentX, currentY, x, y, rx, ry, largeArcFlag, sweepFlag, 16);
-
-				for (let j = 1; j < arcPoints.length; j++) {
-					currentPath.push(arcPoints[j]);
-				}
-				
-				currentX = x;
-				currentY = y;
-			}
-			break;
-
-		case 'S': // Smooth Cubic Bezier
-
-			for (let i = 0; i + 3 < args.length; i += 4) {
-				const x2 = relative ? currentX + args[i] : args[i];
-				const y2 = relative ? currentY + args[i+1] : args[i+1];
-				const x = relative ? currentX + args[i+2] : args[i+2];
-				const y = relative ? currentY + args[i+3] : args[i+3];
-
-				const x1 = 2 * currentX - (currentPath.length > 1 ? currentPath[currentPath.length-2].x : currentX);
-				const y1 = 2 * currentY - (currentPath.length > 1 ? currentPath[currentPath.length-2].y : currentY);
-						
-				const bezierPoints = approximateCubicBezierSimple(currentX, currentY, x1, y1, x2, y2, x, y, 10);
-				
-				for (let j = 1; j < bezierPoints.length; j++) {
-					currentPath.push(bezierPoints[j]);
-				}
-				
-				currentX = x;
-				currentY = y;
-			}
-			break;
-							
 						default:
-
 							break;
 					}
 				}
 
-				if (currentPath.length > 0) {
-					paths.push(currentPath);
-				}
-				
-			} catch (error) {
+				if (currentPath.length > 0) paths.push(currentPath);
 
+			} catch (error) {
+				console.warn('Ошибка парсинга SVG path:', error, pathData);
 			}
-			
+
 			return paths;
+		}
+
+		function approximateQuadraticBezier(x1, y1, qx, qy, x2, y2, segments) {
+			const points = [{ x: x1, y: y1 }];
+			for (let i = 1; i <= segments; i++) {
+				const t = i / segments;
+				const u = 1 - t;
+				const x = u * u * x1 + 2 * u * t * qx + t * t * x2;
+				const y = u * u * y1 + 2 * u * t * qy + t * t * y2;
+				points.push({ x, y });
+			}
+			return points;
 		}
 
 		function approximateArcSimple(x1, y1, x2, y2, rx, ry, largeArcFlag, sweepFlag, segments) {
@@ -11107,10 +11428,10 @@ toggleCenterlineOptions();
 				updateEraserCursor();
 			}
 		});
-document.getElementById('manualMoveBtn').addEventListener('click', function() {
-    toggleManualMoveMode();
-});
-document.getElementById('resetPositionBtn').addEventListener('click', function() {
+	document.getElementById('manualMoveBtn').addEventListener('click', function() {
+		toggleManualMoveMode();
+	});
+	document.getElementById('resetPositionBtn').addEventListener('click', function() {
     offsetXInput.value = 0;
     offsetYInput.value = 0;
     rotationInput.value = 0;
