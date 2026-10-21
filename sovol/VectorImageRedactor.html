@@ -10763,7 +10763,8 @@ convertBezierToPolylineForCalculation(d) {
 
 parsePathCommands(d) {
     const commands = [];
-    const regex = /([MLCQZmlcqz])([^MLCQZmlcqz]*)/g;
+    // Расширенная регулярка: M L H V C S Q T A Z (верхний и нижний регистр)
+    const regex = /([MLHVCSQTAZmlhvcsqtaz])([^MLHVCSQTAZmlhvcsqtaz]*)/g;
     let match;
     
     while ((match = regex.exec(d)) !== null) {
@@ -10773,13 +10774,11 @@ parsePathCommands(d) {
         
         if (!paramsStr && command.toUpperCase() !== 'Z') continue;
         
-        const params = paramsStr ? paramsStr.split(/[\s,]+/).map(Number).filter(n => !isNaN(n)) : [];
+        const params = paramsStr 
+            ? paramsStr.split(/[\s,]+/).map(Number).filter(n => !isNaN(n)) 
+            : [];
         
-        commands.push({
-            command,
-            params,
-            isRelative
-        });
+        commands.push({ command, params, isRelative });
     }
     
     return commands;
@@ -13225,6 +13224,1205 @@ updateHelperScales() {
         this.showSelectionHandles(this.selectedElement);
     }
 }
+
+// Собирает все примитивы из vectorLayer в один SVGElement.
+// Возвращает созданный SVGElement или null, если примитивов нет.
+wrapVectorLayerAsSVGElement(name = 'SVG из вектора') {
+    const vectorLayer = this.vectorLayer;
+    if (!vectorLayer) return null;
+    
+    // ─── 1. Собираем пути ───
+    const paths = [];
+    
+    // 1a. Безье — по цепочкам (точные кривые)
+    if (this.state.bezierVectors.length > 0) {
+        const chains = this.orderVectorsIntoChains(this.state.bezierVectors);
+        for (const chain of chains) {
+            const points = [];
+            for (const v of chain) {
+                const from = this.state.bezierPoints[v.from];
+                const to = this.state.bezierPoints[v.to];
+                if (!from || !to) continue;
+                
+                const N = 20;
+                for (let i = 0; i <= N; i++) {
+                    if (i === 0 && points.length > 0) continue;
+                    const t = i / N;
+                    const p = this.evaluateCubicBezier(
+                        from.x, from.y,
+                        v.control1.x, v.control1.y,
+                        v.control2.x, v.control2.y,
+                        to.x, to.y,
+                        t
+                    );
+                    points.push(p);
+                }
+            }
+            if (points.length >= 2) paths.push(points);
+        }
+    }
+    
+    // 1b. Обычные path/line/rect/circle/ellipse
+    vectorLayer.querySelectorAll('path, line, rect, circle, ellipse').forEach(el => {
+        if (el.classList?.contains('bezier-vector')) return;
+        
+        const cls = el.getAttribute('class') || '';
+        const id = el.id || '';
+        if (cls.includes('bezier-guide') || 
+            cls.includes('bezier-point') || 
+            cls.includes('bezier-control')) return;
+        if (id.includes('indicator') || id.includes('push') || 
+            id.includes('eraser') || id.includes('selection')) return;
+        
+        const points = this.captureElementPoints(el);
+        if (points && points.length >= 2) paths.push(points);
+    });
+    
+    if (paths.length === 0) return null;
+    
+    // ─── 2. BBox ───
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const path of paths) {
+        for (const p of path) {
+            if (p.x < minX) minX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y > maxY) maxY = p.y;
+        }
+    }
+    
+    const width = maxX - minX;
+    const height = maxY - minY;
+    if (width <= 0 || height <= 0) return null;
+    
+    // ─── 3. Создаём SVGElement ───
+    const newSvg = new SVGElement(
+        Date.now() + Math.random(),
+        '<svg><path/></svg>',
+        minX, minY, width, height, name
+    );
+    
+    newSvg.vectorPaths = paths.map(path =>
+        path.map((p, i) => ({
+            x: p.x - minX,
+            y: height - (p.y - minY),
+            move: i === 0
+        }))
+    );
+    
+    newSvg.x = minX;
+    newSvg.y = minY;
+    newSvg.width = width;
+    newSvg.height = height;
+    newSvg.originalWidth = width;
+    newSvg.originalHeight = height;
+    newSvg.baseScale = 1.0;
+    newSvg.scale = 1.0;
+    newSvg.rotation = 0;
+    newSvg.sourceType = 'from_vector';
+    newSvg._fromVectorLayer = true;
+    
+    // ─── 4. СОХРАНЯЕМ Безье-структуру ───
+    newSvg._bezierData = {
+        points: this.state.bezierPoints.map(p => ({
+            x: p.x, y: p.y, index: p.index
+        })),
+        vectors: this.state.bezierVectors.map(v => ({
+            from: v.from,
+            to: v.to,
+            control1: { x: v.control1.x, y: v.control1.y, belongsTo: v.control1.belongsTo },
+            control2: { x: v.control2.x, y: v.control2.y, belongsTo: v.control2.belongsTo },
+            stroke: v.path?.getAttribute('stroke') || this.state.strokeColor,
+            strokeWidth: v.path?.getAttribute('stroke-width') || this.state.strokeWidth,
+            linecap: v.path?.getAttribute('stroke-linecap') || 'round',
+            linejoin: v.path?.getAttribute('stroke-linejoin') || 'round'
+        }))
+    };
+    
+    // ─── 5. Превью ───
+    this._createSVGElementPreview(newSvg, width, height);
+    
+    return newSvg;
+}
+
+// Вспомогательный метод — превью для SVGElement
+_createSVGElementPreview(svgElement, width, height) {
+    const canvas = document.createElement('canvas');
+    const maxSize = 200;
+    let previewWidth, previewHeight;
+    
+    if (width > height) {
+        previewWidth = maxSize;
+        previewHeight = (height / width) * maxSize;
+    } else {
+        previewHeight = maxSize;
+        previewWidth = (width / height) * maxSize;
+    }
+    
+    canvas.width = Math.max(10, previewWidth);
+    canvas.height = Math.max(10, previewHeight);
+    
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    
+    const scaleX = canvas.width / width;
+    const scaleY = canvas.height / height;
+    
+    for (const path of svgElement.vectorPaths) {
+        if (path.length < 2) continue;
+        ctx.beginPath();
+        ctx.moveTo(path[0].x * scaleX, canvas.height - path[0].y * scaleY);
+        for (let i = 1; i < path.length; i++) {
+            ctx.lineTo(path[i].x * scaleX, canvas.height - path[i].y * scaleY);
+        }
+        ctx.stroke();
+    }
+    
+    svgElement.svgImage = canvas;
+}
+
+// Снимает обёртку SVGElement (если он был создан из vectorLayer).
+unwrapSVGElementToVectorLayer(index) {
+    if (index < 0 || index >= svgElements.length) return false;
+    
+    const svgEl = svgElements[index];
+    if (!svgEl._fromVectorLayer) return false;
+    
+    // 1. Удаляем SVGElement
+    svgElements.splice(index, 1);
+    selectedSVGIndex = -1;
+    isSVGSelected = false;
+    
+    // 2. Показываем vectorLayer (обычные примитивы уже в DOM — они НЕ удалялись)
+    if (this.vectorLayer) {
+        this.vectorLayer.style.display = '';
+    }
+    
+    // 3. Восстанавливаем Безье-структуру
+    const savedData = svgEl._bezierData;
+    if (savedData && savedData.points.length > 0) {
+        // Очищаем на всякий случай (должно быть пусто)
+        for (const p of this.state.bezierPoints) {
+            if (p.element && p.element.parentNode) p.element.remove();
+        }
+        for (const v of this.state.bezierVectors) {
+            if (v.path && v.path.parentNode) v.path.remove();
+            const ge = v.guideElements || {};
+            if (ge.line1) ge.line1.remove();
+            if (ge.control1) ge.control1.remove();
+            if (ge.line2) ge.line2.remove();
+            if (ge.control2) ge.control2.remove();
+        }
+        
+        this.state.bezierPoints = [];
+        this.state.bezierVectors = [];
+        
+        // Создаём точки
+        for (const pData of savedData.points) {
+            const point = {
+                x: pData.x, y: pData.y,
+                element: null, index: pData.index
+            };
+            point.element = this.createBezierPointElement(point);
+            this.vectorLayer.appendChild(point.element);
+            this.state.bezierPoints.push(point);
+        }
+        
+        // Создаём векторы
+        for (const vData of savedData.vectors) {
+            const vector = {
+                from: vData.from,
+                to: vData.to,
+                control1: { x: vData.control1.x, y: vData.control1.y, belongsTo: vData.control1.belongsTo ?? vData.from },
+                control2: { x: vData.control2.x, y: vData.control2.y, belongsTo: vData.control2.belongsTo ?? vData.to },
+                path: null,
+                guideElements: {}
+            };
+            
+            const from = this.state.bezierPoints[vector.from];
+            const to = this.state.bezierPoints[vector.to];
+            if (!from || !to) continue;
+            
+            vector.path = this.createBezierPath(
+                from.x, from.y,
+                vector.control1.x, vector.control1.y,
+                vector.control2.x, vector.control2.y,
+                to.x, to.y
+            );
+            vector.path.setAttribute('stroke', vData.stroke);
+            vector.path.setAttribute('stroke-width', vData.strokeWidth);
+            vector.path.setAttribute('stroke-linecap', vData.linecap || 'round');
+            vector.path.setAttribute('stroke-linejoin', vData.linejoin || 'round');
+            
+            this.vectorLayer.appendChild(vector.path);
+            this.state.bezierVectors.push(vector);
+        }
+        
+        // Направляющие
+        for (const v of this.state.bezierVectors) {
+            const from = this.state.bezierPoints[v.from];
+            const to = this.state.bezierPoints[v.to];
+            if (from && to) this.createVectorGuides(v, from, to);
+        }
+        
+        // Скрываем хелперы, если не в режиме B
+        if (this.state.currentTool !== 'bezier-points') {
+            for (const v of this.state.bezierVectors) {
+                const ge = v.guideElements || {};
+                if (ge.line1) ge.line1.style.display = 'none';
+                if (ge.control1) ge.control1.style.display = 'none';
+                if (ge.line2) ge.line2.style.display = 'none';
+                if (ge.control2) ge.control2.style.display = 'none';
+            }
+            this.toggleBezierPoints(false);
+        }
+    }
+    
+    // 4. Удаляем ссылку на данные
+    delete svgEl._bezierData;
+    
+    // 5. Переключаемся в векторный режим
+    if (typeof switchMode === 'function') {
+        switchMode('vector');
+    }
+    
+    // 6. Обновляем списки
+    updateSVGElementsList();
+    updateTextElementsList();
+    updateQRElementsList();
+    updateElementProperties();
+    updateDeleteButtonsVisibility();
+    drawScene();
+    
+    updateStatus(
+        `SVG открыт для редактирования (${this.state.bezierVectors.length} векторов)`,
+        'success'
+    );
+    return true;
+}
+
+rectToPathWithArcs(x, y, w, h, rx, ry, toSheet, transformStr) {
+    // Ограничения rx/ry
+    rx = Math.min(rx, w / 2);
+    ry = Math.min(ry, h / 2);
+    
+    // Если rx/ry = 0 — обычный прямоугольник
+    if (rx === 0 || ry === 0) {
+        const pts = [
+            { x, y },
+            { x: x + w, y },
+            { x: x + w, y: y + h },
+            { x, y: y + h }
+        ];
+        const tPts = transformStr ? this.applyTransformToPoints(pts, transformStr) : pts;
+        const sPts = tPts.map(p => toSheet(p.x, p.y));
+        let d = `M ${sPts[0].x} ${sPts[0].y}`;
+        for (let i = 1; i < 4; i++) d += ` L ${sPts[i].x} ${sPts[i].y}`;
+        d += ' Z';
+        return d;
+    }
+    
+    // Точки (по часовой стрелке от левого верхнего угла)
+    const pts = [
+        { x: x + rx, y: y },                    // верх-лево (после дуги)
+        { x: x + w - rx, y: y },                // верх-право (до дуги)
+        { x: x + w, y: y + ry },                // право-верх (после дуги)
+        { x: x + w, y: y + h - ry },            // право-низ (до дуги)
+        { x: x + w - rx, y: y + h },            // низ-право (после дуги)
+        { x: x + rx, y: y + h },                // низ-лево (до дуги)
+        { x: x, y: y + h - ry },                // лево-низ (после дуги)
+        { x: x, y: y + ry }                     // лево-верх (до дуги)
+    ];
+    
+    const tPts = transformStr ? this.applyTransformToPoints(pts, transformStr) : pts;
+    
+    // Control points для дуг (k = 0.5523 * радиус)
+    const k = 0.5522847498;
+    const ctrlPts = [
+        // Верх-правая дуга: (x+w-rx, y) → (x+w, y+ry)
+        { c1: { x: x + w - rx + k * rx, y: y }, c2: { x: x + w, y: y + ry - k * ry } },
+        // Право-нижняя дуга: (x+w, y+h-ry) → (x+w-rx, y+h)
+        { c1: { x: x + w, y: y + h - ry + k * ry }, c2: { x: x + w - rx + k * rx, y: y + h } },
+        // Низ-левая дуга: (x+rx, y+h) → (x, y+h-ry)
+        { c1: { x: x + rx - k * rx, y: y + h }, c2: { x: x, y: y + h - ry + k * ry } },
+        // Лево-верхняя дуга: (x, y+ry) → (x+rx, y)
+        { c1: { x: x, y: y + ry - k * ry }, c2: { x: x + rx - k * rx, y: y } }
+    ];
+    
+    let tCtrl = ctrlPts;
+    if (transformStr) {
+        const allCtrlPts = ctrlPts.flatMap(c => [c.c1, c.c2]);
+        const tAllCtrl = this.applyTransformToPoints(allCtrlPts, transformStr);
+        tCtrl = [
+            { c1: tAllCtrl[0], c2: tAllCtrl[1] },
+            { c1: tAllCtrl[2], c2: tAllCtrl[3] },
+            { c1: tAllCtrl[4], c2: tAllCtrl[5] },
+            { c1: tAllCtrl[6], c2: tAllCtrl[7] }
+        ];
+    }
+    
+    const sPts = tPts.map(p => toSheet(p.x, p.y));
+    const sCtrl = tCtrl.map(c => ({
+        c1: toSheet(c.c1.x, c.c1.y),
+        c2: toSheet(c.c2.x, c.c2.y)
+    }));
+    
+    // Строим d
+    let d = `M ${sPts[0].x} ${sPts[0].y}`;
+    
+    // Верх-правая дуга (от p0 к p2 через p1... но p1 — прямой участок)
+    // На самом деле: p0 → p1 (прямая), p1 → p2 (дуга), p2 → p3 (прямая), ...
+    // Проще: идём по часовой: p0 → p1 (L), p1 → p2 (C), p2 → p3 (L), p3 → p4 (C)...
+    
+    // p0 → p1 (прямая)
+    d += ` L ${sPts[1].x} ${sPts[1].y}`;
+    // p1 → p2 (дуга, ctrl[0])
+    d += ` C ${sCtrl[0].c1.x} ${sCtrl[0].c1.y} ${sCtrl[0].c2.x} ${sCtrl[0].c2.y} ${sPts[2].x} ${sPts[2].y}`;
+    // p2 → p3 (прямая)
+    d += ` L ${sPts[3].x} ${sPts[3].y}`;
+    // p3 → p4 (дуга, ctrl[1])
+    d += ` C ${sCtrl[1].c1.x} ${sCtrl[1].c1.y} ${sCtrl[1].c2.x} ${sCtrl[1].c2.y} ${sPts[4].x} ${sPts[4].y}`;
+    // p4 → p5 (прямая)
+    d += ` L ${sPts[5].x} ${sPts[5].y}`;
+    // p5 → p6 (дуга, ctrl[2])
+    d += ` C ${sCtrl[2].c1.x} ${sCtrl[2].c1.y} ${sCtrl[2].c2.x} ${sCtrl[2].c2.y} ${sPts[6].x} ${sPts[6].y}`;
+    // p6 → p7 (прямая)
+    d += ` L ${sPts[7].x} ${sPts[7].y}`;
+    // p7 → p0 (дуга, ctrl[3])
+    d += ` C ${sCtrl[3].c1.x} ${sCtrl[3].c1.y} ${sCtrl[3].c2.x} ${sCtrl[3].c2.y} ${sPts[0].x} ${sPts[0].y}`;
+    
+    d += ' Z';
+    
+    return d;
+}
+
+ellipseToPathWithArcs(cx, cy, rx, ry, toSheet, transformStr) {
+    const pts = [
+        { x: cx + rx, y: cy },
+        { x: cx, y: cy + ry },
+        { x: cx - rx, y: cy },
+        { x: cx, y: cy - ry }
+    ];
+    
+    let tPts = transformStr ? this.applyTransformToPoints(pts, transformStr) : pts;
+    
+    const k = 0.5522847498;
+    const ctrlPts = [
+        { c1: { x: cx + rx, y: cy + k * ry }, c2: { x: cx + k * rx, y: cy + ry } },
+        { c1: { x: cx - k * rx, y: cy + ry }, c2: { x: cx - rx, y: cy + k * ry } },
+        { c1: { x: cx - rx, y: cy - k * ry }, c2: { x: cx - k * rx, y: cy - ry } },
+        { c1: { x: cx + k * rx, y: cy - ry }, c2: { x: cx + rx, y: cy - k * ry } }
+    ];
+    
+    let tCtrl = ctrlPts;
+    if (transformStr) {
+        const allCtrlPts = ctrlPts.flatMap(c => [c.c1, c.c2]);
+        const tAllCtrl = this.applyTransformToPoints(allCtrlPts, transformStr);
+        tCtrl = [
+            { c1: tAllCtrl[0], c2: tAllCtrl[1] },
+            { c1: tAllCtrl[2], c2: tAllCtrl[3] },
+            { c1: tAllCtrl[4], c2: tAllCtrl[5] },
+            { c1: tAllCtrl[6], c2: tAllCtrl[7] }
+        ];
+    }
+    
+    const sPts = tPts.map(p => toSheet(p.x, p.y));
+    const sCtrl = tCtrl.map(c => ({
+        c1: toSheet(c.c1.x, c.c1.y),
+        c2: toSheet(c.c2.x, c.c2.y)
+    }));
+    
+    let d = `M ${sPts[0].x} ${sPts[0].y} `;
+    for (let i = 0; i < 4; i++) {
+        const p3 = sPts[(i + 1) % 4];
+        d += `C ${sCtrl[i].c1.x} ${sCtrl[i].c1.y} ${sCtrl[i].c2.x} ${sCtrl[i].c2.y} ${p3.x} ${p3.y} `;
+    }
+    d += 'Z';
+    
+    return d;
+}
+
+circleToPathWithArcs(cx, cy, r, toSheet, transformStr) {
+    // 4 точки на круге (0°, 90°, 180°, 270°)
+    const pts = [
+        { x: cx + r, y: cy },        // 0°
+        { x: cx, y: cy + r },        // 90°
+        { x: cx - r, y: cy },        // 180°
+        { x: cx, y: cy - r }         // 270°
+    ];
+    
+    // Применяем transform к точкам (в системе исходного SVG)
+    let tPts = pts;
+    if (transformStr) {
+        tPts = this.applyTransformToPoints(pts, transformStr);
+    }
+    
+    // Каждый квадрант → кубическая Безье (alpha = 0.5523)
+    const k = 0.5522847498;  // 4/3 * (sqrt(2) - 1)
+    
+    // Control points для каждого квадранта (в системе исходного SVG)
+    const ctrlPts = [
+        // 0° → 90°
+        { c1: { x: cx + r, y: cy + k * r }, c2: { x: cx + k * r, y: cy + r } },
+        // 90° → 180°
+        { c1: { x: cx - k * r, y: cy + r }, c2: { x: cx - r, y: cy + k * r } },
+        // 180° → 270°
+        { c1: { x: cx - r, y: cy - k * r }, c2: { x: cx - k * r, y: cy - r } },
+        // 270° → 0° (замыкание)
+        { c1: { x: cx + k * r, y: cy - r }, c2: { x: cx + r, y: cy - k * r } }
+    ];
+    
+    // Применяем transform к control points
+    let tCtrl = ctrlPts;
+    if (transformStr) {
+        const allCtrlPts = ctrlPts.flatMap(c => [c.c1, c.c2]);
+        const tAllCtrl = this.applyTransformToPoints(allCtrlPts, transformStr);
+        tCtrl = [
+            { c1: tAllCtrl[0], c2: tAllCtrl[1] },
+            { c1: tAllCtrl[2], c2: tAllCtrl[3] },
+            { c1: tAllCtrl[4], c2: tAllCtrl[5] },
+            { c1: tAllCtrl[6], c2: tAllCtrl[7] }
+        ];
+    }
+    
+    // Переводим в систему листа (мм, Y вверх)
+    const sPts = tPts.map(p => toSheet(p.x, p.y));
+    const sCtrl = tCtrl.map(c => ({
+        c1: toSheet(c.c1.x, c.c1.y),
+        c2: toSheet(c.c2.x, c.c2.y)
+    }));
+    
+    // Строим d
+    let d = `M ${sPts[0].x} ${sPts[0].y} `;
+    for (let i = 0; i < 4; i++) {
+        const p3 = sPts[(i + 1) % 4];
+        d += `C ${sCtrl[i].c1.x} ${sCtrl[i].c1.y} ${sCtrl[i].c2.x} ${sCtrl[i].c2.y} ${p3.x} ${p3.y} `;
+    }
+    d += 'Z';
+    
+    return d;
+}
+
+applyTransformToPoints(points, transformStr) {
+    if (!transformStr || points.length === 0) return points;
+    
+    // Парсим transform в матрицу (у вас уже есть parseTransformString)
+    const matrix = this.parseTransformString(transformStr);
+    if (!matrix || this.isIdentityMatrix(matrix)) return points;
+    
+    // Применяем к каждой точке
+    return points.map(p => this.applyMatrixToPoint(matrix, p.x, p.y));
+}
+arcToCubic(x1, y1, rx, ry, xAxisRotationDeg, largeArcFlag, sweepFlag, x2, y2) {
+    // ─── 0. Вырожденные случаи ───
+    if (x1 === x2 && y1 === y2) return [];
+    if (rx === 0 || ry === 0) {
+        // Дуга вырождается в прямую
+        return [{
+            p0: { x: x1, y: y1 },
+            c1: { x: x1, y: y1 },
+            c2: { x: x2, y: y2 },
+            p3: { x: x2, y: y2 }
+        }];
+    }
+    
+    rx = Math.abs(rx);
+    ry = Math.abs(ry);
+    
+    // ─── 1. Параметры (Endpoint to Center) ───
+    const phi = (xAxisRotationDeg * Math.PI) / 180;
+    const cosPhi = Math.cos(phi);
+    const sinPhi = Math.sin(phi);
+    
+    // Шаг 1.1: сдвиг начала координат в середину
+    const dx = (x1 - x2) / 2;
+    const dy = (y1 - y2) / 2;
+    
+    // Шаг 1.2: поворот на -phi
+    const x1p = cosPhi * dx + sinPhi * dy;
+    const y1p = -sinPhi * dx + cosPhi * dy;
+    
+    // Шаг 1.3: коррекция радиусов (если слишком малы)
+    const lambda = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
+    if (lambda > 1) {
+        const s = Math.sqrt(lambda);
+        rx *= s;
+        ry *= s;
+    }
+    
+    // Шаг 1.4: центр в повёрнутой системе
+    const rx2 = rx * rx;
+    const ry2 = ry * ry;
+    const x1p2 = x1p * x1p;
+    const y1p2 = y1p * y1p;
+    
+    let num = rx2 * ry2 - rx2 * y1p2 - ry2 * x1p2;
+    if (num < 0) num = 0;  // численная погрешность
+    const den = rx2 * y1p2 + ry2 * x1p2;
+    
+    let coef = Math.sqrt(num / den);
+    if (largeArcFlag === sweepFlag) coef = -coef;
+    
+    const cxp = coef * (rx * y1p) / ry;
+    const cyp = coef * -(ry * x1p) / rx;
+    
+    // Шаг 1.5: центр в исходной системе
+    const cx = cosPhi * cxp - sinPhi * cyp + (x1 + x2) / 2;
+    const cy = sinPhi * cxp + cosPhi * cyp + (y1 + y2) / 2;
+    
+    // ─── 2. Углы (Center to Angles) ───
+    const angle = (ux, uy, vx, vy) => {
+        const dot = ux * vx + uy * vy;
+        const len = Math.sqrt(ux * ux + uy * uy) * Math.sqrt(vx * vx + vy * vy);
+        if (len === 0) return 0;
+        let a = Math.acos(Math.max(-1, Math.min(1, dot / len)));
+        if (ux * vy - uy * vx < 0) a = -a;
+        return a;
+    };
+    
+    const theta1 = angle(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry);
+    let deltaTheta = angle(
+        (x1p - cxp) / rx, (y1p - cyp) / ry,
+        (-x1p - cxp) / rx, (-y1p - cyp) / ry
+    );
+    
+    // Ограничение delta_theta
+    if (!sweepFlag && deltaTheta > 0) deltaTheta -= 2 * Math.PI;
+    if (sweepFlag && deltaTheta < 0) deltaTheta += 2 * Math.PI;
+    
+    // ─── 3. Аппроксимация кубическими ───
+    // Разбиваем дугу на сегменты ≤ 90° (для точности)
+    const segments = Math.ceil(Math.abs(deltaTheta) / (Math.PI / 2));
+    const delta = deltaTheta / segments;
+    
+    const result = [];
+    let currentTheta = theta1;
+    let currentX = x1;
+    let currentY = y1;
+    
+    for (let i = 0; i < segments; i++) {
+        const nextTheta = currentTheta + delta;
+        
+        // Точка на эллипсе (в системе эллипса)
+        const cosT1 = Math.cos(currentTheta);
+        const sinT1 = Math.sin(currentTheta);
+        const cosT2 = Math.cos(nextTheta);
+        const sinT2 = Math.sin(nextTheta);
+        
+        // Производные (касательные) в системе эллипса
+        const dCosT1 = -sinT1;
+        const dSinT1 = cosT1;
+        const dCosT2 = -sinT2;
+        const dSinT2 = cosT2;
+        
+        // Коэффициент для control points (стандартный: 4/3 * tan(delta/4))
+        const alpha = (4 / 3) * Math.tan(delta / 4);
+        
+        // Control points в системе эллипса
+        const cp1x_e = cosT1 - alpha * dCosT1;
+        const cp1y_e = sinT1 - alpha * dSinT1;
+        const cp2x_e = cosT2 + alpha * dCosT2;
+        const cp2y_e = sinT2 + alpha * dSinT2;
+        
+        // Конечная точка в системе эллипса
+        const endX_e = cosT2;
+        const endY_e = sinT2;
+        
+        // Преобразование обратно: эллипс → повёрнутая система → исходная
+        const toWorld = (ex, ey) => ({
+            x: cx + rx * ex * cosPhi - ry * ey * sinPhi,
+            y: cy + rx * ex * sinPhi + ry * ey * cosPhi
+        });
+        
+        const c1 = toWorld(cp1x_e, cp1y_e);
+        const c2 = toWorld(cp2x_e, cp2y_e);
+        const p3 = toWorld(endX_e, endY_e);
+        
+        result.push({
+            p0: { x: currentX, y: currentY },
+            c1,
+            c2,
+            p3
+        });
+        
+        currentX = p3.x;
+        currentY = p3.y;
+        currentTheta = nextTheta;
+    }
+    
+    // Финальная коррекция: последняя точка должна точно совпасть с (x2, y2)
+    if (result.length > 0) {
+        result[result.length - 1].p3 = { x: x2, y: y2 };
+    }
+    
+    return result;
+}
+
+normalizePathToAbsolute(d) {
+    if (!d) return '';
+    
+    const commands = this.parsePathCommands(d); 
+    let curX = 0, curY = 0;
+    let startX = 0, startY = 0;
+    let prevCX = 0, prevCY = 0;  // предыдущая control-точка (для S/T)
+    let lastCmd = '';
+    
+    let result = '';
+    
+    for (const cmd of commands) {
+        const { command, params, isRelative } = cmd;
+        const upper = command.toUpperCase();
+        
+        // Абсолютные параметры
+        let abs = [...params];
+        if (isRelative && upper !== 'Z') {
+            for (let i = 0; i < abs.length; i += 2) {
+                abs[i] += curX;
+                if (i + 1 < abs.length) abs[i + 1] += curY;
+            }
+        }
+        
+        switch (upper) {
+            case 'M':
+                if (abs.length >= 2) {
+                    curX = abs[0];
+                    curY = abs[1];
+                    startX = curX;
+                    startY = curY;
+                    result += `M ${curX} ${curY} `;
+                    // Все последующие пары — L (стандарт SVG)
+                    for (let i = 2; i < abs.length; i += 2) {
+                        if (i + 1 >= abs.length) break;
+                        curX = abs[i];
+                        curY = abs[i+1];
+                        result += `L ${curX} ${curY} `;
+                    }
+                }
+                break;
+                
+            case 'L':
+                for (let i = 0; i < abs.length; i += 2) {
+                    if (i + 1 >= abs.length) break;
+                    curX = abs[i];
+                    curY = abs[i+1];
+                    result += `L ${curX} ${curY} `;
+                }
+                break;
+                
+            case 'H':
+                for (let i = 0; i < abs.length; i++) {
+                    curX = abs[i];
+                    result += `L ${curX} ${curY} `;
+                }
+                break;
+                
+            case 'V':
+                for (let i = 0; i < abs.length; i++) {
+                    curY = abs[i];
+                    result += `L ${curX} ${curY} `;
+                }
+                break;
+                
+            case 'C':
+                for (let i = 0; i < abs.length; i += 6) {
+                    if (i + 5 >= abs.length) break;
+                    const c1x = abs[i],   c1y = abs[i+1];
+                    const c2x = abs[i+2], c2y = abs[i+3];
+                    const x = abs[i+4],   y = abs[i+5];
+                    result += `C ${c1x} ${c1y} ${c2x} ${c2y} ${x} ${y} `;
+                    prevCX = c2x;
+                    prevCY = c2y;
+                    curX = x;
+                    curY = y;
+                }
+                break;
+                
+            case 'S':
+                // S → C: первая control-точка = отражение предыдущей
+                for (let i = 0; i < abs.length; i += 4) {
+                    if (i + 3 >= abs.length) break;
+                    const c2x = abs[i],   c2y = abs[i+1];
+                    const x = abs[i+2],   y = abs[i+3];
+                    
+                    let c1x, c1y;
+                    if (lastCmd === 'C' || lastCmd === 'S') {
+                        c1x = 2 * curX - prevCX;
+                        c1y = 2 * curY - prevCY;
+                    } else {
+                        c1x = curX;
+                        c1y = curY;
+                    }
+                    
+                    result += `C ${c1x} ${c1y} ${c2x} ${c2y} ${x} ${y} `;
+                    prevCX = c2x;
+                    prevCY = c2y;
+                    curX = x;
+                    curY = y;
+                }
+                break;
+                
+            case 'Q':
+                for (let i = 0; i < abs.length; i += 4) {
+                    if (i + 3 >= abs.length) break;
+                    const qx = abs[i], qy = abs[i+1];
+                    const x = abs[i+2], y = abs[i+3];
+                    result += `Q ${qx} ${qy} ${x} ${y} `;
+                    prevCX = qx;
+                    prevCY = qy;
+                    curX = x;
+                    curY = y;
+                }
+                break;
+                
+            case 'T':
+                // T → Q: control-точка = отражение предыдущей
+                for (let i = 0; i < abs.length; i += 2) {
+                    if (i + 1 >= abs.length) break;
+                    const x = abs[i], y = abs[i+1];
+                    
+                    let qx, qy;
+                    if (lastCmd === 'Q' || lastCmd === 'T') {
+                        qx = 2 * curX - prevCX;
+                        qy = 2 * curY - prevCY;
+                    } else {
+                        qx = curX;
+                        qy = curY;
+                    }
+                    
+                    result += `Q ${qx} ${qy} ${x} ${y} `;
+                    prevCX = qx;
+                    prevCY = qy;
+                    curX = x;
+                    curY = y;
+                }
+                break;
+                
+            case 'A':
+                for (let i = 0; i < abs.length; i += 7) {
+                    if (i + 6 >= abs.length) break;
+                    const rx = abs[i], ry = abs[i+1], rot = abs[i+2];
+                    const laf = abs[i+3], sf = abs[i+4];
+                    const x = abs[i+5], y = abs[i+6];
+                    result += `A ${rx} ${ry} ${rot} ${laf} ${sf} ${x} ${y} `;
+                    curX = x;
+                    curY = y;
+                }
+                break;
+                
+            case 'Z':
+                result += 'Z ';
+                curX = startX;
+                curY = startY;
+                break;
+        }
+        
+        lastCmd = upper;
+    }
+    
+    return result.trim();
+}
+
+importSvgToVectorLayer(svgContent, offsetX = 0, offsetY = 0) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgContent, 'image/svg+xml');
+    const svgEl = doc.querySelector('svg');
+    if (!svgEl) return 0;
+    
+    // viewBox
+    let vbX = 0, vbY = 0, vbW = 100, vbH = 100;
+    const vb = svgEl.getAttribute('viewBox');
+    if (vb) {
+        const [x, y, w, h] = vb.split(/[\s,]+/).map(Number);
+        vbX = x; vbY = y; vbW = w; vbH = h;
+    }
+    
+    // Собираем примитивы
+    const els = doc.querySelectorAll('line, rect, circle, ellipse, polyline, polygon, path');
+    let count = 0;
+    
+    for (const el of els) {
+        const tag = el.tagName.toLowerCase();
+        const transform = el.getAttribute('transform') || '';
+        
+        // Стиль
+        const stroke = el.getAttribute('stroke') || this.state.strokeColor;
+        const strokeWidth = parseFloat(el.getAttribute('stroke-width')) || this.state.strokeWidth;
+        const fill = el.getAttribute('fill') || 'none';
+        const linecap = el.getAttribute('stroke-linecap') || 'round';
+        const linejoin = el.getAttribute('stroke-linejoin') || 'round';
+        
+        // Координаты в системе листа
+        const toSheet = (x, y) => {
+            // viewBox → мм листа (если viewBox в пикселях)
+            const sx = (x - vbX) / vbW * sheetWidth;
+            const sy = (y - vbY) / vbH * sheetHeight;
+            // Y-инверсия: SVG Y вниз, лист Y вверх
+            return { x: sx + offsetX, y: sheetHeight - sy + offsetY };
+        };
+        
+        if (tag === 'line') {
+            const x1 = parseFloat(el.getAttribute('x1')) || 0;
+            const y1 = parseFloat(el.getAttribute('y1')) || 0;
+            const x2 = parseFloat(el.getAttribute('x2')) || 0;
+            const y2 = parseFloat(el.getAttribute('y2')) || 0;
+            
+            const p1 = toSheet(x1, y1);
+            const p2 = toSheet(x2, y2);
+            
+            // Применяем transform (если есть)
+            const [tp1, tp2] = this.applyTransformToPoints([p1, p2], transform);
+            
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', tp1.x);
+            line.setAttribute('y1', tp1.y);
+            line.setAttribute('x2', tp2.x);
+            line.setAttribute('y2', tp2.y);
+            line.setAttribute('stroke', stroke);
+            line.setAttribute('stroke-width', strokeWidth);
+            line.setAttribute('fill', 'none');
+            line.setAttribute('stroke-linecap', linecap);
+            
+            this.vectorLayer.appendChild(line);
+            count++;
+        }
+        else if (tag === 'rect') {
+            const x = parseFloat(el.getAttribute('x')) || 0;
+            const y = parseFloat(el.getAttribute('y')) || 0;
+            const w = parseFloat(el.getAttribute('width')) || 0;
+            const h = parseFloat(el.getAttribute('height')) || 0;
+            const rx = parseFloat(el.getAttribute('rx')) || 0;
+            const ry = parseFloat(el.getAttribute('ry')) || 0;
+            
+            const p1 = toSheet(x, y);
+            const p2 = toSheet(x + w, y + h);
+            
+            const [tp1, tp2] = this.applyTransformToPoints([p1, p2], transform);
+            
+            if (rx === 0 && ry === 0 && !transform.includes('rotate')) {
+                // Простой прямоугольник — оставляем <rect>
+                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                rect.setAttribute('x', Math.min(tp1.x, tp2.x));
+                rect.setAttribute('y', Math.min(tp1.y, tp2.y));
+                rect.setAttribute('width', Math.abs(tp2.x - tp1.x));
+                rect.setAttribute('height', Math.abs(tp2.y - tp1.y));
+                rect.setAttribute('stroke', stroke);
+                rect.setAttribute('stroke-width', strokeWidth);
+                rect.setAttribute('fill', fill);
+                this.vectorLayer.appendChild(rect);
+            } else {
+                // Скруглённый или повёрнутый — через <path> с дугами
+                const d = this.rectToPathWithArcs(x, y, w, h, rx, ry, toSheet, transform);
+                this.appendPathFromD(d, { stroke, strokeWidth, fill, linecap, linejoin });
+            }
+            count++;
+        }
+        else if (tag === 'circle') {
+            const cx = parseFloat(el.getAttribute('cx')) || 0;
+            const cy = parseFloat(el.getAttribute('cy')) || 0;
+            const r = parseFloat(el.getAttribute('r')) || 0;
+            
+            const c = toSheet(cx, cy);
+            const [tc] = this.applyTransformToPoints([c], transform);
+            
+            if (!transform) {
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('cx', tc.x);
+                circle.setAttribute('cy', tc.y);
+                circle.setAttribute('r', r * sheetWidth / vbW);
+                circle.setAttribute('stroke', stroke);
+                circle.setAttribute('stroke-width', strokeWidth);
+                circle.setAttribute('fill', fill);
+                this.vectorLayer.appendChild(circle);
+            } else {
+                // С поворотом/скосом — через <path> с 4 дугами
+                const d = this.circleToPathWithArcs(cx, cy, r, toSheet, transform);
+                this.appendPathFromD(d, { stroke, strokeWidth, fill, linecap, linejoin });
+            }
+            count++;
+        }
+        else if (tag === 'ellipse') {
+            const cx = parseFloat(el.getAttribute('cx')) || 0;
+            const cy = parseFloat(el.getAttribute('cy')) || 0;
+            const rx = parseFloat(el.getAttribute('rx')) || 0;
+            const ry = parseFloat(el.getAttribute('ry')) || 0;
+            
+            const c = toSheet(cx, cy);
+            const [tc] = this.applyTransformToPoints([c], transform);
+            
+            if (!transform) {
+                const ellipse = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+                ellipse.setAttribute('cx', tc.x);
+                ellipse.setAttribute('cy', tc.y);
+                ellipse.setAttribute('rx', rx * sheetWidth / vbW);
+                ellipse.setAttribute('ry', ry * sheetHeight / vbH);
+                ellipse.setAttribute('stroke', stroke);
+                ellipse.setAttribute('stroke-width', strokeWidth);
+                ellipse.setAttribute('fill', fill);
+                this.vectorLayer.appendChild(ellipse);
+            } else {
+                const d = this.ellipseToPathWithArcs(cx, cy, rx, ry, toSheet, transform);
+                this.appendPathFromD(d, { stroke, strokeWidth, fill, linecap, linejoin });
+            }
+            count++;
+        }
+        else if (tag === 'polyline' || tag === 'polygon') {
+            const pts = (el.getAttribute('points') || '').trim().split(/[\s,]+/).map(Number);
+            if (pts.length < 4) continue;
+            
+            const points = [];
+            for (let i = 0; i < pts.length; i += 2) {
+                points.push(toSheet(pts[i], pts[i+1]));
+            }
+            const transformed = this.applyTransformToPoints(points, transform);
+            
+            let d = `M ${transformed[0].x} ${transformed[0].y}`;
+            for (let i = 1; i < transformed.length; i++) {
+                d += ` L ${transformed[i].x} ${transformed[i].y}`;
+            }
+            if (tag === 'polygon') d += ' Z';
+            
+            this.appendPathFromD(d, { stroke, strokeWidth, fill, linecap, linejoin });
+            count++;
+        }
+        else if (tag === 'path') {
+            const d = el.getAttribute('d');
+            if (!d) continue;
+            
+            // Нормализуем относительные → абсолютные
+            const absD = this.normalizePathToAbsolute(d);
+            
+            // Парсим в примитивы (линии, C, Q → C, A → C)
+            const result = this.parsePathToPrimitives(absD, toSheet, transform);
+            
+            // Простые линии — добавляем как <path> с M/L
+            if (result.lines.length > 0) {
+                this.appendPathFromD(result.linesD, { stroke, strokeWidth, fill, linecap, linejoin });
+                count++;
+            }
+            
+            // Кривые — конвертируем в Безье-структуру
+            if (result.curves.length > 0) {
+                this.importCurvesAsBezier(result.curves, { stroke, strokeWidth, linecap, linejoin });
+                count++;
+            }
+        }
+    }
+    
+    return count;
+}
+
+parsePathToPrimitives(d, toSheet, transformStr) {
+    const commands = this.parsePathCommands(d);
+    const lines = [];
+    const curves = [];
+    let linesD = '';
+    
+    // Матрица (если есть transform)
+    const matrix = transformStr ? this.parseTransformString(transformStr) : null;
+    const hasMatrix = matrix && !this.isIdentityMatrix(matrix);
+    
+    // Применяет transform → toSheet
+    const project = (x, y) => {
+        let px = x, py = y;
+        if (hasMatrix) {
+            const t = this.applyMatrixToPoint(matrix, x, y);
+            px = t.x;
+            py = t.y;
+        }
+        return toSheet(px, py);
+    };
+    
+    let curX = 0, curY = 0;
+    let startX = 0, startY = 0;
+    
+    for (const cmd of commands) {
+        const { command, params, isRelative } = cmd;
+        const upper = command.toUpperCase();
+        
+        let abs = [...params];
+        if (isRelative && upper !== 'Z') {
+            for (let i = 0; i < abs.length; i += 2) {
+                abs[i] += curX;
+                if (i + 1 < abs.length) abs[i + 1] += curY;
+            }
+        }
+        
+        switch (upper) {
+            case 'M':
+                if (abs.length >= 2) {
+                    curX = abs[0]; curY = abs[1];
+                    startX = curX; startY = curY;
+                    const p = project(curX, curY);
+                    linesD += `M ${p.x} ${p.y} `;
+                }
+                break;
+                
+            case 'L':
+                for (let i = 0; i < abs.length; i += 2) {
+                    if (i + 1 >= abs.length) break;
+                    const from = project(curX, curY);
+                    const to = project(abs[i], abs[i+1]);
+                    lines.push({ from, to });
+                    linesD += `L ${to.x} ${to.y} `;
+                    curX = abs[i]; curY = abs[i+1];
+                }
+                break;
+                
+            case 'C':
+                for (let i = 0; i < abs.length; i += 6) {
+                    if (i + 5 >= abs.length) break;
+                    const p0 = project(curX, curY);
+                    const c1 = project(abs[i], abs[i+1]);
+                    const c2 = project(abs[i+2], abs[i+3]);
+                    const p3 = project(abs[i+4], abs[i+5]);
+                    curves.push({ p0, c1, c2, p3 });
+                    curX = abs[i+4]; curY = abs[i+5];
+                }
+                break;
+                
+            case 'Q':
+                for (let i = 0; i < abs.length; i += 4) {
+                    if (i + 3 >= abs.length) break;
+                    const qx = abs[i], qy = abs[i+1];
+                    const ex = abs[i+2], ey = abs[i+3];
+                    const c1x = curX + (2/3) * (qx - curX);
+                    const c1y = curY + (2/3) * (qy - curY);
+                    const c2x = ex + (2/3) * (qx - ex);
+                    const c2y = ey + (2/3) * (qy - ey);
+                    curves.push({
+                        p0: project(curX, curY),
+                        c1: project(c1x, c1y),
+                        c2: project(c2x, c2y),
+                        p3: project(ex, ey)
+                    });
+                    curX = ex; curY = ey;
+                }
+                break;
+                
+            case 'A':
+                for (let i = 0; i < abs.length; i += 7) {
+                    if (i + 6 >= abs.length) break;
+                    const rx = abs[i], ry = abs[i+1], rot = abs[i+2];
+                    const laf = abs[i+3], sf = abs[i+4];
+                    const ex = abs[i+5], ey = abs[i+6];
+                    // arcToCubic → кубические в системе SVG
+                    const arcSegs = this.arcToCubic(curX, curY, rx, ry, rot, laf, sf, ex, ey);
+                    for (const seg of arcSegs) {
+                        curves.push({
+                            p0: project(seg.p0.x, seg.p0.y),
+                            c1: project(seg.c1.x, seg.c1.y),
+                            c2: project(seg.c2.x, seg.c2.y),
+                            p3: project(seg.p3.x, seg.p3.y)
+                        });
+                    }
+                    curX = ex; curY = ey;
+                }
+                break;
+                
+            case 'Z':
+                if (curX !== startX || curY !== startY) {
+                    const from = project(curX, curY);
+                    const to = project(startX, startY);
+                    lines.push({ from, to });
+                    linesD += 'Z ';
+                }
+                curX = startX; curY = startY;
+                break;
+        }
+    }
+    
+    return { lines, curves, linesD };
+}
+
+importCurvesAsBezier(curves, style) {
+    const newPoints = [];
+    const newVectors = [];
+    
+    const getOrCreatePoint = (x, y) => {
+        // Ищем существующую точку с близкими координатами
+        for (const p of this.state.bezierPoints) {
+            if (Math.hypot(p.x - x, p.y - y) < 0.01) return p;
+        }
+        // Создаём новую
+        const p = {
+            x, y,
+            element: null,
+            index: this.state.bezierPoints.length + newPoints.length
+        };
+        p.element = this.createBezierPointElement(p);
+        this.vectorLayer.appendChild(p.element);
+        newPoints.push(p);
+        return p;
+    };
+    
+    for (const curve of curves) {
+        const fromPoint = getOrCreatePoint(curve.p0.x, curve.p0.y);
+        const toPoint = getOrCreatePoint(curve.p3.x, curve.p3.y);
+        
+        const vector = {
+            from: fromPoint.index,
+            to: toPoint.index,
+            control1: { x: curve.c1.x, y: curve.c1.y, belongsTo: fromPoint.index },
+            control2: { x: curve.c2.x, y: curve.c2.y, belongsTo: toPoint.index },
+            path: null,
+            guideElements: {}
+        };
+        
+        vector.path = this.createBezierPath(
+            fromPoint.x, fromPoint.y,
+            vector.control1.x, vector.control1.y,
+            vector.control2.x, vector.control2.y,
+            toPoint.x, toPoint.y
+        );
+        vector.path.setAttribute('stroke', style.stroke);
+        vector.path.setAttribute('stroke-width', style.strokeWidth);
+        vector.path.setAttribute('stroke-linecap', style.linecap);
+        vector.path.setAttribute('stroke-linejoin', style.linejoin);
+        
+        this.vectorLayer.appendChild(vector.path);
+        newVectors.push(vector);
+    }
+    
+    // Регистрируем в state
+    for (const p of newPoints) this.state.bezierPoints.push(p);
+    for (const v of newVectors) this.state.bezierVectors.push(v);
+    
+    // Создаём направляющие
+    for (const v of newVectors) {
+        const from = this.state.bezierPoints[v.from];
+        const to = this.state.bezierPoints[v.to];
+        if (from && to) this.createVectorGuides(v, from, to);
+    }
+    
+    // Скрываем направляющие, если не в режиме B
+    if (this.state.currentTool !== 'bezier-points') {
+        for (const v of newVectors) {
+            const ge = v.guideElements || {};
+            if (ge.line1) ge.line1.style.display = 'none';
+            if (ge.control1) ge.control1.style.display = 'none';
+            if (ge.line2) ge.line2.style.display = 'none';
+            if (ge.control2) ge.control2.style.display = 'none';
+        }
+        this.toggleBezierPoints(false);
+    }
+}
+
+appendPathFromD(d, style) {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d.trim());
+    path.setAttribute('fill', style.fill || 'none');
+    path.setAttribute('stroke', style.stroke);
+    path.setAttribute('stroke-width', style.strokeWidth);
+    path.setAttribute('stroke-linecap', style.linecap || 'round');
+    path.setAttribute('stroke-linejoin', style.linejoin || 'round');
+    this.vectorLayer.appendChild(path);
+    return path;
+}
+
+
 
 }
  
@@ -15714,30 +16912,55 @@ async function loadFiles(files) {
                         } else {
                             errors++;
                         }
-                    } else {
-                        // Это обычный SVG - загружаем 1:1
-                        const svgElement = new SVGElement(
-                            Date.now() + Math.random(),
-                            svgContent,
-                            0, 0, 50, 50,
-                            file.name
-                        );
-                        
-                        await svgElement.parseSVG(svgContent);
-                        
-                        if (svgElement.vectorPaths.length > 0) {
-                            svgElements.push(svgElement);
-                            svgsLoaded++;
-                            
-                            // Показываем информацию о размере
-                            const scaleInfo = svgElement.baseScale !== 1 ? 
-                                ` (масштаб ${(svgElement.baseScale*100).toFixed(0)}%)` : '';
-                            updateStatus(`SVG "${file.name}": ${svgElement.originalWidth.toFixed(1)}×${svgElement.originalHeight.toFixed(1)}мм${scaleInfo}`, 'success');
-                        } else {
-                            console.warn(`SVG ${file.name} не содержит путей`);
-                            errors++;
-                        }
-                    }
+} else {
+    // SVG — разбор в vectorLayer + ЕДИНАЯ обёртка
+    if (window.vectorEditor) {
+        const ve = window.vectorEditor;
+        
+        // 1. Разбираем SVG в vectorLayer
+        const count = ve.importSvgToVectorLayer(svgContent, 0, 0);
+        
+        if (count > 0) {
+            // 2. Оборачиваем через ТУ ЖЕ функцию
+            const wrapped = ve.wrapVectorLayerAsSVGElement(file.name);
+            
+            if (wrapped) {
+                svgElements.push(wrapped);
+                selectedSVGIndex = svgElements.length - 1;
+                isSVGSelected = true;
+                selectedElementIndex = -1;
+                isQRSelected = false;
+                selectedQRIndex = -1;
+                
+                // 3. Скрываем vectorLayer
+                if (ve.vectorLayer) {
+                    ve.vectorLayer.style.display = 'none';
+                }
+                
+                // 4. Снимок
+                ve.saveSnapshot();
+                
+                // 5. Обновляем списки
+                updateSVGElementsList();
+                updateTextElementsList();
+                updateQRElementsList();
+                updateElementProperties();
+                updateDeleteButtonsVisibility();
+                drawScene();
+                
+                svgsLoaded++;
+                const scaleInfo = wrapped.baseScale !== 1 
+                    ? ` (масштаб ${(wrapped.baseScale*100).toFixed(0)}%)` 
+                    : '';
+                updateStatus(`SVG "${file.name}": ${wrapped.originalWidth.toFixed(1)}×${wrapped.originalHeight.toFixed(1)}мм${scaleInfo}`, 'success');
+            } else {
+                errors++;
+            }
+        } else {
+            errors++;
+        }
+    }
+}
                     
                 } catch (error) {
                     console.error(`Ошибка загрузки ${file.name}:`, error);
@@ -18227,10 +19450,21 @@ function updateSVGElementsList() {
             flex-shrink: 0;
             margin: 0;
         `;
-        editBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            convertSvgElementToVector(index);
-        });
+		editBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			
+			const el = svgElements[index];
+			
+			if (el._fromVectorLayer) {
+				// Наш случай — снимаем обёртку
+				if (window.vectorEditor) {
+					window.vectorEditor.unwrapSVGElementToVectorLayer(index);
+				}
+			} else {
+				// Старый путь — конвертировать через convertSvgElementToVector
+				convertSvgElementToVector(index);
+			}
+		});
         
         div.appendChild(label);
         div.appendChild(eyeBtn);
@@ -19229,65 +20463,113 @@ async function exportToSvg() {
         }
         
         // ============ 2. Векторные элементы — КАК ЕСТЬ, с инверсией Y ============
-        if (window.vectorEditor) {
-const vectorLayer = document.getElementById('vector-layer');
-if (vectorLayer) {
-    vectorLayer.querySelectorAll('path, rect, circle, ellipse, line').forEach(el => {
-                    // Пропускаем вспомогательные
-                    const cls = el.getAttribute('class') || '';
-                    const id = el.id || '';
-                    if (cls.includes('bezier-guide') || 
-                        cls.includes('bezier-point') || 
-                        cls.includes('bezier-control')) return;
-                    if (id.includes('indicator') || id.includes('push') || 
-                        id.includes('eraser') || id.includes('selection')) return;
-                    
-                    const tag = el.tagName.toLowerCase();
-                    const stroke = el.getAttribute('stroke') || 'black';
-                    const fill = el.getAttribute('fill') || 'none';
-                    const strokeWidth = parseFloat(el.getAttribute('stroke-width')) || 0.3;
-                    const linecap = el.getAttribute('stroke-linecap') || 'round';
-                    const linejoin = el.getAttribute('stroke-linejoin') || 'round';
-                    
-                    if (tag === 'path') {
-                        const d = el.getAttribute('d');
-                        if (!d) return;
-                        const newD = invertPathY(d, sheetHeight);
-                        svgContent += `  <path d="${newD}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="${linecap}" stroke-linejoin="${linejoin}"/>\n`;
-                        
-                    } else if (tag === 'circle') {
-                        const cx = parseFloat(el.getAttribute('cx')) || 0;
-                        const cy = parseFloat(el.getAttribute('cy')) || 0;
-                        const r = parseFloat(el.getAttribute('r')) || 0;
-                        svgContent += `  <circle cx="${cx.toFixed(3)}" cy="${(sheetHeight - cy).toFixed(3)}" r="${r.toFixed(3)}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}"/>\n`;
-                        
-                    } else if (tag === 'ellipse') {
-                        const cx = parseFloat(el.getAttribute('cx')) || 0;
-                        const cy = parseFloat(el.getAttribute('cy')) || 0;
-                        const rx = parseFloat(el.getAttribute('rx')) || 0;
-                        const ry = parseFloat(el.getAttribute('ry')) || 0;
-                        svgContent += `  <ellipse cx="${cx.toFixed(3)}" cy="${(sheetHeight - cy).toFixed(3)}" rx="${rx.toFixed(3)}" ry="${ry.toFixed(3)}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}"/>\n`;
-                        
-                    } else if (tag === 'rect') {
-                        const x = parseFloat(el.getAttribute('x')) || 0;
-                        const y = parseFloat(el.getAttribute('y')) || 0;
-                        const w = parseFloat(el.getAttribute('width')) || 0;
-                        const h = parseFloat(el.getAttribute('height')) || 0;
-                        // Для прямоугольника: отражаем по Y — верхняя граница становится ниже
-                        // y_svg = sheetHeight - (y + h)
-                        svgContent += `  <rect x="${x.toFixed(3)}" y="${(sheetHeight - y - h).toFixed(3)}" width="${w.toFixed(3)}" height="${h.toFixed(3)}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}"/>\n`;
-                        
-                    } else if (tag === 'line') {
-                        const x1 = parseFloat(el.getAttribute('x1')) || 0;
-                        const y1 = parseFloat(el.getAttribute('y1')) || 0;
-                        const x2 = parseFloat(el.getAttribute('x2')) || 0;
-                        const y2 = parseFloat(el.getAttribute('y2')) || 0;
-                        svgContent += `  <line x1="${x1.toFixed(3)}" y1="${(sheetHeight - y1).toFixed(3)}" x2="${x2.toFixed(3)}" y2="${(sheetHeight - y2).toFixed(3)}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="${linecap}"/>\n`;
-                    }
-                });
+if (window.vectorEditor) {
+    const ve = window.vectorEditor;
+
+    // ─── 2a. Безье-векторы: собираем цепочки в ОДИН <path> на контур ───
+    if (ve.state.bezierVectors.length > 0) {
+        const chains = ve.orderVectorsIntoChains(ve.state.bezierVectors);
+
+        for (const chain of chains) {
+            if (chain.length === 0) continue;
+
+            let d = '';
+            let firstChainPoint = null;
+
+            for (let i = 0; i < chain.length; i++) {
+                const v = chain[i];
+                const from = ve.state.bezierPoints[v.from];
+                const to = ve.state.bezierPoints[v.to];
+                if (!from || !to) continue;
+
+                // Инверсия Y: Y вверх (редактор) → Y вниз (SVG)
+                const y0 = sheetHeight - from.y;
+                const y1 = sheetHeight - v.control1.y;
+                const y2 = sheetHeight - v.control2.y;
+                const y3 = sheetHeight - to.y;
+
+                if (i === 0) {
+                    d += `M ${from.x.toFixed(3)} ${y0.toFixed(3)} `;
+                    firstChainPoint = { x: from.x, y: y0 };
+                }
+                d += `C ${v.control1.x.toFixed(3)} ${y1.toFixed(3)} ` +
+                     `${v.control2.x.toFixed(3)} ${y2.toFixed(3)} ` +
+                     `${to.x.toFixed(3)} ${y3.toFixed(3)} `;
             }
+
+            if (!d) continue;
+
+            // Если контур замкнут — добавляем Z
+            const firstVec = chain[0];
+            const lastVec = chain[chain.length - 1];
+            if (firstVec.from === lastVec.to && firstChainPoint) {
+                d += 'Z';
+            }
+
+            svgContent += `  <path d="${d.trim()}" fill="none" stroke="black" stroke-width="0.3" stroke-linecap="round" stroke-linejoin="round"/>\n`;
         }
-        
+    }
+
+    // ─── 2b. Обычные path/rect/circle/ellipse/line (не Безье) ───
+    const vectorLayer = document.getElementById('vector-layer');
+    if (vectorLayer) {
+        vectorLayer.querySelectorAll('path, rect, circle, ellipse, line').forEach(el => {
+            // Пропускаем Безье — уже собрали в 2a
+            if (el.classList?.contains('bezier-vector')) return;
+
+            // Пропускаем вспомогательные
+            const cls = el.getAttribute('class') || '';
+            const id = el.id || '';
+            if (cls.includes('bezier-guide') ||
+                cls.includes('bezier-point') ||
+                cls.includes('bezier-control')) return;
+            if (id.includes('indicator') || id.includes('push') ||
+                id.includes('eraser') || id.includes('selection')) return;
+
+            const tag = el.tagName.toLowerCase();
+            const stroke = el.getAttribute('stroke') || 'black';
+            const fill = el.getAttribute('fill') || 'none';
+            const strokeWidth = parseFloat(el.getAttribute('stroke-width')) || 0.3;
+            const linecap = el.getAttribute('stroke-linecap') || 'round';
+            const linejoin = el.getAttribute('stroke-linejoin') || 'round';
+
+            if (tag === 'path') {
+                const d = el.getAttribute('d');
+                if (!d) return;
+                const newD = invertPathY(d, sheetHeight);
+                svgContent += `  <path d="${newD}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="${linecap}" stroke-linejoin="${linejoin}"/>\n`;
+
+            } else if (tag === 'circle') {
+                const cx = parseFloat(el.getAttribute('cx')) || 0;
+                const cy = parseFloat(el.getAttribute('cy')) || 0;
+                const r = parseFloat(el.getAttribute('r')) || 0;
+                svgContent += `  <circle cx="${cx.toFixed(3)}" cy="${(sheetHeight - cy).toFixed(3)}" r="${r.toFixed(3)}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}"/>\n`;
+
+            } else if (tag === 'ellipse') {
+                const cx = parseFloat(el.getAttribute('cx')) || 0;
+                const cy = parseFloat(el.getAttribute('cy')) || 0;
+                const rx = parseFloat(el.getAttribute('rx')) || 0;
+                const ry = parseFloat(el.getAttribute('ry')) || 0;
+                svgContent += `  <ellipse cx="${cx.toFixed(3)}" cy="${(sheetHeight - cy).toFixed(3)}" rx="${rx.toFixed(3)}" ry="${ry.toFixed(3)}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}"/>\n`;
+
+            } else if (tag === 'rect') {
+                const x = parseFloat(el.getAttribute('x')) || 0;
+                const y = parseFloat(el.getAttribute('y')) || 0;
+                const w = parseFloat(el.getAttribute('width')) || 0;
+                const h = parseFloat(el.getAttribute('height')) || 0;
+                svgContent += `  <rect x="${x.toFixed(3)}" y="${(sheetHeight - y - h).toFixed(3)}" width="${w.toFixed(3)}" height="${h.toFixed(3)}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}"/>\n`;
+
+            } else if (tag === 'line') {
+                const x1 = parseFloat(el.getAttribute('x1')) || 0;
+                const y1 = parseFloat(el.getAttribute('y1')) || 0;
+                const x2 = parseFloat(el.getAttribute('x2')) || 0;
+                const y2 = parseFloat(el.getAttribute('y2')) || 0;
+                svgContent += `  <line x1="${x1.toFixed(3)}" y1="${(sheetHeight - y1).toFixed(3)}" x2="${x2.toFixed(3)}" y2="${(sheetHeight - y2).toFixed(3)}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="${linecap}"/>\n`;
+            }
+        });
+    }
+}
+
         svgContent += '</svg>';
         
         const blob = new Blob([svgContent], { type: 'image/svg+xml' });
@@ -19645,177 +20927,35 @@ function convertVectorToSvgElement() {
         return;
     }
     
-    const vectorLayer = document.getElementById('vector-layer');
-    if (!vectorLayer) return;
+    const ve = window.vectorEditor;
     
-    // Собираем ВСЕ элементы: path, line, rect, circle, ellipse
-    const paths = [];
-const ve = window.vectorEditor;
-
-if (ve.state.bezierVectors.length > 0) {
-    const chains = ve.orderVectorsIntoChains(ve.state.bezierVectors);
-
-    for (const chain of chains) {
-        const points = [];
-        
-        for (const v of chain) {
-            const fromPoint = ve.state.bezierPoints[v.from];
-            const toPoint = ve.state.bezierPoints[v.to];
-            if (!fromPoint || !toPoint) continue;
-            
-            const N = 20;
-            for (let i = 0; i <= N; i++) {
-                const t = i / N;
-                const p = ve.evaluateCubicBezier(
-                    fromPoint.x, fromPoint.y,
-                    v.control1.x, v.control1.y,
-                    v.control2.x, v.control2.y,
-                    toPoint.x, toPoint.y,
-                    t
-                );
-                
-                if (points.length > 0 && i === 0) {
-                    const last = points[points.length - 1];
-                    if (Math.hypot(last.x - p.x, last.y - p.y) < 0.01) continue;
-                }
-                
-                points.push(p);
-            }
-        }
-        
-        if (points.length >= 2) {
-            paths.push(points);
-        }
-    }
-
-}
-
-// ═══════════════════════════════════════════════
-// 2. Обычные path/line/rect/circle — обход DOM (безье пропускаем)
-// ═══════════════════════════════════════════════
-vectorLayer.querySelectorAll('path, line, rect, circle, ellipse').forEach(el => {
-    // Пропускаем безье (уже собрали выше)
-    if (el.classList?.contains('bezier-vector')) return;
+    // 1. Оборачиваем через ЕДИНУЮ функцию
+    const wrapped = ve.wrapVectorLayerAsSVGElement('Из вектора');
     
-    const cls = el.getAttribute('class') || '';
-    const id = el.id || '';
-    
-    if (cls.includes('bezier-guide') || 
-        cls.includes('bezier-point') || 
-        cls.includes('bezier-control')) return;
-    if (id.includes('indicator') || id.includes('push') || 
-        id.includes('eraser') || id.includes('selection')) return;
-    
-    const points = ve.captureElementPoints(el);
-    if (!points || points.length < 2) return;
-    
-    paths.push(points);
-});
-
-    if (paths.length === 0) {
+    if (!wrapped) {
         updateStatus('Нет векторных путей для конвертации', 'error');
         return;
     }
     
-    // Считаем общий bbox
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    paths.forEach(path => {
-        path.forEach(p => {
-            if (p.x < minX) minX = p.x;
-            if (p.y < minY) minY = p.y;
-            if (p.x > maxX) maxX = p.x;
-            if (p.y > maxY) maxY = p.y;
-        });
-    });
+    // 2. Добавляем в svgElements
+    svgElements.push(wrapped);
+    selectedSVGIndex = svgElements.length - 1;
+    isSVGSelected = true;
+    selectedElementIndex = -1;
+    isQRSelected = false;
+    selectedQRIndex = -1;
     
-    const width = maxX - minX;
-    const height = maxY - minY;
-    
-    if (width <= 0 || height <= 0) {
-        updateStatus('Пути имеют нулевые размеры', 'error');
-        return;
+    // 3. Скрываем vectorLayer (чтобы не было двойного рендера)
+    if (ve.vectorLayer) {
+        ve.vectorLayer.style.display = 'none';
     }
     
-    // Создаём SVGElement-заглушку
-    const newSvg = new SVGElement(
-        Date.now() + Math.random(),
-        '<svg><path/></svg>',
-        minX,
-        minY,
-        width,
-        height,
-        'Из вектора'
-    );
-    
-    // Заполняем vectorPaths — инвертируем Y (для SVGElement координаты Y вниз от левого верхнего угла)
-    newSvg.vectorPaths = paths.map(path => 
-        path.map((p, i) => ({
-            x: p.x - minX,
-            y: height - (p.y - minY),  // инверсия
-            move: i === 0
-        }))
-    );
-    
-    newSvg.x = minX;
-    newSvg.y = minY;
-    newSvg.width = width;
-    newSvg.height = height;
-    newSvg.originalWidth = width;
-    newSvg.originalHeight = height;
-    newSvg.baseScale = 1.0;
-    newSvg.scale = 1.0;
-    newSvg.rotation = 0;
-    newSvg.sourceType = 'from_vector';
-    
-    // Превью
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(10, Math.min(100, width));
-    canvas.height = Math.max(10, Math.min(100, height));
-    const ctx2 = canvas.getContext('2d');
-    ctx2.fillStyle = '#ffffff';
-    ctx2.fillRect(0, 0, canvas.width, canvas.height);
-    ctx2.strokeStyle = '#000000';
-    ctx2.lineWidth = 1;
-    
-    const scX = canvas.width / width;
-    const scY = canvas.height / height;
-    newSvg.vectorPaths.forEach(path => {
-        if (path.length < 2) return;
-        ctx2.beginPath();
-        ctx2.moveTo(path[0].x * scX, path[0].y * scY);
-        for (let i = 1; i < path.length; i++) {
-            ctx2.lineTo(path[i].x * scX, path[i].y * scY);
-        }
-        ctx2.stroke();
-    });
-    newSvg.svgImage = canvas;
-    
-    // Добавляем в svgElements
-    svgElements.push(newSvg);
-    
-    // Удаляем все path/line/rect/circle/ellipse из vectorLayer 
-    Array.from(vectorLayer.querySelectorAll('path, line, rect, circle, ellipse')).forEach(el => {
-        const cls = el.getAttribute('class') || '';
-        const id = el.id || '';
-        if (cls.includes('bezier-guide') || 
-            cls.includes('bezier-point') || 
-            cls.includes('bezier-control')) return;
-        if (id.includes('indicator') || id.includes('push') || 
-            id.includes('eraser') || id.includes('selection')) return;
-        
-        el.remove();
-    });
-if (window.vectorEditor) {
-    const ve = window.vectorEditor;
-    
-    // 1. Удаляем точки безье из DOM (на случай если что-то осталось)
+    // 4. Очищаем state Безье (но _bezierData уже сохранён в wrapped!)
+    // Удаляем точки из DOM
     ve.state.bezierPoints.forEach(p => {
-        if (p.element && p.element.parentNode) {
-            p.element.remove();
-        }
+        if (p.element && p.element.parentNode) p.element.remove();
     });
-    
-    // 2. Удаляем векторы безье из DOM (пути и направляющие)
+    // Удаляем векторы из DOM
     ve.state.bezierVectors.forEach(v => {
         if (v.path && v.path.parentNode) v.path.remove();
         const ge = v.guideElements || {};
@@ -19824,16 +20964,17 @@ if (window.vectorEditor) {
         if (ge.line2) ge.line2.remove();
         if (ge.control2) ge.control2.remove();
     });
-    
-    // 3. Очищаем state
+    // Очищаем state
     ve.state.bezierPoints = [];
     ve.state.bezierVectors = [];
     ve.state.bezierSelectedPoint = null;
     ve.state.pendingConnectPoint = null;
-    ve.state.lastBezierDirection = null;
-    ve.state.lastBezierLength = null;
     
-    // 4. Сбрасываем выделение (если было)
+    // 5. Удаляем обычные примитивы из vectorLayer (они уже в wrapped.vectorPaths)
+    // НО! Не удаляем — они нужны при unwrap.
+    // Вместо удаления — vectorLayer скрыт (display: none) — при unwrap покажется.
+    
+    // 6. Сбрасываем выделение
     if (ve.selectedBezierContour) {
         if (ve.selectedBezierContour.fakePath?.parentNode) {
             ve.selectedBezierContour.fakePath.remove();
@@ -19842,28 +20983,27 @@ if (window.vectorEditor) {
     }
     ve.selectedElement = null;
     
-    // 5. Скрываем хелперы
+    // 7. Скрываем хелперы
     ve.hideBezierHelpers();
     ve.toggleBezierPoints(false);
     
-    // 6. Снимок «чистого» состояния
+    // 8. Снимок
     ve.saveSnapshot();
-}
-
-    // Обновляем списки
-    updateSVGElementsList();
-    drawScene();
     
-    // Переключаемся на плоттер
+    // 9. Переключаемся на плоттер
     if (typeof switchMode === 'function') {
         switchMode('plotter');
     }
     
-    if (window.vectorEditor) {
-        window.vectorEditor.saveSnapshot();
-    }
+    // 10. Обновляем списки
+    updateSVGElementsList();
+    updateTextElementsList();
+    updateQRElementsList();
+    updateElementProperties();
+    updateDeleteButtonsVisibility();
+    drawScene();
     
-    updateStatus(`Векторы собраны в SVG-объект (${paths.length} путей)`, 'success');
+    updateStatus(`Векторы собраны в SVG-объект (${wrapped.vectorPaths.length} путей)`, 'success');
     immediateCalculateEstimatedTime();
 }
 
