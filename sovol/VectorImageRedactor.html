@@ -14214,17 +14214,19 @@ importSvgToVectorLayer(svgContent, offsetX = 0, offsetY = 0) {
     return count;
 }
 
-parsePathToPrimitives(d, toSheet, transformStr) {
-    const commands = this.parsePathCommands(d);
-    const lines = [];
-    const curves = [];
-    let linesD = '';
+parsePathToPrimitives(d, toSheet, transformStr = '') {
+    if (!d) return { lines: [], curves: [], linesD: '' };
     
-    // Матрица (если есть transform)
+    const commands = this.parsePathCommands(d);
+    if (!commands || commands.length === 0) {
+        return { lines: [], curves: [], linesD: '' };
+    }
+    
+    // ─── Матрица transform (если есть) ───
     const matrix = transformStr ? this.parseTransformString(transformStr) : null;
     const hasMatrix = matrix && !this.isIdentityMatrix(matrix);
     
-    // Применяет transform → toSheet
+    // ─── project: transform (если есть) + toSheet ───
     const project = (x, y) => {
         let px = x, py = y;
         if (hasMatrix) {
@@ -14235,13 +14237,41 @@ parsePathToPrimitives(d, toSheet, transformStr) {
         return toSheet(px, py);
     };
     
-    let curX = 0, curY = 0;
-    let startX = 0, startY = 0;
+    // ─── Состояние ───
+    const lines = [];
+    const curves = [];
+    let linesD = '';
     
+    let curX = 0, curY = 0;       // текущая точка (абсолютная, в системе SVG)
+    let startX = 0, startY = 0;   // начало подпути (для Z)
+    let prevCX = 0, prevCY = 0;   // предыдущая control-точка (для S/T)
+    let lastCmd = '';             // последняя команда (для S/T)
+    
+    // ─── Вспомогательные ───
+    // Добавить линию (from → to) и записать в linesD
+    const addLine = (x1, y1, x2, y2) => {
+        const from = project(x1, y1);
+        const to = project(x2, y2);
+        lines.push({ from, to });
+        linesD += `L ${to.x} ${to.y} `;
+    };
+    
+    // Добавить кубическую Безье (p0 → p3 через c1, c2)
+    const addCubic = (x0, y0, c1x, c1y, c2x, c2y, x3, y3) => {
+        curves.push({
+            p0: project(x0, y0),
+            c1: project(c1x, c1y),
+            c2: project(c2x, c2y),
+            p3: project(x3, y3)
+        });
+    };
+    
+    // ─── Обход команд ───
     for (const cmd of commands) {
         const { command, params, isRelative } = cmd;
         const upper = command.toUpperCase();
         
+        // Переводим параметры в абсолютные
         let abs = [...params];
         if (isRelative && upper !== 'Z') {
             for (let i = 0; i < abs.length; i += 2) {
@@ -14251,90 +14281,221 @@ parsePathToPrimitives(d, toSheet, transformStr) {
         }
         
         switch (upper) {
-            case 'M':
-                if (abs.length >= 2) {
-                    curX = abs[0]; curY = abs[1];
-                    startX = curX; startY = curY;
-                    const p = project(curX, curY);
-                    linesD += `M ${p.x} ${p.y} `;
+            // ─────────────────────────────────────────────
+            case 'M': {
+                // M x y [x y ...] — первая пара = moveTo, остальные = lineTo
+                if (abs.length < 2) break;
+                
+                // Первая пара — начало нового подпути
+                curX = abs[0];
+                curY = abs[1];
+                startX = curX;
+                startY = curY;
+                
+                const p = project(curX, curY);
+                linesD += `M ${p.x} ${p.y} `;
+                
+                // Остальные пары — L (стандарт SVG)
+                for (let i = 2; i < abs.length; i += 2) {
+                    if (i + 1 >= abs.length) break;
+                    addLine(curX, curY, abs[i], abs[i + 1]);
+                    curX = abs[i];
+                    curY = abs[i + 1];
                 }
                 break;
-                
-            case 'L':
+            }
+            
+            // ─────────────────────────────────────────────
+            case 'L': {
+                // L x y [x y ...] — lineTo
                 for (let i = 0; i < abs.length; i += 2) {
                     if (i + 1 >= abs.length) break;
-                    const from = project(curX, curY);
-                    const to = project(abs[i], abs[i+1]);
-                    lines.push({ from, to });
-                    linesD += `L ${to.x} ${to.y} `;
-                    curX = abs[i]; curY = abs[i+1];
+                    addLine(curX, curY, abs[i], abs[i + 1]);
+                    curX = abs[i];
+                    curY = abs[i + 1];
                 }
                 break;
-                
-            case 'C':
+            }
+            
+            // ─────────────────────────────────────────────
+            case 'H': {
+                // H x [x ...] — горизонтальная линия (y не меняется)
+                for (let i = 0; i < abs.length; i++) {
+                    addLine(curX, curY, abs[i], curY);
+                    curX = abs[i];
+                }
+                break;
+            }
+            
+            // ─────────────────────────────────────────────
+            case 'V': {
+                // V y [y ...] — вертикальная линия (x не меняется)
+                for (let i = 0; i < abs.length; i++) {
+                    addLine(curX, curY, curX, abs[i]);
+                    curY = abs[i];
+                }
+                break;
+            }
+            
+            // ─────────────────────────────────────────────
+            case 'C': {
+                // C x1 y1 x2 y2 x y [x1 y1 x2 y2 x y ...] — кубическая
                 for (let i = 0; i < abs.length; i += 6) {
                     if (i + 5 >= abs.length) break;
-                    const p0 = project(curX, curY);
-                    const c1 = project(abs[i], abs[i+1]);
-                    const c2 = project(abs[i+2], abs[i+3]);
-                    const p3 = project(abs[i+4], abs[i+5]);
-                    curves.push({ p0, c1, c2, p3 });
-                    curX = abs[i+4]; curY = abs[i+5];
+                    const c1x = abs[i],   c1y = abs[i + 1];
+                    const c2x = abs[i + 2], c2y = abs[i + 3];
+                    const ex  = abs[i + 4], ey  = abs[i + 5];
+                    
+                    addCubic(curX, curY, c1x, c1y, c2x, c2y, ex, ey);
+                    
+                    prevCX = c2x;
+                    prevCY = c2y;
+                    curX = ex;
+                    curY = ey;
                 }
                 break;
-                
-            case 'Q':
+            }
+            
+            // ─────────────────────────────────────────────
+            case 'S': {
+                // S x2 y2 x y [x2 y2 x y ...] — гладкая кубическая
+                // Первая control = отражение prevC относительно cur,
+                // если предыдущая команда была C или S; иначе = cur.
                 for (let i = 0; i < abs.length; i += 4) {
                     if (i + 3 >= abs.length) break;
-                    const qx = abs[i], qy = abs[i+1];
-                    const ex = abs[i+2], ey = abs[i+3];
+                    const c2x = abs[i],   c2y = abs[i + 1];
+                    const ex  = abs[i + 2], ey  = abs[i + 3];
+                    
+                    let c1x, c1y;
+                    if (lastCmd === 'C' || lastCmd === 'S') {
+                        c1x = 2 * curX - prevCX;
+                        c1y = 2 * curY - prevCY;
+                    } else {
+                        c1x = curX;
+                        c1y = curY;
+                    }
+                    
+                    addCubic(curX, curY, c1x, c1y, c2x, c2y, ex, ey);
+                    
+                    prevCX = c2x;
+                    prevCY = c2y;
+                    curX = ex;
+                    curY = ey;
+                }
+                break;
+            }
+            
+            // ─────────────────────────────────────────────
+            case 'Q': {
+                // Q qx qy x y [qx qy x y ...] — квадратичная → C
+                for (let i = 0; i < abs.length; i += 4) {
+                    if (i + 3 >= abs.length) break;
+                    const qx = abs[i],   qy = abs[i + 1];
+                    const ex = abs[i + 2], ey = abs[i + 3];
+                    
+                    // Q → C (точная формула)
                     const c1x = curX + (2/3) * (qx - curX);
                     const c1y = curY + (2/3) * (qy - curY);
-                    const c2x = ex + (2/3) * (qx - ex);
-                    const c2y = ey + (2/3) * (qy - ey);
-                    curves.push({
-                        p0: project(curX, curY),
-                        c1: project(c1x, c1y),
-                        c2: project(c2x, c2y),
-                        p3: project(ex, ey)
-                    });
-                    curX = ex; curY = ey;
+                    const c2x = ex  + (2/3) * (qx - ex);
+                    const c2y = ey  + (2/3) * (qy - ey);
+                    
+                    addCubic(curX, curY, c1x, c1y, c2x, c2y, ex, ey);
+                    
+                    prevCX = qx;
+                    prevCY = qy;
+                    curX = ex;
+                    curY = ey;
                 }
                 break;
-                
-            case 'A':
+            }
+            
+            // ─────────────────────────────────────────────
+            case 'T': {
+                // T x y [x y ...] — гладкая квадратичная
+                // Control = отражение prevC относительно cur,
+                // если предыдущая команда была Q или T; иначе = cur.
+                for (let i = 0; i < abs.length; i += 2) {
+                    if (i + 1 >= abs.length) break;
+                    const ex = abs[i], ey = abs[i + 1];
+                    
+                    let qx, qy;
+                    if (lastCmd === 'Q' || lastCmd === 'T') {
+                        qx = 2 * curX - prevCX;
+                        qy = 2 * curY - prevCY;
+                    } else {
+                        qx = curX;
+                        qy = curY;
+                    }
+                    
+                    // Q → C
+                    const c1x = curX + (2/3) * (qx - curX);
+                    const c1y = curY + (2/3) * (qy - curY);
+                    const c2x = ex  + (2/3) * (qx - ex);
+                    const c2y = ey  + (2/3) * (qy - ey);
+                    
+                    addCubic(curX, curY, c1x, c1y, c2x, c2y, ex, ey);
+                    
+                    prevCX = qx;
+                    prevCY = qy;
+                    curX = ex;
+                    curY = ey;
+                }
+                break;
+            }
+            
+            // ─────────────────────────────────────────────
+            case 'A': {
+                // A rx ry x-axis-rotation large-arc-flag sweep-flag x y
+                // [7 параметров на сегмент]
                 for (let i = 0; i < abs.length; i += 7) {
                     if (i + 6 >= abs.length) break;
-                    const rx = abs[i], ry = abs[i+1], rot = abs[i+2];
-                    const laf = abs[i+3], sf = abs[i+4];
-                    const ex = abs[i+5], ey = abs[i+6];
-                    // arcToCubic → кубические в системе SVG
-                    const arcSegs = this.arcToCubic(curX, curY, rx, ry, rot, laf, sf, ex, ey);
+                    const rx = abs[i], ry = abs[i + 1], rot = abs[i + 2];
+                    const laf = abs[i + 3], sf = abs[i + 4];
+                    const ex = abs[i + 5], ey = abs[i + 6];
+                    
+                    // A → C (аппроксимация дуги кубическими)
+                    const arcSegs = this.arcToCubic(
+                        curX, curY, rx, ry, rot, laf, sf, ex, ey
+                    );
+                    
                     for (const seg of arcSegs) {
-                        curves.push({
-                            p0: project(seg.p0.x, seg.p0.y),
-                            c1: project(seg.c1.x, seg.c1.y),
-                            c2: project(seg.c2.x, seg.c2.y),
-                            p3: project(seg.p3.x, seg.p3.y)
-                        });
+                        addCubic(
+                            seg.p0.x, seg.p0.y,
+                            seg.c1.x, seg.c1.y,
+                            seg.c2.x, seg.c2.y,
+                            seg.p3.x, seg.p3.y
+                        );
                     }
-                    curX = ex; curY = ey;
+                    
+                    // Для S/T: после A control-точки "сбрасываются"
+                    // (S/T после A ведут себя как после M/L — c1 = cur)
+                    prevCX = curX;
+                    prevCY = curY;
+                    curX = ex;
+                    curY = ey;
                 }
                 break;
-                
-            case 'Z':
+            }
+            
+            // ─────────────────────────────────────────────
+            case 'Z': {
+                // Z / z — закрыть подпуть: линия от cur к start
                 if (curX !== startX || curY !== startY) {
-                    const from = project(curX, curY);
-                    const to = project(startX, startY);
-                    lines.push({ from, to });
-                    linesD += 'Z ';
+                    addLine(curX, curY, startX, startY);
+                    curX = startX;
+                    curY = startY;
                 }
-                curX = startX; curY = startY;
+                // linesD: 'Z' — для замыкания пути
+                linesD += 'Z ';
                 break;
+            }
         }
+        
+        // Запоминаем команду для следующей итерации (для S/T)
+        lastCmd = upper;
     }
     
-    return { lines, curves, linesD };
+    return { lines, curves, linesD: linesD.trim() };
 }
 
 importCurvesAsBezier(curves, style) {
