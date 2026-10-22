@@ -4855,7 +4855,6 @@ for (let subIdx = 0; subIdx < subSegments.length; subIdx++) {
     return true;
 }
 
-
 adaptiveSampleBezier(p0, c1, c2, p3, maxError = 0.1) {
     const points = [];
     
@@ -5557,10 +5556,6 @@ findMaskBoundary(imageData, p1, p2, p1InMask) {
 }
 
 // Режет обычный <path> по растровой маске.
-// Возвращает:
-//   'delete' — если путь целиком внутри маски
-//   null — если путь целиком снаружи (не трогаем)
-//   { segments: [ [ {x,y}, ... ], ... ], newPath: <path> } — если разрезан
 cutPathByMask(pathElement, imageData) {
     const d = pathElement.getAttribute('d');
     if (!d) return null;
@@ -5596,15 +5591,11 @@ cutPathByMask(pathElement, imageData) {
     if (!isClosed) {
         points.push(rawPoints[rawPoints.length - 1]);
     }
-    
-    // === Дальше — как раньше, но с новым массивом points ===
+
     const flags = points.map(p => this.isPointInMask(imageData, p.x, p.y));
     
     if (flags.every(f => !f)) return null;
     if (flags.every(f => f)) return 'delete';
-    
-    // ... остальной код такой же, но помним,
-    // что точки теперь промежуточные (включая "плотные") ...
     
     const segments = [];
     let current = null;
@@ -13228,14 +13219,16 @@ updateHelperScales() {
 // Собирает все примитивы из vectorLayer в один SVGElement.
 // Возвращает созданный SVGElement или null, если примитивов нет.
 wrapVectorLayerAsSVGElement(name = 'SVG из вектора') {
-    const vectorLayer = this.vectorLayer;
-    if (!vectorLayer) return null;
-    
-    // ─── 1. Собираем пути ───
+    const elements = [];
     const paths = [];
     
-    // 1a. Безье — по цепочкам (точные кривые)
+    // ─── 1. Безье (из state) → мировые точки ───
+    const bezierWorldPoints = [];   // точки в мировых (для bbox)
+    const bezierWorldVectors = [];  // векторы с мировыми control
+    let bezierStyle = null;
+    
     if (this.state.bezierVectors.length > 0) {
+        // Сэмплируем в полилинии для vectorPaths (для превью/G-code)
         const chains = this.orderVectorsIntoChains(this.state.bezierVectors);
         for (const chain of chains) {
             const points = [];
@@ -13243,7 +13236,6 @@ wrapVectorLayerAsSVGElement(name = 'SVG из вектора') {
                 const from = this.state.bezierPoints[v.from];
                 const to = this.state.bezierPoints[v.to];
                 if (!from || !to) continue;
-                
                 const N = 20;
                 for (let i = 0; i <= N; i++) {
                     if (i === 0 && points.length > 0) continue;
@@ -13252,36 +13244,80 @@ wrapVectorLayerAsSVGElement(name = 'SVG из вектора') {
                         from.x, from.y,
                         v.control1.x, v.control1.y,
                         v.control2.x, v.control2.y,
-                        to.x, to.y,
-                        t
+                        to.x, to.y, t
                     );
                     points.push(p);
                 }
             }
             if (points.length >= 2) paths.push(points);
         }
+        
+        // Сохраняем мировые точки и векторы (потом переведём в локальные)
+        for (const p of this.state.bezierPoints) {
+            bezierWorldPoints.push({ x: p.x, y: p.y });
+        }
+        for (const v of this.state.bezierVectors) {
+            bezierWorldVectors.push({
+                from: v.from, to: v.to,
+                control1: { x: v.control1.x, y: v.control1.y },
+                control2: { x: v.control2.x, y: v.control2.y },
+                stroke: v.path?.getAttribute('stroke') || this.state.strokeColor,
+                strokeWidth: v.path?.getAttribute('stroke-width') || this.state.strokeWidth,
+                strokeLinecap: v.path?.getAttribute('stroke-linecap') || 'round',
+                strokeLinejoin: v.path?.getAttribute('stroke-linejoin') || 'round'
+            });
+        }
+        if (this.state.bezierVectors[0]?.path) {
+            bezierStyle = {
+                stroke: this.state.bezierVectors[0].path.getAttribute('stroke') || this.state.strokeColor,
+                strokeWidth: this.state.bezierVectors[0].path.getAttribute('stroke-width') || this.state.strokeWidth
+            };
+        }
     }
     
-    // 1b. Обычные path/line/rect/circle/ellipse
-    vectorLayer.querySelectorAll('path, line, rect, circle, ellipse').forEach(el => {
+    // ─── 2. Обычные примитивы (из vectorLayer) → мировые ───
+    const primitiveWorldData = [];  // { tag, attrs (мировые), el }
+    const primitivesToRemove = [];
+    
+    this.vectorLayer.querySelectorAll('path, line, rect, circle, ellipse').forEach(el => {
         if (el.classList?.contains('bezier-vector')) return;
-        
         const cls = el.getAttribute('class') || '';
         const id = el.id || '';
-        if (cls.includes('bezier-guide') || 
-            cls.includes('bezier-point') || 
-            cls.includes('bezier-control')) return;
-        if (id.includes('indicator') || id.includes('push') || 
-            id.includes('eraser') || id.includes('selection')) return;
+        if (cls.includes('bezier-guide') || cls.includes('bezier-point') || cls.includes('bezier-control')) return;
+        if (id.includes('indicator') || id.includes('push') || id.includes('eraser') || id.includes('selection')) return;
         
         const points = this.captureElementPoints(el);
         if (points && points.length >= 2) paths.push(points);
+        
+        const attrs = {};
+        for (const attr of el.attributes) attrs[attr.name] = attr.value;
+        primitiveWorldData.push({ tag: el.tagName.toLowerCase(), attrs, el });
+        primitivesToRemove.push(el);
     });
     
-    if (paths.length === 0) return null;
+    if (elements.length === 0 && paths.length === 0 && bezierWorldPoints.length === 0 && primitiveWorldData.length === 0) {
+        return null;
+    }
     
-    // ─── 2. BBox ───
+    // ─── 3. BBox (по мировым точкам) ───
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    
+    for (const p of bezierWorldPoints) {
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+    }
+    for (const item of primitiveWorldData) {
+        const pts = this.vectorElementToPoints({ tag: item.tag, attrs: item.attrs });
+        for (const p of pts) {
+            if (p.x < minX) minX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y > maxY) maxY = p.y;
+        }
+    }
+    // Точки полилиний — тоже
     for (const path of paths) {
         for (const p of path) {
             if (p.x < minX) minX = p.x;
@@ -13291,17 +13327,197 @@ wrapVectorLayerAsSVGElement(name = 'SVG из вектора') {
         }
     }
     
+    if (!isFinite(minX)) return null;
+    
     const width = maxX - minX;
     const height = maxY - minY;
     if (width <= 0 || height <= 0) return null;
     
-    // ─── 3. Создаём SVGElement ───
+    // ─── 4. worldToLocal: мировые (мм, Y вверх) → локальные (SVGElement, Y вниз) ───
+    const worldToLocal = (wx, wy) => ({
+        x: wx - minX,
+        y: height - (wy - minY)
+    });
+    
+    // Перевести строку d из мировых в локальные
+    const worldToLocalD = (d) => {
+        if (!d) return d;
+        const cmds = this.parsePathCommands(d);
+        let curX = 0, curY = 0, startX = 0, startY = 0;
+        let out = '';
+        
+        for (const cmd of cmds) {
+            const { command, params, isRelative } = cmd;
+            const upper = command.toUpperCase();
+            
+            let abs = [...params];
+            if (isRelative && upper !== 'Z') {
+                for (let i = 0; i < abs.length; i += 2) {
+                    abs[i] += curX;
+                    if (i + 1 < abs.length) abs[i + 1] += curY;
+                }
+            }
+            
+            switch (upper) {
+                case 'M': {
+                    if (abs.length < 2) break;
+                    curX = abs[0]; curY = abs[1];
+                    startX = curX; startY = curY;
+                    const p = worldToLocal(curX, curY);
+                    out += `M ${p.x} ${p.y} `;
+                    for (let i = 2; i < abs.length; i += 2) {
+                        if (i + 1 >= abs.length) break;
+                        curX = abs[i]; curY = abs[i+1];
+                        const pp = worldToLocal(curX, curY);
+                        out += `L ${pp.x} ${pp.y} `;
+                    }
+                    break;
+                }
+                case 'L': {
+                    for (let i = 0; i < abs.length; i += 2) {
+                        if (i + 1 >= abs.length) break;
+                        curX = abs[i]; curY = abs[i+1];
+                        const p = worldToLocal(curX, curY);
+                        out += `L ${p.x} ${p.y} `;
+                    }
+                    break;
+                }
+                case 'H': {
+                    for (let i = 0; i < abs.length; i++) {
+                        curX = abs[i];
+                        const p = worldToLocal(curX, curY);
+                        out += `L ${p.x} ${p.y} `;
+                    }
+                    break;
+                }
+                case 'V': {
+                    for (let i = 0; i < abs.length; i++) {
+                        curY = abs[i];
+                        const p = worldToLocal(curX, curY);
+                        out += `L ${p.x} ${p.y} `;
+                    }
+                    break;
+                }
+                case 'C': {
+                    for (let i = 0; i < abs.length; i += 6) {
+                        if (i + 5 >= abs.length) break;
+                        const c1 = worldToLocal(abs[i], abs[i+1]);
+                        const c2 = worldToLocal(abs[i+2], abs[i+3]);
+                        const p  = worldToLocal(abs[i+4], abs[i+5]);
+                        out += `C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${p.x} ${p.y} `;
+                        curX = abs[i+4]; curY = abs[i+5];
+                    }
+                    break;
+                }
+                case 'Q': {
+                    for (let i = 0; i < abs.length; i += 4) {
+                        if (i + 3 >= abs.length) break;
+                        const c = worldToLocal(abs[i], abs[i+1]);
+                        const p = worldToLocal(abs[i+2], abs[i+3]);
+                        out += `Q ${c.x} ${c.y} ${p.x} ${p.y} `;
+                        curX = abs[i+2]; curY = abs[i+3];
+                    }
+                    break;
+                }
+                case 'S': {
+                    for (let i = 0; i < abs.length; i += 4) {
+                        if (i + 3 >= abs.length) break;
+                        const c = worldToLocal(abs[i], abs[i+1]);
+                        const p = worldToLocal(abs[i+2], abs[i+3]);
+                        out += `S ${c.x} ${c.y} ${p.x} ${p.y} `;
+                        curX = abs[i+2]; curY = abs[i+3];
+                    }
+                    break;
+                }
+                case 'T': {
+                    for (let i = 0; i < abs.length; i += 2) {
+                        if (i + 1 >= abs.length) break;
+                        const p = worldToLocal(abs[i], abs[i+1]);
+                        out += `T ${p.x} ${p.y} `;
+                        curX = abs[i]; curY = abs[i+1];
+                    }
+                    break;
+                }
+                case 'A': {
+                    for (let i = 0; i < abs.length; i += 7) {
+                        if (i + 6 >= abs.length) break;
+                        const rx = abs[i], ry = abs[i+1], ar = abs[i+2];
+                        const laf = abs[i+3], sf = abs[i+4];
+                        const p = worldToLocal(abs[i+5], abs[i+6]);
+                        out += `A ${rx} ${ry} ${ar} ${laf} ${sf} ${p.x} ${p.y} `;
+                        curX = abs[i+5]; curY = abs[i+6];
+                    }
+                    break;
+                }
+                case 'Z':
+                    out += 'Z ';
+                    curX = startX; curY = startY;
+                    break;
+            }
+        }
+        return out.trim();
+    };
+    
+    // ─── 5. Безье → локальные ───
+    if (bezierWorldPoints.length > 0) {
+        const localPoints = bezierWorldPoints.map(p => worldToLocal(p.x, p.y));
+        const localVectors = bezierWorldVectors.map(v => ({
+            from: v.from, to: v.to,
+            control1: (() => { const p = worldToLocal(v.control1.x, v.control1.y); return { x: p.x, y: p.y }; })(),
+            control2: (() => { const p = worldToLocal(v.control2.x, v.control2.y); return { x: p.x, y: p.y }; })(),
+            stroke: v.stroke, strokeWidth: v.strokeWidth,
+            strokeLinecap: v.strokeLinecap, strokeLinejoin: v.strokeLinejoin
+        }));
+        
+        elements.push({
+            tag: 'bezier',
+            points: localPoints,
+            vectors: localVectors
+        });
+    }
+    
+    // ─── 6. Обычные примитивы → локальные ───
+    for (const item of primitiveWorldData) {
+        const attrs = { ...item.attrs };
+        const tag = item.tag;
+        
+        if (tag === 'path') {
+            if (attrs.d) attrs.d = worldToLocalD(attrs.d);
+        } else if (tag === 'line') {
+            const p1 = worldToLocal(parseFloat(attrs.x1) || 0, parseFloat(attrs.y1) || 0);
+            const p2 = worldToLocal(parseFloat(attrs.x2) || 0, parseFloat(attrs.y2) || 0);
+            attrs.x1 = String(p1.x); attrs.y1 = String(p1.y);
+            attrs.x2 = String(p2.x); attrs.y2 = String(p2.y);
+        } else if (tag === 'rect') {
+            const c1 = worldToLocal(parseFloat(attrs.x) || 0, parseFloat(attrs.y) || 0);
+            const c2 = worldToLocal(
+                (parseFloat(attrs.x) || 0) + (parseFloat(attrs.width) || 0),
+                (parseFloat(attrs.y) || 0) + (parseFloat(attrs.height) || 0)
+            );
+            attrs.x = String(Math.min(c1.x, c2.x));
+            attrs.y = String(Math.min(c1.y, c2.y));
+            attrs.width = String(Math.abs(c2.x - c1.x));
+            attrs.height = String(Math.abs(c2.y - c1.y));
+        } else if (tag === 'circle') {
+            const c = worldToLocal(parseFloat(attrs.cx) || 0, parseFloat(attrs.cy) || 0);
+            attrs.cx = String(c.x); attrs.cy = String(c.y);
+            // r не меняется (масштаб применяется при unwrap)
+        } else if (tag === 'ellipse') {
+            const c = worldToLocal(parseFloat(attrs.cx) || 0, parseFloat(attrs.cy) || 0);
+            attrs.cx = String(c.x); attrs.cy = String(c.y);
+        }
+        
+        elements.push({ tag, attrs });
+    }
+    
+    // ─── 7. Создаём SVGElement ───
     const newSvg = new SVGElement(
         Date.now() + Math.random(),
         '<svg><path/></svg>',
         minX, minY, width, height, name
     );
     
+    // vectorPaths — в локальных (как раньше: p.x - minX, height - (p.y - minY))
     newSvg.vectorPaths = paths.map(path =>
         path.map((p, i) => ({
             x: p.x - minX,
@@ -13309,11 +13525,9 @@ wrapVectorLayerAsSVGElement(name = 'SVG из вектора') {
             move: i === 0
         }))
     );
-    
-    newSvg.x = minX;
-    newSvg.y = minY;
-    newSvg.width = width;
-    newSvg.height = height;
+    newSvg.vectorElements = elements;
+    newSvg.x = minX; newSvg.y = minY;
+    newSvg.width = width; newSvg.height = height;
     newSvg.originalWidth = width;
     newSvg.originalHeight = height;
     newSvg.baseScale = 1.0;
@@ -13322,89 +13536,18 @@ wrapVectorLayerAsSVGElement(name = 'SVG из вектора') {
     newSvg.sourceType = 'from_vector';
     newSvg._fromVectorLayer = true;
     
-    // ─── 4. СОХРАНЯЕМ Безье-структуру ───
-    newSvg._bezierData = {
-        points: this.state.bezierPoints.map(p => ({
-            x: p.x, y: p.y, index: p.index
-        })),
-        vectors: this.state.bezierVectors.map(v => ({
-            from: v.from,
-            to: v.to,
-            control1: { x: v.control1.x, y: v.control1.y, belongsTo: v.control1.belongsTo },
-            control2: { x: v.control2.x, y: v.control2.y, belongsTo: v.control2.belongsTo },
-            stroke: v.path?.getAttribute('stroke') || this.state.strokeColor,
-            strokeWidth: v.path?.getAttribute('stroke-width') || this.state.strokeWidth,
-            linecap: v.path?.getAttribute('stroke-linecap') || 'round',
-            linejoin: v.path?.getAttribute('stroke-linejoin') || 'round'
-        }))
-    };
-    
-    // ─── 5. Превью ───
-    this._createSVGElementPreview(newSvg, width, height);
-    
-    return newSvg;
-}
-
-// Вспомогательный метод — превью для SVGElement
-_createSVGElementPreview(svgElement, width, height) {
-    const canvas = document.createElement('canvas');
-    const maxSize = 200;
-    let previewWidth, previewHeight;
-    
-    if (width > height) {
-        previewWidth = maxSize;
-        previewHeight = (height / width) * maxSize;
-    } else {
-        previewHeight = maxSize;
-        previewWidth = (width / height) * maxSize;
+    // Превью
+    if (typeof newSvg.createPreviewImageFromPaths === 'function') {
+        newSvg.createPreviewImageFromPaths();
+    } else if (typeof newSvg.createPreviewImage === 'function') {
+        newSvg.createPreviewImage();
     }
     
-    canvas.width = Math.max(10, previewWidth);
-    canvas.height = Math.max(10, previewHeight);
+    // ─── 8. ПЕРЕНОС: удаляем из vectorLayer ───
+    for (const el of primitivesToRemove) el.remove();
     
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 1;
-    
-    const scaleX = canvas.width / width;
-    const scaleY = canvas.height / height;
-    
-    for (const path of svgElement.vectorPaths) {
-        if (path.length < 2) continue;
-        ctx.beginPath();
-        ctx.moveTo(path[0].x * scaleX, canvas.height - path[0].y * scaleY);
-        for (let i = 1; i < path.length; i++) {
-            ctx.lineTo(path[i].x * scaleX, canvas.height - path[i].y * scaleY);
-        }
-        ctx.stroke();
-    }
-    
-    svgElement.svgImage = canvas;
-}
-
-// Снимает обёртку SVGElement (если он был создан из vectorLayer).
-unwrapSVGElementToVectorLayer(index) {
-    if (index < 0 || index >= svgElements.length) return false;
-    
-    const svgEl = svgElements[index];
-    if (!svgEl._fromVectorLayer) return false;
-    
-    // 1. Удаляем SVGElement
-    svgElements.splice(index, 1);
-    selectedSVGIndex = -1;
-    isSVGSelected = false;
-    
-    // 2. Показываем vectorLayer (обычные примитивы уже в DOM — они НЕ удалялись)
-    if (this.vectorLayer) {
-        this.vectorLayer.style.display = '';
-    }
-    
-    // 3. Восстанавливаем Безье-структуру
-    const savedData = svgEl._bezierData;
-    if (savedData && savedData.points.length > 0) {
-        // Очищаем на всякий случай (должно быть пусто)
+    // ─── 9. Очищаем state Безье ───
+    if (this.state.bezierVectors.length > 0) {
         for (const p of this.state.bezierPoints) {
             if (p.element && p.element.parentNode) p.element.remove();
         }
@@ -13416,91 +13559,379 @@ unwrapSVGElementToVectorLayer(index) {
             if (ge.line2) ge.line2.remove();
             if (ge.control2) ge.control2.remove();
         }
-        
         this.state.bezierPoints = [];
         this.state.bezierVectors = [];
+        this.state.bezierSelectedPoint = null;
+        this.state.pendingConnectPoint = null;
+    }
+    
+    return newSvg;
+}
+
+// Снимает обёртку SVGElement (если он был создан из vectorLayer).
+unwrapSVGElementToVectorLayer(index) {
+    if (index < 0 || index >= svgElements.length) return false;
+    
+    const svgEl = svgElements[index];
+    if (!svgEl._fromVectorLayer) return false;
+    
+    const elements = svgEl.vectorElements;
+    if (!elements || elements.length === 0) return false;
+    
+    // ─── Параметры трансформации ───
+    const scale = svgEl.scale || 1;
+    const rot = svgEl.rotation || 0;
+    const cos = Math.cos(rot);
+    const sin = Math.sin(rot);
+    const cx = svgEl.x + svgEl.width * scale / 2;
+    const cy = svgEl.y + svgEl.height * scale / 2;
+    const H = svgEl.height;
+    
+    // localToWorld: локальные (SVGElement, Y вниз) → мировые (мм, Y вверх)
+    // Точно как в getGcodePaths, только применяем к 4 точкам Безье, а не к 20.
+    const localToWorld = (lx, ly) => {
+        // 1. Масштаб + сдвиг
+        let wx = svgEl.x + lx * scale;
+        let wy = svgEl.y + (H * scale - ly * scale);
         
-        // Создаём точки
-        for (const pData of savedData.points) {
-            const point = {
-                x: pData.x, y: pData.y,
-                element: null, index: pData.index
-            };
-            point.element = this.createBezierPointElement(point);
-            this.vectorLayer.appendChild(point.element);
-            this.state.bezierPoints.push(point);
+        // 2. Поворот вокруг центра (если есть)
+        if (rot !== 0) {
+            const dx = wx - cx;
+            const dy = wy - cy;
+            wx = cx + dx * cos - dy * sin;
+            wy = cy + dx * sin + dy * cos;
         }
         
-        // Создаём векторы
-        for (const vData of savedData.vectors) {
-            const vector = {
-                from: vData.from,
-                to: vData.to,
-                control1: { x: vData.control1.x, y: vData.control1.y, belongsTo: vData.control1.belongsTo ?? vData.from },
-                control2: { x: vData.control2.x, y: vData.control2.y, belongsTo: vData.control2.belongsTo ?? vData.to },
-                path: null,
-                guideElements: {}
-            };
-            
-            const from = this.state.bezierPoints[vector.from];
-            const to = this.state.bezierPoints[vector.to];
-            if (!from || !to) continue;
-            
-            vector.path = this.createBezierPath(
-                from.x, from.y,
-                vector.control1.x, vector.control1.y,
-                vector.control2.x, vector.control2.y,
-                to.x, to.y
-            );
-            vector.path.setAttribute('stroke', vData.stroke);
-            vector.path.setAttribute('stroke-width', vData.strokeWidth);
-            vector.path.setAttribute('stroke-linecap', vData.linecap || 'round');
-            vector.path.setAttribute('stroke-linejoin', vData.linejoin || 'round');
-            
-            this.vectorLayer.appendChild(vector.path);
-            this.state.bezierVectors.push(vector);
-        }
+        return { x: wx, y: wy };
+    };
+    
+    // Применить localToWorld к строке d (path)
+    const transformPathD = (d) => {
+        if (!d) return d;
+        const cmds = this.parsePathCommands(d);
+        let curX = 0, curY = 0, startX = 0, startY = 0;
+        let out = '';
         
-        // Направляющие
-        for (const v of this.state.bezierVectors) {
-            const from = this.state.bezierPoints[v.from];
-            const to = this.state.bezierPoints[v.to];
-            if (from && to) this.createVectorGuides(v, from, to);
-        }
-        
-        // Скрываем хелперы, если не в режиме B
-        if (this.state.currentTool !== 'bezier-points') {
-            for (const v of this.state.bezierVectors) {
-                const ge = v.guideElements || {};
-                if (ge.line1) ge.line1.style.display = 'none';
-                if (ge.control1) ge.control1.style.display = 'none';
-                if (ge.line2) ge.line2.style.display = 'none';
-                if (ge.control2) ge.control2.style.display = 'none';
+        for (const cmd of cmds) {
+            const { command, params, isRelative } = cmd;
+            const upper = command.toUpperCase();
+            
+            let abs = [...params];
+            if (isRelative && upper !== 'Z') {
+                for (let i = 0; i < abs.length; i += 2) {
+                    abs[i] += curX;
+                    if (i + 1 < abs.length) abs[i + 1] += curY;
+                }
             }
-            this.toggleBezierPoints(false);
+            
+            switch (upper) {
+                case 'M': {
+                    if (abs.length < 2) break;
+                    curX = abs[0]; curY = abs[1];
+                    startX = curX; startY = curY;
+                    const p = localToWorld(curX, curY);
+                    out += `M ${p.x} ${p.y} `;
+                    for (let i = 2; i < abs.length; i += 2) {
+                        if (i + 1 >= abs.length) break;
+                        curX = abs[i]; curY = abs[i+1];
+                        const pp = localToWorld(curX, curY);
+                        out += `L ${pp.x} ${pp.y} `;
+                    }
+                    break;
+                }
+                case 'L': {
+                    for (let i = 0; i < abs.length; i += 2) {
+                        if (i + 1 >= abs.length) break;
+                        curX = abs[i]; curY = abs[i+1];
+                        const p = localToWorld(curX, curY);
+                        out += `L ${p.x} ${p.y} `;
+                    }
+                    break;
+                }
+                case 'H': {
+                    for (let i = 0; i < abs.length; i++) {
+                        curX = abs[i];
+                        const p = localToWorld(curX, curY);
+                        out += `L ${p.x} ${p.y} `;
+                    }
+                    break;
+                }
+                case 'V': {
+                    for (let i = 0; i < abs.length; i++) {
+                        curY = abs[i];
+                        const p = localToWorld(curX, curY);
+                        out += `L ${p.x} ${p.y} `;
+                    }
+                    break;
+                }
+                case 'C': {
+                    for (let i = 0; i < abs.length; i += 6) {
+                        if (i + 5 >= abs.length) break;
+                        const c1 = localToWorld(abs[i], abs[i+1]);
+                        const c2 = localToWorld(abs[i+2], abs[i+3]);
+                        const p  = localToWorld(abs[i+4], abs[i+5]);
+                        out += `C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${p.x} ${p.y} `;
+                        curX = abs[i+4]; curY = abs[i+5];
+                    }
+                    break;
+                }
+                case 'Q': {
+                    for (let i = 0; i < abs.length; i += 4) {
+                        if (i + 3 >= abs.length) break;
+                        const c = localToWorld(abs[i], abs[i+1]);
+                        const p = localToWorld(abs[i+2], abs[i+3]);
+                        out += `Q ${c.x} ${c.y} ${p.x} ${p.y} `;
+                        curX = abs[i+2]; curY = abs[i+3];
+                    }
+                    break;
+                }
+                case 'S': {
+                    for (let i = 0; i < abs.length; i += 4) {
+                        if (i + 3 >= abs.length) break;
+                        const c = localToWorld(abs[i], abs[i+1]);
+                        const p = localToWorld(abs[i+2], abs[i+3]);
+                        out += `S ${c.x} ${c.y} ${p.x} ${p.y} `;
+                        curX = abs[i+2]; curY = abs[i+3];
+                    }
+                    break;
+                }
+                case 'T': {
+                    for (let i = 0; i < abs.length; i += 2) {
+                        if (i + 1 >= abs.length) break;
+                        const p = localToWorld(abs[i], abs[i+1]);
+                        out += `T ${p.x} ${p.y} `;
+                        curX = abs[i]; curY = abs[i+1];
+                    }
+                    break;
+                }
+                case 'A': {
+                    for (let i = 0; i < abs.length; i += 7) {
+                        if (i + 6 >= abs.length) break;
+                        const rx = abs[i], ry = abs[i+1], ar = abs[i+2];
+                        const laf = abs[i+3], sf = abs[i+4];
+                        const p = localToWorld(abs[i+5], abs[i+6]);
+                        // rx/ry масштабируем, угол поворота дуги — корректируем
+                        out += `A ${rx * scale} ${ry * scale} ${ar} ${laf} ${sf} ${p.x} ${p.y} `;
+                        curX = abs[i+5]; curY = abs[i+6];
+                    }
+                    break;
+                }
+                case 'Z':
+                    out += 'Z ';
+                    curX = startX; curY = startY;
+                    break;
+            }
         }
+        return out.trim();
+    };
+    
+    // ─── 1. Восстанавливаем примитивы ───
+    for (const elem of elements) {
+	if (elem.tag === 'bezier') {
+		// Безье: 4 точки + control — через localToWorld
+		this.state.bezierPoints = [];
+		this.state.bezierVectors = [];
+		
+		for (let i = 0; i < elem.points.length; i++) {
+			const pData = elem.points[i];
+			const w = localToWorld(pData.x, pData.y);
+			const point = { x: w.x, y: w.y, element: null, index: i };
+			point.element = this.createBezierPointElement(point);
+			this.vectorLayer.appendChild(point.element);
+			this.state.bezierPoints.push(point);
+		}
+		
+		// Стиль: приоритет vData → elem.style → state
+		const style = elem.style || {};
+		
+		for (const vData of elem.vectors) {
+			const wC1 = localToWorld(vData.control1.x, vData.control1.y);
+			const wC2 = localToWorld(vData.control2.x, vData.control2.y);
+			
+			const vector = {
+				from: vData.from, to: vData.to,
+				control1: { x: wC1.x, y: wC1.y, belongsTo: vData.from },
+				control2: { x: wC2.x, y: wC2.y, belongsTo: vData.to },
+				path: null, guideElements: {}
+			};
+			const from = this.state.bezierPoints[vector.from];
+			const to = this.state.bezierPoints[vector.to];
+			if (!from || !to) continue;
+			
+			vector.path = this.createBezierPath(
+				from.x, from.y,
+				vector.control1.x, vector.control1.y,
+				vector.control2.x, vector.control2.y,
+				to.x, to.y
+			);
+			
+			// ─── Стиль с fallback на elem.style и state ───
+			const stroke = vData.stroke 
+				|| (style && style.stroke) 
+				|| (typeof strokeColor !== 'undefined' ? strokeColor : '#000000');
+			const strokeWidth = vData.strokeWidth 
+				|| (style && style.strokeWidth) 
+				|| (typeof strokeWidth !== 'undefined' ? strokeWidth : 0.3);
+			const linecap = vData.strokeLinecap 
+				|| (style && style.strokeLinecap) 
+				|| 'round';
+			const linejoin = vData.strokeLinejoin 
+				|| (style && style.strokeLinejoin) 
+				|| 'round';
+			
+			vector.path.setAttribute('stroke', stroke);
+			vector.path.setAttribute('stroke-width', String(strokeWidth));
+			vector.path.setAttribute('stroke-linecap', linecap);
+			vector.path.setAttribute('stroke-linejoin', linejoin);
+			
+			this.vectorLayer.appendChild(vector.path);
+			this.state.bezierVectors.push(vector);
+		}
+		
+		// Направляющие
+		for (const v of this.state.bezierVectors) {
+			const from = this.state.bezierPoints[v.from];
+			const to = this.state.bezierPoints[v.to];
+			if (from && to) this.createVectorGuides(v, from, to);
+		}
+		
+		if (this.state.currentTool !== 'bezier-points') {
+			for (const v of this.state.bezierVectors) {
+				const ge = v.guideElements || {};
+				if (ge.line1) ge.line1.style.display = 'none';
+				if (ge.control1) ge.control1.style.display = 'none';
+				if (ge.line2) ge.line2.style.display = 'none';
+				if (ge.control2) ge.control2.style.display = 'none';
+			}
+			this.toggleBezierPoints(false);
+		}
+	}
+
+	else {
+		// ─── Обычный примитив — localToWorld к координатам ───
+		const attrs = elem.attrs || {};
+		const tag = elem.tag;
+		
+		// Приоритет: attrs (сохранённое) → глобальные (из инпута) → дефолт
+		const finalStroke = attrs.stroke 
+			|| (typeof strokeColor !== 'undefined' ? strokeColor : '#000000');
+		const finalStrokeWidth = attrs['stroke-width'] !== undefined && attrs['stroke-width'] !== ''
+			? attrs['stroke-width']
+			: (typeof strokeWidth !== 'undefined' ? strokeWidth : 0.3);
+		const finalLinecap = attrs['stroke-linecap'] || 'round';
+		const finalLinejoin = attrs['stroke-linejoin'] || 'round';
+		const finalFill = attrs.fill || 'none';
+		
+		// Применить стиль к элементу (единообразно)
+		const applyStyle = (element) => {
+			element.setAttribute('stroke', finalStroke);
+			element.setAttribute('stroke-width', String(finalStrokeWidth));
+			element.setAttribute('stroke-linecap', finalLinecap);
+			element.setAttribute('stroke-linejoin', finalLinejoin);
+			element.setAttribute('fill', finalFill);
+		};
+		
+		// Если rect/ellipse повёрнут — превращаем в path
+		const needsPathForRotation = (rot !== 0 && (tag === 'rect' || tag === 'ellipse'));
+		
+		if (needsPathForRotation) {
+			const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+			let d = '';
+			
+			if (tag === 'rect') {
+				const x = parseFloat(attrs.x) || 0;
+				const y = parseFloat(attrs.y) || 0;
+				const w = parseFloat(attrs.width) || 0;
+				const h = parseFloat(attrs.height) || 0;
+				const c1 = localToWorld(x, y);
+				const c2 = localToWorld(x + w, y);
+				const c3 = localToWorld(x + w, y + h);
+				const c4 = localToWorld(x, y + h);
+				d = `M ${c1.x} ${c1.y} L ${c2.x} ${c2.y} L ${c3.x} ${c3.y} L ${c4.x} ${c4.y} Z`;
+			} else if (tag === 'ellipse') {
+				const lcx = parseFloat(attrs.cx) || 0;
+				const lcy = parseFloat(attrs.cy) || 0;
+				const rx = (parseFloat(attrs.rx) || 0) * scale;
+				const ry = (parseFloat(attrs.ry) || 0) * scale;
+				const c = localToWorld(lcx, lcy);
+				const k = 0.5522847498;
+				d = `M ${c.x + rx} ${c.y} ` +
+					`C ${c.x + rx} ${c.y + k*ry} ${c.x + k*rx} ${c.y + ry} ${c.x} ${c.y + ry} ` +
+					`C ${c.x - k*rx} ${c.y + ry} ${c.x - rx} ${c.y + k*ry} ${c.x - rx} ${c.y} ` +
+					`C ${c.x - rx} ${c.y - k*ry} ${c.x - k*rx} ${c.y - ry} ${c.x} ${c.y - ry} ` +
+					`C ${c.x + k*rx} ${c.y - ry} ${c.x + rx} ${c.y - k*ry} ${c.x + rx} ${c.y} Z`;
+			}
+			
+			pathEl.setAttribute('d', d);
+			applyStyle(pathEl);
+			this.vectorLayer.appendChild(pathEl);
+			continue;
+		}
+		
+		const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+		
+		if (tag === 'path') {
+			const newD = transformPathD(attrs.d);
+			el.setAttribute('d', newD);
+		}
+		else if (tag === 'line') {
+			const p1 = localToWorld(parseFloat(attrs.x1) || 0, parseFloat(attrs.y1) || 0);
+			const p2 = localToWorld(parseFloat(attrs.x2) || 0, parseFloat(attrs.y2) || 0);
+			el.setAttribute('x1', p1.x);
+			el.setAttribute('y1', p1.y);
+			el.setAttribute('x2', p2.x);
+			el.setAttribute('y2', p2.y);
+		}
+		else if (tag === 'rect') {
+			const x = parseFloat(attrs.x) || 0;
+			const y = parseFloat(attrs.y) || 0;
+			const w = parseFloat(attrs.width) || 0;
+			const h = parseFloat(attrs.height) || 0;
+			const c1 = localToWorld(x, y);
+			const c2 = localToWorld(x + w, y + h);
+			el.setAttribute('x', Math.min(c1.x, c2.x));
+			el.setAttribute('y', Math.min(c1.y, c2.y));
+			el.setAttribute('width', Math.abs(c2.x - c1.x));
+			el.setAttribute('height', Math.abs(c2.y - c1.y));
+		}
+		else if (tag === 'circle') {
+			const c = localToWorld(parseFloat(attrs.cx) || 0, parseFloat(attrs.cy) || 0);
+			el.setAttribute('cx', c.x);
+			el.setAttribute('cy', c.y);
+			el.setAttribute('r', (parseFloat(attrs.r) || 0) * scale);
+		}
+		else if (tag === 'ellipse') {
+			const c = localToWorld(parseFloat(attrs.cx) || 0, parseFloat(attrs.cy) || 0);
+			el.setAttribute('cx', c.x);
+			el.setAttribute('cy', c.y);
+			el.setAttribute('rx', (parseFloat(attrs.rx) || 0) * scale);
+			el.setAttribute('ry', (parseFloat(attrs.ry) || 0) * scale);
+		}
+		
+		// ─── Единый стиль ───
+		applyStyle(el);
+		
+		this.vectorLayer.appendChild(el);
+	}
     }
     
-    // 4. Удаляем ссылку на данные
-    delete svgEl._bezierData;
+    // ─── 2. Удаляем SVGElement (перенос!) ───
+    svgElements.splice(index, 1);
+    selectedSVGIndex = -1;
+    isSVGSelected = false;
     
-    // 5. Переключаемся в векторный режим
-    if (typeof switchMode === 'function') {
-        switchMode('vector');
-    }
+    // ─── 3. Переключаемся в векторный режим ───
+    if (typeof switchMode === 'function') switchMode('vector');
     
-    // 6. Обновляем списки
     updateSVGElementsList();
     updateTextElementsList();
     updateQRElementsList();
     updateElementProperties();
     updateDeleteButtonsVisibility();
     drawScene();
+    this.saveSnapshot();
     
-    updateStatus(
-        `SVG открыт для редактирования (${this.state.bezierVectors.length} векторов)`,
-        'success'
-    );
+    updateStatus(`SVG открыт для редактирования (${elements.length} примитивов)`, 'success');
     return true;
 }
 
@@ -14025,68 +14456,204 @@ normalizePathToAbsolute(d) {
     return result.trim();
 }
 
+curvesToBezierData(curves) {
+    if (!curves || curves.length === 0) return { points: [], vectors: [] };
+    
+    const points = [];
+    const vectors = [];
+    const EPS = 0.01;
+    
+    const findOrAdd = (x, y) => {
+        for (let i = 0; i < points.length; i++) {
+            if (Math.hypot(points[i].x - x, points[i].y - y) < EPS) return i;
+        }
+        points.push({ x, y });
+        return points.length - 1;
+    };
+    
+    for (const c of curves) {
+        const fromIdx = findOrAdd(c.p0.x, c.p0.y);
+        const toIdx = findOrAdd(c.p3.x, c.p3.y);
+        vectors.push({
+            from: fromIdx,
+            to: toIdx,
+            control1: { x: c.c1.x, y: c.c1.y, belongsTo: fromIdx },
+            control2: { x: c.c2.x, y: c.c2.y, belongsTo: toIdx }
+        });
+    }
+    
+    return { points, vectors };
+}
+vectorElementToPoints(elem) {
+    if (!elem) return [];
+    
+    // Безье — сэмплируем
+    if (elem.tag === 'bezier') {
+        const points = [];
+        for (const v of elem.vectors) {
+            const from = elem.points[v.from];
+            const to = elem.points[v.to];
+            if (!from || !to) continue;
+            
+            const N = 20;
+            for (let i = 0; i <= N; i++) {
+                if (i === 0 && points.length > 0) continue;
+                const t = i / N;
+                const p = this.evaluateCubicBezier(
+                    from.x, from.y,
+                    v.control1.x, v.control1.y,
+                    v.control2.x, v.control2.y,
+                    to.x, to.y, t
+                );
+                points.push(p);
+            }
+        }
+        return points;
+    }
+    
+    const attrs = elem.attrs || {};
+    const tag = elem.tag;
+    
+    if (tag === 'path') {
+        const d = attrs.d;
+        if (!d) return [];
+        // Грубо: вершины M/L/C/Q (без сэмплирования кривых) — для bbox достаточно
+        const { points } = this.parsePathToPoints(d);
+        return points || [];
+    }
+    
+    if (tag === 'line') {
+        return [
+            { x: parseFloat(attrs.x1) || 0, y: parseFloat(attrs.y1) || 0 },
+            { x: parseFloat(attrs.x2) || 0, y: parseFloat(attrs.y2) || 0 }
+        ];
+    }
+    
+    if (tag === 'rect') {
+        const x = parseFloat(attrs.x) || 0;
+        const y = parseFloat(attrs.y) || 0;
+        const w = parseFloat(attrs.width) || 0;
+        const h = parseFloat(attrs.height) || 0;
+        return [
+            { x, y },
+            { x: x + w, y },
+            { x: x + w, y: y + h },
+            { x, y: y + h },
+            { x, y }
+        ];
+    }
+    
+    if (tag === 'circle') {
+        const cx = parseFloat(attrs.cx) || 0;
+        const cy = parseFloat(attrs.cy) || 0;
+        const r = parseFloat(attrs.r) || 0;
+        const pts = [];
+        const N = 60;
+        for (let i = 0; i <= N; i++) {
+            const a = (i / N) * Math.PI * 2;
+            pts.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
+        }
+        return pts;
+    }
+    
+    if (tag === 'ellipse') {
+        const cx = parseFloat(attrs.cx) || 0;
+        const cy = parseFloat(attrs.cy) || 0;
+        const rx = parseFloat(attrs.rx) || 0;
+        const ry = parseFloat(attrs.ry) || 0;
+        const pts = [];
+        const N = 60;
+        for (let i = 0; i <= N; i++) {
+            const a = (i / N) * Math.PI * 2;
+            pts.push({ x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry });
+        }
+        return pts;
+    }
+    
+    if (tag === 'polyline' || tag === 'polygon') {
+        const ptsStr = attrs.points || '';
+        const nums = ptsStr.trim().split(/[\s,]+/).map(Number);
+        const pts = [];
+        for (let i = 0; i < nums.length; i += 2) {
+            if (i + 1 < nums.length) pts.push({ x: nums[i], y: nums[i + 1] });
+        }
+        if (tag === 'polygon' && pts.length > 0) pts.push({ ...pts[0] });
+        return pts;
+    }
+    
+    return [];
+}
+
 importSvgToVectorLayer(svgContent, offsetX = 0, offsetY = 0) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(svgContent, 'image/svg+xml');
     const svgEl = doc.querySelector('svg');
-    if (!svgEl) return 0;
+    if (!svgEl) return { elements: [], bbox: null, width: 0, height: 0 };
     
-    // viewBox
+    // ─── viewBox ───
     let vbX = 0, vbY = 0, vbW = 100, vbH = 100;
     const vb = svgEl.getAttribute('viewBox');
     if (vb) {
-        const [x, y, w, h] = vb.split(/[\s,]+/).map(Number);
-        vbX = x; vbY = y; vbW = w; vbH = h;
+        const parts = vb.split(/[\s,]+/).map(Number);
+        if (parts.length >= 4) {
+            vbX = parts[0]; vbY = parts[1];
+            vbW = parts[2]; vbH = parts[3];
+        }
     }
     
-    // Собираем примитивы
+    // ─── toSheet: SVG (viewBox) → МИР (мм, Y вверх) ───
+    const toSheet = (x, y) => {
+        const sx = (x - vbX) / vbW * sheetWidth;
+        const sy = (y - vbY) / vbH * sheetHeight;
+        return { x: sx + offsetX, y: sheetHeight - sy + offsetY };
+    };
+    
+    // ─── Сбор примитивов в МИРОВЫХ координатах ───
+    const elements = [];
     const els = doc.querySelectorAll('line, rect, circle, ellipse, polyline, polygon, path');
-    let count = 0;
     
     for (const el of els) {
         const tag = el.tagName.toLowerCase();
         const transform = el.getAttribute('transform') || '';
-        
-        // Стиль
-        const stroke = el.getAttribute('stroke') || this.state.strokeColor;
-        const strokeWidth = parseFloat(el.getAttribute('stroke-width')) || this.state.strokeWidth;
-        const fill = el.getAttribute('fill') || 'none';
-        const linecap = el.getAttribute('stroke-linecap') || 'round';
-        const linejoin = el.getAttribute('stroke-linejoin') || 'round';
-        
-        // Координаты в системе листа
-        const toSheet = (x, y) => {
-            // viewBox → мм листа (если viewBox в пикселях)
-            const sx = (x - vbX) / vbW * sheetWidth;
-            const sy = (y - vbY) / vbH * sheetHeight;
-            // Y-инверсия: SVG Y вниз, лист Y вверх
-            return { x: sx + offsetX, y: sheetHeight - sy + offsetY };
-        };
+		const swRaw = el.getAttribute('stroke-width');
+		let swMM;
+		if (swRaw !== null && swRaw !== '') {
+			const swNum = parseFloat(swRaw);
+			if (!isNaN(swNum)) {
+				// Нормализация: px viewBox → мм листа
+				// (если SVG в мм — коэффициент 1, если в px — sheetWidth/vbW)
+				swMM = swNum * (sheetWidth / vbW);
+			} else {
+				swMM = typeof strokeWidth !== 'undefined' ? strokeWidth : 0.3;
+			}
+		} else {
+			swMM = typeof strokeWidth !== 'undefined' ? strokeWidth : 0.3;
+		}
+
+		const style = {
+			stroke: el.getAttribute('stroke') || (typeof strokeColor !== 'undefined' ? strokeColor : '#000000'),
+			strokeWidth: swMM,
+			fill: el.getAttribute('fill') || 'none',
+			strokeLinecap: el.getAttribute('stroke-linecap') || 'round',
+			strokeLinejoin: el.getAttribute('stroke-linejoin') || 'round'
+		};
         
         if (tag === 'line') {
             const x1 = parseFloat(el.getAttribute('x1')) || 0;
             const y1 = parseFloat(el.getAttribute('y1')) || 0;
             const x2 = parseFloat(el.getAttribute('x2')) || 0;
             const y2 = parseFloat(el.getAttribute('y2')) || 0;
-            
-            const p1 = toSheet(x1, y1);
-            const p2 = toSheet(x2, y2);
-            
-            // Применяем transform (если есть)
-            const [tp1, tp2] = this.applyTransformToPoints([p1, p2], transform);
-            
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.setAttribute('x1', tp1.x);
-            line.setAttribute('y1', tp1.y);
-            line.setAttribute('x2', tp2.x);
-            line.setAttribute('y2', tp2.y);
-            line.setAttribute('stroke', stroke);
-            line.setAttribute('stroke-width', strokeWidth);
-            line.setAttribute('fill', 'none');
-            line.setAttribute('stroke-linecap', linecap);
-            
-            this.vectorLayer.appendChild(line);
-            count++;
+            const pts = this.applyTransformToPoints(
+                [toSheet(x1, y1), toSheet(x2, y2)], transform
+            );
+            elements.push({
+                tag: 'line',
+                attrs: {
+                    x1: String(pts[0].x), y1: String(pts[0].y),
+                    x2: String(pts[1].x), y2: String(pts[1].y),
+                    ...style
+                }
+            });
         }
         else if (tag === 'rect') {
             const x = parseFloat(el.getAttribute('x')) || 0;
@@ -14096,52 +14663,43 @@ importSvgToVectorLayer(svgContent, offsetX = 0, offsetY = 0) {
             const rx = parseFloat(el.getAttribute('rx')) || 0;
             const ry = parseFloat(el.getAttribute('ry')) || 0;
             
-            const p1 = toSheet(x, y);
-            const p2 = toSheet(x + w, y + h);
-            
-            const [tp1, tp2] = this.applyTransformToPoints([p1, p2], transform);
-            
-            if (rx === 0 && ry === 0 && !transform.includes('rotate')) {
-                // Простой прямоугольник — оставляем <rect>
-                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-                rect.setAttribute('x', Math.min(tp1.x, tp2.x));
-                rect.setAttribute('y', Math.min(tp1.y, tp2.y));
-                rect.setAttribute('width', Math.abs(tp2.x - tp1.x));
-                rect.setAttribute('height', Math.abs(tp2.y - tp1.y));
-                rect.setAttribute('stroke', stroke);
-                rect.setAttribute('stroke-width', strokeWidth);
-                rect.setAttribute('fill', fill);
-                this.vectorLayer.appendChild(rect);
+            if (rx === 0 && ry === 0 && !transform) {
+                const p1 = toSheet(x, y);
+                const p2 = toSheet(x + w, y + h);
+                elements.push({
+                    tag: 'rect',
+                    attrs: {
+                        x: String(Math.min(p1.x, p2.x)),
+                        y: String(Math.min(p1.y, p2.y)),
+                        width: String(Math.abs(p2.x - p1.x)),
+                        height: String(Math.abs(p2.y - p1.y)),
+                        ...style
+                    }
+                });
             } else {
-                // Скруглённый или повёрнутый — через <path> с дугами
                 const d = this.rectToPathWithArcs(x, y, w, h, rx, ry, toSheet, transform);
-                this.appendPathFromD(d, { stroke, strokeWidth, fill, linecap, linejoin });
+                elements.push({ tag: 'path', attrs: { d, ...style } });
             }
-            count++;
         }
         else if (tag === 'circle') {
             const cx = parseFloat(el.getAttribute('cx')) || 0;
             const cy = parseFloat(el.getAttribute('cy')) || 0;
             const r = parseFloat(el.getAttribute('r')) || 0;
             
-            const c = toSheet(cx, cy);
-            const [tc] = this.applyTransformToPoints([c], transform);
-            
             if (!transform) {
-                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                circle.setAttribute('cx', tc.x);
-                circle.setAttribute('cy', tc.y);
-                circle.setAttribute('r', r * sheetWidth / vbW);
-                circle.setAttribute('stroke', stroke);
-                circle.setAttribute('stroke-width', strokeWidth);
-                circle.setAttribute('fill', fill);
-                this.vectorLayer.appendChild(circle);
+                const c = toSheet(cx, cy);
+                elements.push({
+                    tag: 'circle',
+                    attrs: {
+                        cx: String(c.x), cy: String(c.y),
+                        r: String(r * sheetWidth / vbW),
+                        ...style
+                    }
+                });
             } else {
-                // С поворотом/скосом — через <path> с 4 дугами
                 const d = this.circleToPathWithArcs(cx, cy, r, toSheet, transform);
-                this.appendPathFromD(d, { stroke, strokeWidth, fill, linecap, linejoin });
+                elements.push({ tag: 'path', attrs: { d, ...style } });
             }
-            count++;
         }
         else if (tag === 'ellipse') {
             const cx = parseFloat(el.getAttribute('cx')) || 0;
@@ -14149,71 +14707,261 @@ importSvgToVectorLayer(svgContent, offsetX = 0, offsetY = 0) {
             const rx = parseFloat(el.getAttribute('rx')) || 0;
             const ry = parseFloat(el.getAttribute('ry')) || 0;
             
-            const c = toSheet(cx, cy);
-            const [tc] = this.applyTransformToPoints([c], transform);
-            
             if (!transform) {
-                const ellipse = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
-                ellipse.setAttribute('cx', tc.x);
-                ellipse.setAttribute('cy', tc.y);
-                ellipse.setAttribute('rx', rx * sheetWidth / vbW);
-                ellipse.setAttribute('ry', ry * sheetHeight / vbH);
-                ellipse.setAttribute('stroke', stroke);
-                ellipse.setAttribute('stroke-width', strokeWidth);
-                ellipse.setAttribute('fill', fill);
-                this.vectorLayer.appendChild(ellipse);
+                const c = toSheet(cx, cy);
+                elements.push({
+                    tag: 'ellipse',
+                    attrs: {
+                        cx: String(c.x), cy: String(c.y),
+                        rx: String(rx * sheetWidth / vbW),
+                        ry: String(ry * sheetHeight / vbH),
+                        ...style
+                    }
+                });
             } else {
                 const d = this.ellipseToPathWithArcs(cx, cy, rx, ry, toSheet, transform);
-                this.appendPathFromD(d, { stroke, strokeWidth, fill, linecap, linejoin });
+                elements.push({ tag: 'path', attrs: { d, ...style } });
             }
-            count++;
         }
         else if (tag === 'polyline' || tag === 'polygon') {
             const pts = (el.getAttribute('points') || '').trim().split(/[\s,]+/).map(Number);
             if (pts.length < 4) continue;
-            
             const points = [];
             for (let i = 0; i < pts.length; i += 2) {
                 points.push(toSheet(pts[i], pts[i+1]));
             }
-            const transformed = this.applyTransformToPoints(points, transform);
-            
-            let d = `M ${transformed[0].x} ${transformed[0].y}`;
-            for (let i = 1; i < transformed.length; i++) {
-                d += ` L ${transformed[i].x} ${transformed[i].y}`;
+            const tPts = this.applyTransformToPoints(points, transform);
+            let d = `M ${tPts[0].x} ${tPts[0].y}`;
+            for (let i = 1; i < tPts.length; i++) {
+                d += ` L ${tPts[i].x} ${tPts[i].y}`;
             }
             if (tag === 'polygon') d += ' Z';
-            
-            this.appendPathFromD(d, { stroke, strokeWidth, fill, linecap, linejoin });
-            count++;
+            elements.push({ tag: 'path', attrs: { d, ...style } });
         }
         else if (tag === 'path') {
             const d = el.getAttribute('d');
             if (!d) continue;
-            
-            // Нормализуем относительные → абсолютные
             const absD = this.normalizePathToAbsolute(d);
-            
-            // Парсим в примитивы (линии, C, Q → C, A → C)
             const result = this.parsePathToPrimitives(absD, toSheet, transform);
             
-            // Простые линии — добавляем как <path> с M/L
-            if (result.lines.length > 0) {
-                this.appendPathFromD(result.linesD, { stroke, strokeWidth, fill, linecap, linejoin });
-                count++;
+            if (result.linesD) {
+                elements.push({ tag: 'path', attrs: { d: result.linesD, ...style } });
             }
-            
-            // Кривые — конвертируем в Безье-структуру
             if (result.curves.length > 0) {
-                this.importCurvesAsBezier(result.curves, { stroke, strokeWidth, linecap, linejoin });
-                count++;
+                const bezData = this.curvesToBezierData(result.curves);
+                elements.push({
+                    tag: 'bezier',
+                    points: bezData.points,
+                    vectors: bezData.vectors,
+                    style
+                });
             }
         }
     }
     
-    return count;
+    // ─── BBox по мировым точкам ───
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const elem of elements) {
+        const pts = this.vectorElementToPoints(elem);
+        for (const p of pts) {
+            if (p.x < minX) minX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y > maxY) maxY = p.y;
+        }
+    }
+    
+    if (!isFinite(minX)) {
+        return { elements: [], bbox: null, width: 0, height: 0 };
+    }
+    
+    const width = maxX - minX;
+    const height = maxY - minY;
+    if (width <= 0 || height <= 0) {
+        return { elements: [], bbox: null, width: 0, height: 0 };
+    }
+    
+    // ─── worldToLocal: МИР (Y вверх) → ЛОКАЛЬНЫЕ SVGElement (Y вниз) ───
+    const worldToLocal = (wx, wy) => ({
+        x: wx - minX,
+        y: height - (wy - minY)
+    });
+    
+    // Перевести строку d из мировых в локальные
+    const worldToLocalD = (d) => {
+        if (!d) return d;
+        const cmds = this.parsePathCommands(d);
+        let curX = 0, curY = 0, startX = 0, startY = 0;
+        let out = '';
+        
+        for (const cmd of cmds) {
+            const { command, params, isRelative } = cmd;
+            const upper = command.toUpperCase();
+            
+            let abs = [...params];
+            if (isRelative && upper !== 'Z') {
+                for (let i = 0; i < abs.length; i += 2) {
+                    abs[i] += curX;
+                    if (i + 1 < abs.length) abs[i + 1] += curY;
+                }
+            }
+            
+            switch (upper) {
+                case 'M': {
+                    if (abs.length < 2) break;
+                    curX = abs[0]; curY = abs[1];
+                    startX = curX; startY = curY;
+                    const p = worldToLocal(curX, curY);
+                    out += `M ${p.x} ${p.y} `;
+                    for (let i = 2; i < abs.length; i += 2) {
+                        if (i + 1 >= abs.length) break;
+                        curX = abs[i]; curY = abs[i+1];
+                        const pp = worldToLocal(curX, curY);
+                        out += `L ${pp.x} ${pp.y} `;
+                    }
+                    break;
+                }
+                case 'L': {
+                    for (let i = 0; i < abs.length; i += 2) {
+                        if (i + 1 >= abs.length) break;
+                        curX = abs[i]; curY = abs[i+1];
+                        const p = worldToLocal(curX, curY);
+                        out += `L ${p.x} ${p.y} `;
+                    }
+                    break;
+                }
+                case 'H': {
+                    for (let i = 0; i < abs.length; i++) {
+                        curX = abs[i];
+                        const p = worldToLocal(curX, curY);
+                        out += `L ${p.x} ${p.y} `;
+                    }
+                    break;
+                }
+                case 'V': {
+                    for (let i = 0; i < abs.length; i++) {
+                        curY = abs[i];
+                        const p = worldToLocal(curX, curY);
+                        out += `L ${p.x} ${p.y} `;
+                    }
+                    break;
+                }
+                case 'C': {
+                    for (let i = 0; i < abs.length; i += 6) {
+                        if (i + 5 >= abs.length) break;
+                        const c1 = worldToLocal(abs[i], abs[i+1]);
+                        const c2 = worldToLocal(abs[i+2], abs[i+3]);
+                        const p  = worldToLocal(abs[i+4], abs[i+5]);
+                        out += `C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${p.x} ${p.y} `;
+                        curX = abs[i+4]; curY = abs[i+5];
+                    }
+                    break;
+                }
+                case 'Q': {
+                    for (let i = 0; i < abs.length; i += 4) {
+                        if (i + 3 >= abs.length) break;
+                        const c = worldToLocal(abs[i], abs[i+1]);
+                        const p = worldToLocal(abs[i+2], abs[i+3]);
+                        out += `Q ${c.x} ${c.y} ${p.x} ${p.y} `;
+                        curX = abs[i+2]; curY = abs[i+3];
+                    }
+                    break;
+                }
+                case 'S': {
+                    for (let i = 0; i < abs.length; i += 4) {
+                        if (i + 3 >= abs.length) break;
+                        const c = worldToLocal(abs[i], abs[i+1]);
+                        const p = worldToLocal(abs[i+2], abs[i+3]);
+                        out += `S ${c.x} ${c.y} ${p.x} ${p.y} `;
+                        curX = abs[i+2]; curY = abs[i+3];
+                    }
+                    break;
+                }
+                case 'T': {
+                    for (let i = 0; i < abs.length; i += 2) {
+                        if (i + 1 >= abs.length) break;
+                        const p = worldToLocal(abs[i], abs[i+1]);
+                        out += `T ${p.x} ${p.y} `;
+                        curX = abs[i]; curY = abs[i+1];
+                    }
+                    break;
+                }
+                case 'A': {
+                    for (let i = 0; i < abs.length; i += 7) {
+                        if (i + 6 >= abs.length) break;
+                        const rx = abs[i], ry = abs[i+1], ar = abs[i+2];
+                        const laf = abs[i+3], sf = abs[i+4];
+                        const p = worldToLocal(abs[i+5], abs[i+6]);
+                        out += `A ${rx} ${ry} ${ar} ${laf} ${sf} ${p.x} ${p.y} `;
+                        curX = abs[i+5]; curY = abs[i+6];
+                    }
+                    break;
+                }
+                case 'Z':
+                    out += 'Z ';
+                    curX = startX; curY = startY;
+                    break;
+            }
+        }
+        return out.trim();
+    };
+    
+    // ─── Перевод ВСЕХ elements из МИРОВЫХ в ЛОКАЛЬНЫЕ ───
+    const localElements = elements.map(elem => {
+        // Безье
+        if (elem.tag === 'bezier') {
+            const localPoints = elem.points.map(p => worldToLocal(p.x, p.y));
+            const localVectors = elem.vectors.map(v => ({
+                from: v.from, to: v.to,
+                control1: (() => { const p = worldToLocal(v.control1.x, v.control1.y); return { x: p.x, y: p.y }; })(),
+                control2: (() => { const p = worldToLocal(v.control2.x, v.control2.y); return { x: p.x, y: p.y }; })(),
+                stroke: v.stroke, strokeWidth: v.strokeWidth,
+                strokeLinecap: v.strokeLinecap, strokeLinejoin: v.strokeLinejoin
+            }));
+            return { tag: 'bezier', points: localPoints, vectors: localVectors, style: elem.style };
+        }
+        
+        // Обычный примитив
+        const attrs = { ...elem.attrs };
+        const tag = elem.tag;
+        
+        if (tag === 'path') {
+            if (attrs.d) attrs.d = worldToLocalD(attrs.d);
+        } else if (tag === 'line') {
+            const p1 = worldToLocal(parseFloat(attrs.x1) || 0, parseFloat(attrs.y1) || 0);
+            const p2 = worldToLocal(parseFloat(attrs.x2) || 0, parseFloat(attrs.y2) || 0);
+            attrs.x1 = String(p1.x); attrs.y1 = String(p1.y);
+            attrs.x2 = String(p2.x); attrs.y2 = String(p2.y);
+        } else if (tag === 'rect') {
+            const c1 = worldToLocal(parseFloat(attrs.x) || 0, parseFloat(attrs.y) || 0);
+            const c2 = worldToLocal(
+                (parseFloat(attrs.x) || 0) + (parseFloat(attrs.width) || 0),
+                (parseFloat(attrs.y) || 0) + (parseFloat(attrs.height) || 0)
+            );
+            attrs.x = String(Math.min(c1.x, c2.x));
+            attrs.y = String(Math.min(c1.y, c2.y));
+            attrs.width = String(Math.abs(c2.x - c1.x));
+            attrs.height = String(Math.abs(c2.y - c1.y));
+        } else if (tag === 'circle') {
+            const c = worldToLocal(parseFloat(attrs.cx) || 0, parseFloat(attrs.cy) || 0);
+            attrs.cx = String(c.x); attrs.cy = String(c.y);
+            // r не меняется (масштаб применяется при unwrap)
+        } else if (tag === 'ellipse') {
+            const c = worldToLocal(parseFloat(attrs.cx) || 0, parseFloat(attrs.cy) || 0);
+            attrs.cx = String(c.x); attrs.cy = String(c.y);
+            // rx/ry не меняются
+        }
+        
+        return { tag, attrs };
+    });
+    
+    return {
+        elements: localElements,   // ← ЛОКАЛЬНЫЕ (Y вниз, от 0)
+        bbox: { minX, minY, maxX, maxY },
+        width,
+        height
+    };
 }
-
 parsePathToPrimitives(d, toSheet, transformStr = '') {
     if (!d) return { lines: [], curves: [], linesD: '' };
     
@@ -14498,92 +15246,6 @@ parsePathToPrimitives(d, toSheet, transformStr = '') {
     return { lines, curves, linesD: linesD.trim() };
 }
 
-importCurvesAsBezier(curves, style) {
-    const newPoints = [];
-    const newVectors = [];
-    
-    const getOrCreatePoint = (x, y) => {
-        // Ищем существующую точку с близкими координатами
-        for (const p of this.state.bezierPoints) {
-            if (Math.hypot(p.x - x, p.y - y) < 0.01) return p;
-        }
-        // Создаём новую
-        const p = {
-            x, y,
-            element: null,
-            index: this.state.bezierPoints.length + newPoints.length
-        };
-        p.element = this.createBezierPointElement(p);
-        this.vectorLayer.appendChild(p.element);
-        newPoints.push(p);
-        return p;
-    };
-    
-    for (const curve of curves) {
-        const fromPoint = getOrCreatePoint(curve.p0.x, curve.p0.y);
-        const toPoint = getOrCreatePoint(curve.p3.x, curve.p3.y);
-        
-        const vector = {
-            from: fromPoint.index,
-            to: toPoint.index,
-            control1: { x: curve.c1.x, y: curve.c1.y, belongsTo: fromPoint.index },
-            control2: { x: curve.c2.x, y: curve.c2.y, belongsTo: toPoint.index },
-            path: null,
-            guideElements: {}
-        };
-        
-        vector.path = this.createBezierPath(
-            fromPoint.x, fromPoint.y,
-            vector.control1.x, vector.control1.y,
-            vector.control2.x, vector.control2.y,
-            toPoint.x, toPoint.y
-        );
-        vector.path.setAttribute('stroke', style.stroke);
-        vector.path.setAttribute('stroke-width', style.strokeWidth);
-        vector.path.setAttribute('stroke-linecap', style.linecap);
-        vector.path.setAttribute('stroke-linejoin', style.linejoin);
-        
-        this.vectorLayer.appendChild(vector.path);
-        newVectors.push(vector);
-    }
-    
-    // Регистрируем в state
-    for (const p of newPoints) this.state.bezierPoints.push(p);
-    for (const v of newVectors) this.state.bezierVectors.push(v);
-    
-    // Создаём направляющие
-    for (const v of newVectors) {
-        const from = this.state.bezierPoints[v.from];
-        const to = this.state.bezierPoints[v.to];
-        if (from && to) this.createVectorGuides(v, from, to);
-    }
-    
-    // Скрываем направляющие, если не в режиме B
-    if (this.state.currentTool !== 'bezier-points') {
-        for (const v of newVectors) {
-            const ge = v.guideElements || {};
-            if (ge.line1) ge.line1.style.display = 'none';
-            if (ge.control1) ge.control1.style.display = 'none';
-            if (ge.line2) ge.line2.style.display = 'none';
-            if (ge.control2) ge.control2.style.display = 'none';
-        }
-        this.toggleBezierPoints(false);
-    }
-}
-
-appendPathFromD(d, style) {
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', d.trim());
-    path.setAttribute('fill', style.fill || 'none');
-    path.setAttribute('stroke', style.stroke);
-    path.setAttribute('stroke-width', style.strokeWidth);
-    path.setAttribute('stroke-linecap', style.linecap || 'round');
-    path.setAttribute('stroke-linejoin', style.linejoin || 'round');
-    this.vectorLayer.appendChild(path);
-    return path;
-}
-
-
 
 }
  
@@ -14601,6 +15263,8 @@ class SVGElement {
         this.paths = [];
         this.svgImage = null;
         this.vectorPaths = [];
+		this.vectorElements = [];
+		this._fromVectorLayer = false;
         this.svgContent = svgContent;
         this.name = name || 'SVG элемент';
         this.sourceType = 'svg';
@@ -14610,6 +15274,39 @@ class SVGElement {
         // Парсим SVG
         this.parseSVG(svgContent);
     }
+	createPreviewImageFromPaths() {
+		const canvas = document.createElement('canvas');
+		const maxSize = 200;
+		let pw, ph;
+		if (this.width > this.height) {
+			pw = maxSize; ph = (this.height / this.width) * maxSize;
+		} else {
+			ph = maxSize; pw = (this.width / this.height) * maxSize;
+		}
+		canvas.width = Math.max(10, pw);
+		canvas.height = Math.max(10, ph);
+		
+		const ctx = canvas.getContext('2d');
+		ctx.fillStyle = '#ffffff';
+		ctx.fillRect(0, 0, canvas.width, canvas.height);
+		ctx.strokeStyle = '#000000';
+		ctx.lineWidth = 1;
+		
+		const sx = canvas.width / this.width;
+		const sy = canvas.height / this.height;
+		
+		for (const path of this.vectorPaths) {
+			if (path.length < 2) continue;
+			ctx.beginPath();
+			ctx.moveTo(path[0].x * sx, canvas.height - path[0].y * sy);
+			for (let i = 1; i < path.length; i++) {
+				ctx.lineTo(path[i].x * sx, canvas.height - path[i].y * sy);
+			}
+			ctx.stroke();
+		}
+		
+		this.svgImage = canvas;
+	}
 
     async parseSVG(svgContent) {
         try {
@@ -17074,49 +17771,65 @@ async function loadFiles(files) {
                             errors++;
                         }
 } else {
-    // SVG — разбор в vectorLayer + ЕДИНАЯ обёртка
+    // SVG — разбор в структуру + обёртка
     if (window.vectorEditor) {
         const ve = window.vectorEditor;
         
-        // 1. Разбираем SVG в vectorLayer
-        const count = ve.importSvgToVectorLayer(svgContent, 0, 0);
+        // 1. Разбор в структуру (не в vectorLayer!)
+        const parsed = ve.importSvgToVectorLayer(svgContent, 0, 0);
         
-        if (count > 0) {
-            // 2. Оборачиваем через ТУ ЖЕ функцию
-            const wrapped = ve.wrapVectorLayerAsSVGElement(file.name);
+        if (parsed.elements.length > 0) {
+            // 2. Создаём SVGElement напрямую из структуры
+            const newSvg = new SVGElement(
+                Date.now() + Math.random(),
+                '<svg><path/></svg>',
+                parsed.bbox.minX, parsed.bbox.minY,
+                parsed.width, parsed.height,
+                file.name
+            );
             
-            if (wrapped) {
-                svgElements.push(wrapped);
-                selectedSVGIndex = svgElements.length - 1;
-                isSVGSelected = true;
-                selectedElementIndex = -1;
-                isQRSelected = false;
-                selectedQRIndex = -1;
-                
-                // 3. Скрываем vectorLayer
-                if (ve.vectorLayer) {
-                    ve.vectorLayer.style.display = 'none';
-                }
-                
-                // 4. Снимок
-                ve.saveSnapshot();
-                
-                // 5. Обновляем списки
-                updateSVGElementsList();
-                updateTextElementsList();
-                updateQRElementsList();
-                updateElementProperties();
-                updateDeleteButtonsVisibility();
-                drawScene();
-                
-                svgsLoaded++;
-                const scaleInfo = wrapped.baseScale !== 1 
-                    ? ` (масштаб ${(wrapped.baseScale*100).toFixed(0)}%)` 
-                    : '';
-                updateStatus(`SVG "${file.name}": ${wrapped.originalWidth.toFixed(1)}×${wrapped.originalHeight.toFixed(1)}мм${scaleInfo}`, 'success');
-            } else {
-                errors++;
-            }
+            // Сэмплируем в vectorPaths (для превью/G-code)
+			 newSvg.vectorPaths = parsed.elements.map(elem => {
+				return ve.vectorElementToPoints(elem).map((p, i) => ({
+					x: p.x,
+					y: p.y,
+					move: i === 0
+				}));
+			}).filter(p => p.length >= 2);
+            
+            newSvg.vectorElements = parsed.elements;
+            newSvg.x = parsed.bbox.minX;
+            newSvg.y = parsed.bbox.minY;
+            newSvg.width = parsed.width;
+            newSvg.height = parsed.height;
+            newSvg.originalWidth = parsed.width;
+            newSvg.originalHeight = parsed.height;
+            newSvg.baseScale = 1.0;
+            newSvg.scale = 1.0;
+            newSvg.rotation = 0;
+            newSvg.sourceType = 'svg';
+            newSvg._fromVectorLayer = true;  // ← помечаем, что можно редактировать
+            
+            newSvg.createPreviewImageFromPaths();
+            
+            svgElements.push(newSvg);
+            selectedSVGIndex = svgElements.length - 1;
+            isSVGSelected = true;
+            selectedElementIndex = -1;
+            isQRSelected = false;
+            selectedQRIndex = -1;
+            
+            svgsLoaded++;
+            
+            updateSVGElementsList();
+            updateTextElementsList();
+            updateQRElementsList();
+            updateElementProperties();
+            updateDeleteButtonsVisibility();
+            drawScene();
+            ve.saveSnapshot();
+            
+            updateStatus(`SVG "${file.name}": ${parsed.width.toFixed(1)}×${parsed.height.toFixed(1)}мм`, 'success');
         } else {
             errors++;
         }
@@ -21089,8 +21802,6 @@ function convertVectorToSvgElement() {
     }
     
     const ve = window.vectorEditor;
-    
-    // 1. Оборачиваем через ЕДИНУЮ функцию
     const wrapped = ve.wrapVectorLayerAsSVGElement('Из вектора');
     
     if (!wrapped) {
@@ -21098,7 +21809,7 @@ function convertVectorToSvgElement() {
         return;
     }
     
-    // 2. Добавляем в svgElements
+    // Добавляем в svgElements
     svgElements.push(wrapped);
     selectedSVGIndex = svgElements.length - 1;
     isSVGSelected = true;
@@ -21106,57 +21817,13 @@ function convertVectorToSvgElement() {
     isQRSelected = false;
     selectedQRIndex = -1;
     
-    // 3. Скрываем vectorLayer (чтобы не было двойного рендера)
-    if (ve.vectorLayer) {
-        ve.vectorLayer.style.display = 'none';
-    }
-    
-    // 4. Очищаем state Безье (но _bezierData уже сохранён в wrapped!)
-    // Удаляем точки из DOM
-    ve.state.bezierPoints.forEach(p => {
-        if (p.element && p.element.parentNode) p.element.remove();
-    });
-    // Удаляем векторы из DOM
-    ve.state.bezierVectors.forEach(v => {
-        if (v.path && v.path.parentNode) v.path.remove();
-        const ge = v.guideElements || {};
-        if (ge.line1) ge.line1.remove();
-        if (ge.control1) ge.control1.remove();
-        if (ge.line2) ge.line2.remove();
-        if (ge.control2) ge.control2.remove();
-    });
-    // Очищаем state
-    ve.state.bezierPoints = [];
-    ve.state.bezierVectors = [];
-    ve.state.bezierSelectedPoint = null;
-    ve.state.pendingConnectPoint = null;
-    
-    // 5. Удаляем обычные примитивы из vectorLayer (они уже в wrapped.vectorPaths)
-    // НО! Не удаляем — они нужны при unwrap.
-    // Вместо удаления — vectorLayer скрыт (display: none) — при unwrap покажется.
-    
-    // 6. Сбрасываем выделение
-    if (ve.selectedBezierContour) {
-        if (ve.selectedBezierContour.fakePath?.parentNode) {
-            ve.selectedBezierContour.fakePath.remove();
-        }
-        ve.selectedBezierContour = null;
-    }
-    ve.selectedElement = null;
-    
-    // 7. Скрываем хелперы
-    ve.hideBezierHelpers();
-    ve.toggleBezierPoints(false);
-    
-    // 8. Снимок
+    // Снимок
     ve.saveSnapshot();
     
-    // 9. Переключаемся на плоттер
-    if (typeof switchMode === 'function') {
-        switchMode('plotter');
-    }
+    // Переключаемся в плоттер
+    if (typeof switchMode === 'function') switchMode('plotter');
     
-    // 10. Обновляем списки
+    // Обновляем
     updateSVGElementsList();
     updateTextElementsList();
     updateQRElementsList();
