@@ -338,7 +338,7 @@ button:hover {
     background: #444;
     padding: 10px;
     border-radius: 4px;
-    margin-top: 10px;
+    margin-top: 1px;
     display: none;
 }
 
@@ -480,7 +480,7 @@ button:hover {
 }
 
 .properties-panel {
-	top: 138px;
+	top: 115px;
 	right: 46px;
 	float: right;
 	position: fixed;
@@ -1243,12 +1243,11 @@ input[type="range"] {
 <div class="properties-panel" id="propertiesPanel">
     <h3>Свойства элемента</h3>
     <div class="element-properties" id="elementProperties" style="display: block;">
-        <label for="elementX">Позиция X (мм):</label>
+        <label for="elementX">Позиция X(мм): Y(мм):</label>
+		<div style="display: flex;">
         <input type="number" id="elementX" step="0.1">
-        
-        <label for="elementY">Позиция Y (мм):</label>
         <input type="number" id="elementY" step="0.1">
-        
+        </div>
         <!-- ДЛЯ QR КОДА -->
         <div id="qrSpecificProps" style="display: none;">
             <label for="elementQRType">Тип данных:</label>
@@ -1270,17 +1269,32 @@ input[type="range"] {
         <label for="elementFont">Шрифт:</label>
         <select id="elementFont">
             <option value="">-- Выберите шрифт --</option>
-        </select>
+		</select>
+<select id="elementAlign">
+    <option value="left">По левому краю</option>
+    <option value="center">По центру</option>
+    <option value="right">По правому краю</option>
+    <option value="justify">По ширине</option>
+</select>
         
-        <label for="elementFontSize">Размер (мм):</label>
+        <div style="display: flex;">
+        <label for="elementFontSize">Размер (мм):</label><small id="elementFontSizePt" style="color: #aaa; font-size: 11px;"></small></div>
         <input type="number" id="elementFontSize" min="1" step="0.1">
         
         <!-- Макс. ширина - только для текста -->
         <div id="maxWidthContainer">
-            <label for="elementMaxWidth">Макс. ширина (мм):</label>
-            <input type="number" id="elementMaxWidth" min="0" value="0" step="1">
+            <label for="elementMaxWidth">Макс. ширина:Высота:</label>
+			<div style="display: flex;">
+            <input type="number" id="elementMaxWidth" min="0" value="0" step="1"><input type="number" id="elementSheetHeight" min="10" max="1000" step="1" value="297">
         </div>
-        
+		<label for="elementLineSpacing">Высота строки (мм):</label>
+		<input type="number" id="elementLineSpacing" min="0.1" max="100" step="0.1" value="12">
+		</div>
+<div id="textSheetContainer" style="display: none;">
+    <label for="elementPage">Страница:</label>
+    <input type="number" id="elementPage" min="1" step="1" value="1">
+    <div style="font-size: 11px; color: #aaa; margin-top: -5px; margin-bottom: 8px;" id="elementPageInfo"></div>
+</div>
         <label for="elementRotation">Поворот (°):</label>
         <input type="number" id="elementRotation" min="-180" max="180" step="1">
         
@@ -1288,13 +1302,28 @@ input[type="range"] {
     </div>
 </div>              
                 <!-- ОКНО ВВОДА ТЕКСТА С КНОПКАМИ -->
-				<div class="text-input-overlay" id="textInputOverlay">
-					<textarea id="textInput" placeholder="Введите данные" style="height: 60px;"></textarea>
-					<div class="text-input-controls">
-						<button id="textInputCancel" class="cancel-btn">✕ Отмена</button>
-						<button id="textInputOk" class="ok-btn">✓ OK</button>
-					</div>
-				</div>
+<div class="text-input-overlay" id="textInputOverlay">
+    <div class="text-input-header" id="textInputHeader" style="
+        cursor: move;
+        padding: 4px 8px;
+        background: #555;
+        border-radius: 4px 4px 0 0;
+        font-size: 12px;
+        color: #ccc;
+        user-select: none;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    ">
+        <span>⠿ Текст</span>
+        <span style="font-size: 10px; color: #888;">перетащите за шапку</span>
+    </div>
+    <textarea id="textInput" placeholder="Введите данные" style="width: 365px; height: 500px; margin: 0; border-radius: 0;"></textarea>
+    <div class="text-input-controls">
+        <button id="textInputCancel" class="cancel-btn">✕ Отмена</button>
+        <button id="textInputOk" class="ok-btn">✓ OK</button>
+    </div>
+</div>
 </div>           
 
 		   </div>
@@ -1404,7 +1433,9 @@ input[type="range"] {
 		let strokeWidth = 0.3;
 		let currentVectorTool = 'select'; 
 		var vectorEditor = null;
-
+		let liveEditDebounceTimer = null;
+		let overlayLeft = 430;
+		let overlayTop = 0;
 
 class VectorEditor {
 constructor() {
@@ -16446,19 +16477,111 @@ class GOSTSVGFont {
 
         // Класс для текстового элемента
 class TextElement {
-    constructor(id, text, font, fontSize, x, y, maxWidth = null) {
-        this.id = id;
-        this.originalText = text;  // Сохраняем оригинальный текст
-        this.text = text;
-        this.font = font;
-        this.fontSize = fontSize;
-        this.x = x;
-        this.y = y;
-        this.rotation = 0;
-        this.maxWidth = maxWidth; // Максимальная ширина в мм (null = без ограничения)
-        this.paths = [];
-        this.generatePaths();
+constructor(id, text, font, fontSize, x, y, maxWidth = null, sheetHeight = 297, page = 0, lineSpacing = null, align = 'left') {
+    this.id = id;
+    this.originalText = text;
+    this.text = text;
+    this.font = font;
+    this.fontSize = fontSize;
+    this.x = x;
+    this.y = y;
+    this.rotation = 0;
+    this.maxWidth = maxWidth;
+    this.paths = [];
+    this.sheetHeight = sheetHeight;
+    this.page = page;
+	this.align = align;
+    this.lineSpacing = (lineSpacing !== null && lineSpacing > 0)
+        ? lineSpacing
+        : fontSize * 1.2;
+    this.generatePathsForPage();
+}
+
+getPageRange() {
+    let lineItems;
+    if (this.maxWidth && this.maxWidth > 0) {
+        lineItems = this.wrapText(this.text, this.maxWidth);
+    } else {
+        lineItems = this.text.split('\n').map(t => ({ text: t, isParagraphEnd: true }));
     }
+    
+    const lineHeight = this.lineSpacing;
+    const usableHeight = (this.sheetHeight || 297) * 0.95;
+    const linesPerPage = Math.max(1, Math.floor(usableHeight / lineHeight));
+    
+    const start = (this.page || 0) * linesPerPage;
+    const end = Math.min(start + linesPerPage, lineItems.length);
+    
+    return { start, end, linesPerPage, totalLines: lineItems.length };
+}
+
+// Генерирует paths ТОЛЬКО для строк текущей страницы.
+// Заменяет generatePaths() по смыслу.
+async generatePathsForPage() {
+    this.paths = [];
+    const scale = this.fontSize / 1000;
+    const lineHeight = this.lineSpacing;
+    
+    let lineItems;   // массив { text, isParagraphEnd }
+    if (this.maxWidth && this.maxWidth > 0) {
+        lineItems = this.wrapText(this.text, this.maxWidth);
+    } else {
+        lineItems = this.text.split('\n').map(t => ({ text: t, isParagraphEnd: true }));
+    }
+    
+    const { start, end } = this.getPageRange();
+    const align = this.align || 'left';
+    const maxW = this.maxWidth || 0;
+    
+    for (let lineIndex = start; lineIndex < end; lineIndex++) {
+        const item = lineItems[lineIndex];
+        const line = item.text;
+        const lineIndexFromStart = lineIndex - start;
+        const baselineY = this.fontSize + lineIndexFromStart * lineHeight;
+        
+        let lineWidth = 0;
+        for (const ch of line) lineWidth += this.font.getGlyphWidth(ch) * scale;
+        
+        let startX = 0;
+        if (maxW > 0) {
+            if (align === 'center') startX = (maxW - lineWidth) / 2;
+            else if (align === 'right') startX = maxW - lineWidth;
+        }
+        
+        // Justify: не растягиваем последнюю строку абзаца
+        let extraPerSpace = 0;
+        if (align === 'justify' && maxW > 0
+            && line.trim() !== ''
+            && !item.isParagraphEnd) {
+            const deficit = (maxW * 0.98) - lineWidth;
+            const spaceCount = (line.match(/ /g) || []).length;
+            if (deficit > 0.001 && spaceCount > 0) extraPerSpace = deficit / spaceCount;
+        }
+        
+        let currentX = startX;
+        for (let charIndex = 0; charIndex < line.length; charIndex++) {
+            const char = line[charIndex];
+            const glyphPath = this.font.getGlyphPath(char);
+            if (glyphPath) {
+                try {
+                    const coordinates = this.font.parsePathToCoordinates(glyphPath, scale);
+                    if (coordinates.length > 0) {
+                        const charPaths = this.coordinatesToPaths(
+                            coordinates, currentX, baselineY, true
+                        );
+                        this.paths.push(...charPaths);
+                    }
+                } catch (error) {
+                    console.warn(`Ошибка парсинга '${char}':`, error);
+                }
+            }
+            currentX += this.font.getGlyphWidth(char) * scale;
+            if (char === ' ' && extraPerSpace > 0) currentX += extraPerSpace;
+        }
+    }
+    
+    this.paths = this.paths.filter(path => path.length > 1);
+}
 
     async generatePaths() {
         this.paths = [];
@@ -16510,7 +16633,6 @@ class TextElement {
 wrapText(text, maxWidth) {
     const scale = this.fontSize / 1000;
     
-    // Функция для измерения ширины строки
     const measureLineWidth = (line) => {
         let width = 0;
         for (let char of line) {
@@ -16519,49 +16641,44 @@ wrapText(text, maxWidth) {
         return width;
     };
     
-    const lines = [];
-    
-    // Разбиваем текст по существующим переносам строк
+    const result = [];   // { text, isParagraphEnd }
     const originalLines = text.split('\n');
     
-    // Обрабатываем каждую строку отдельно
-    for (const originalLine of originalLines) {
-        // Если строка пустая - сохраняем как есть
+    for (let pIdx = 0; pIdx < originalLines.length; pIdx++) {
+        const originalLine = originalLines[pIdx];
+        const isLastParagraph = (pIdx === originalLines.length - 1);
+        
         if (originalLine === '') {
-            lines.push('');
+            result.push({ text: '', isParagraphEnd: true });
             continue;
         }
         
-        // Если строка помещается целиком - оставляем как есть (со всеми пробелами)
         if (measureLineWidth(originalLine) <= maxWidth) {
-            lines.push(originalLine);
+            result.push({ text: originalLine, isParagraphEnd: true });
             continue;
         }
         
-        // Строка не помещается - ищем где заменить пробел на перенос
+        // Разбиваем длинную строку
         let remaining = originalLine;
+        const pieces = [];
         
         while (measureLineWidth(remaining) > maxWidth) {
-            // Ищем последний пробел, до которого строка помещается
             let bestSplitPos = -1;
-            
             for (let i = 0; i < remaining.length; i++) {
                 if (remaining[i] === ' ') {
                     const prefix = remaining.substring(0, i);
                     if (measureLineWidth(prefix) <= maxWidth) {
                         bestSplitPos = i;
                     } else {
-                        break; // Дальше ширина будет только больше
+                        break;
                     }
                 }
             }
             
             if (bestSplitPos > 0) {
-                // Заменяем пробел на перенос строки
-                lines.push(remaining.substring(0, bestSplitPos));
-                remaining = remaining.substring(bestSplitPos + 1); // +1 чтобы пропустить пробел
+                pieces.push(remaining.substring(0, bestSplitPos));
+                remaining = remaining.substring(bestSplitPos + 1);
             } else {
-                // Нет подходящего пробела - разбиваем по символам
                 let splitPos = 0;
                 for (let i = 1; i <= remaining.length; i++) {
                     if (measureLineWidth(remaining.substring(0, i)) > maxWidth) {
@@ -16569,128 +16686,115 @@ wrapText(text, maxWidth) {
                         break;
                     }
                 }
-                if (splitPos === 0) splitPos = 1; // Хотя бы один символ
-                
-                lines.push(remaining.substring(0, splitPos));
+                if (splitPos === 0) splitPos = 1;
+                pieces.push(remaining.substring(0, splitPos));
                 remaining = remaining.substring(splitPos);
             }
         }
         
-        // Добавляем остаток (со всеми пробелами как есть)
-        if (remaining) {
-            lines.push(remaining);
+        if (remaining) pieces.push(remaining);
+        
+        // Все куски, кроме последнего — НЕ конец абзаца
+        for (let i = 0; i < pieces.length; i++) {
+            result.push({
+                text: pieces[i],
+                isParagraphEnd: (i === pieces.length - 1)   // последний кусок — конец абзаца
+            });
         }
     }
     
-    return lines;
+    return result;
 }
 
-    // Установка максимальной ширины с обновлением
-    async setMaxWidth(newMaxWidth) {
-        this.maxWidth = newMaxWidth;
-        await this.generatePaths();
-    }
 
-    coordinatesToPaths(coordinates, offsetX, offsetY, mirrorY = false) {
-        const paths = [];
-        let currentPath = [];
+coordinatesToPaths(coordinates, offsetX, offsetY, mirrorY = false) {
+    const paths = [];
+    let currentPath = [];
+    
+    for (const coord of coordinates) {
+        // coord.y — Y вверх от baseline (шрифт)
+        // offsetY — baseline в localY (вниз)
+        // localY = offsetY - coord.y  (верх глифа = offsetY - fontSize = 0)
+        const point = {
+            x: coord.x + offsetX,
+            y: offsetY - coord.y
+        };
         
-        for (const coord of coordinates) {
-            let pointY = coord.y;
-            
-            const point = {
-                x: coord.x + offsetX,
-                y: pointY + offsetY
-            };
-            
-            if (coord.move) {
-                if (currentPath.length > 0) {
-                    paths.push([...currentPath]);
-                }
+        if (coord.move) {
+            if (currentPath.length > 0) {
+                paths.push([...currentPath]);
+            }
+            currentPath = [point];
+        } else {
+            if (currentPath.length === 0) {
                 currentPath = [point];
             } else {
-                if (currentPath.length === 0) {
-                    currentPath = [point];
-                } else {
-                    currentPath.push(point);
-                }
+                currentPath.push(point);
             }
         }
-        
-        if (currentPath.length > 0) {
-            paths.push(currentPath);
-        }
-        
-        return paths;
     }
     
+    if (currentPath.length > 0) {
+        paths.push(currentPath);
+    }
+    
+    return paths;
+}
+
 getBoundingBox() {
-    // Получаем все строки с учётом переносов
-    let lines;
+    let lineItems;
     if (this.maxWidth && this.maxWidth > 0) {
-        lines = this.wrapText(this.text, this.maxWidth);
+        lineItems = this.wrapText(this.text, this.maxWidth);
     } else {
-        lines = this.text.split('\n');
+        lineItems = this.text.split('\n').map(t => ({ text: t, isParagraphEnd: true }));
     }
     
-    const lineHeight = this.fontSize * 1.2;
-    const height = lines.length * lineHeight;
+    const { start, end } = this.getPageRange();
+    const pageLines = lineItems.slice(start, end).map(i => i.text);
+    const linesCount = Math.max(0, pageLines.length);
+    const lineHeight = this.lineSpacing;
+    const height = linesCount * lineHeight;
     
-    // Считаем максимальную ширину среди всех строк
     const scale = this.fontSize / 1000;
     let maxLineWidth = 0;
-    for (const line of lines) {
+    for (const line of pageLines) {
         let lineWidth = 0;
-        for (let char of line) {
-            lineWidth += this.font.getGlyphWidth(char) * scale;
-        }
+        for (const ch of line) lineWidth += this.font.getGlyphWidth(ch) * scale;
         maxLineWidth = Math.max(maxLineWidth, lineWidth);
     }
     
     const width = this.maxWidth ? Math.min(maxLineWidth, this.maxWidth) : maxLineWidth;
     
-    return {
-        x: this.x,
-        y: this.y,
-        width: width,
-        height: height
-    };
+    return { x: this.x, y: this.y, width, height };
 }
 
-    getDisplayPaths() {
-        const displayPaths = [];
-        const cos = Math.cos(this.rotation);
-        const sin = Math.sin(this.rotation);
-        
-        const bbox = this.getBoundingBox();
-        const centerX = bbox.x + bbox.width / 2;
-        const centerY = bbox.y + bbox.height / 2;
-        
-        for (const path of this.paths) {
-            const transformedPath = path.map(point => {
-                const localX = point.x;
-                const localY = point.y;
-                
-                const worldX = this.x + localX;
-                const worldY = this.y + localY + this.fontSize;
-                
-                const rotatedX = (worldX - centerX) * cos - (worldY - centerY) * sin + centerX;
-                const rotatedY = (worldX - centerX) * sin + (worldY - centerY) * cos + centerY;
-                
-                return {
-                    x: rotatedX,
-                    y: rotatedY
-                };
-            });
+getDisplayPaths() {
+    const displayPaths = [];
+    const cos = Math.cos(this.rotation);
+    const sin = Math.sin(this.rotation);
+    
+    const bbox = this.getBoundingBox();
+    const centerX = bbox.x + bbox.width / 2;
+    const centerY = bbox.y - bbox.height / 2;   // bbox.y — верхний, центр ниже
+    
+    for (const path of this.paths) {
+        const transformedPath = path.map(point => {
+            const worldX = this.x + point.x;
+            const worldY = this.y - point.y;   // ← Y вниз от верхнего края
             
-            if (transformedPath.length > 1) {
-                displayPaths.push(transformedPath);
-            }
-        }
+            const rotatedX = (worldX - centerX) * cos - (worldY - centerY) * sin + centerX;
+            const rotatedY = (worldX - centerX) * sin + (worldY - centerY) * cos + centerY;
+            
+            return { x: rotatedX, y: rotatedY };
+        });
         
-        return displayPaths;
+        if (transformedPath.length > 1) {
+            displayPaths.push(transformedPath);
+        }
     }
-
+    
+    return displayPaths;
+}
     getGcodePaths() {
         const gcodePaths = [];
         const cos = Math.cos(this.rotation);
@@ -16698,12 +16802,12 @@ getBoundingBox() {
         
         const bbox = this.getBoundingBox();
         const centerX = bbox.x + bbox.width / 2;
-        const centerY = bbox.y + bbox.height / 2;
+        const centerY = bbox.y - bbox.height / 2;
         
         for (const path of this.paths) {
             const transformedPath = path.map(point => {
                 const worldX = this.x + point.x;
-                const worldY = this.y + point.y + this.fontSize;
+                const worldY = this.y - point.y;
                 
                 const rotatedX = (worldX - centerX) * cos - (worldY - centerY) * sin + centerX;
                 const rotatedY = (worldX - centerX) * sin + (worldY - centerY) * cos + centerY;
@@ -16724,7 +16828,7 @@ getBoundingBox() {
 
     async updateFontSize(newSize) {
         this.fontSize = newSize;
-        await this.generatePaths();
+        await this.generatePathsForPage();
     }
 }
 
@@ -17663,17 +17767,20 @@ async function addTextElementAtCenter() {
         // Вычисляем максимальную ширину как 95% от ширины листа
         const maxWidth = Math.round(sheetWidth * 0.95);
         
-        const newElement = new TextElement(
-            Date.now(),
-            "Новый текст",
-            selectedFont.instance,
-            fontSize,
-            sheetWidth / 2 - maxWidth / 2,  // Центрируем с учётом maxWidth
-            sheetHeight / 2,
-            maxWidth  // Устанавливаем максимальную ширину
-        );
+const newElement = new TextElement(
+    Date.now(),
+    "Новый текст",
+    selectedFont.instance,
+    fontSize,
+    sheetWidth / 2 - maxWidth / 2,
+    sheetHeight - 10,
+    maxWidth,
+    sheetHeight,
+    0,
+    null
+);
         
-        await newElement.generatePaths();
+        await newElement.generatePathsForPage();
         
         textElements.push(newElement);
         selectedElementIndex = textElements.length - 1;
@@ -18642,6 +18749,98 @@ if (resetPenBtn) {
         }
         
         updateStatus('Точка пера сброшена в (0, 0)', 'success');
+    });
+}
+const fontSizeInput = document.getElementById('elementFontSize');
+if (fontSizeInput) {
+    fontSizeInput.addEventListener('input', (e) => {
+        // Подсказка актуальна только для текста (для SVG/QR "pt" не имеет смысла)
+        const ptLabel = document.getElementById('elementFontSizePt');
+        if (!ptLabel) return;
+        
+        // Показываем "pt" только когда выбран текст
+        if (selectedElementIndex === -1) {
+            ptLabel.textContent = '';
+            return;
+        }
+        
+        const mm = parseFloat(e.target.value);
+        if (!isNaN(mm) && mm > 0) {
+            const pt = (mm / 0.3528).toFixed(1);
+            ptLabel.textContent = `≈ ${pt} pt`;
+        } else {
+            ptLabel.textContent = '';
+        }
+    });
+}
+const textInputHeader = document.getElementById('textInputHeader');
+const textInputOverlayEl = document.getElementById('textInputOverlay');
+
+if (textInputHeader && textInputOverlayEl) {
+    let isDraggingOverlay = false;
+    let dragStartX = 0, dragStartY = 0;
+    let overlayStartLeft = 0, overlayStartTop = 0;
+    
+    textInputHeader.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        isDraggingOverlay = true;
+        
+        const rect = textInputOverlayEl.getBoundingClientRect();
+        overlayStartLeft = rect.left;
+        overlayStartTop = rect.top;
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        
+        // Переводим из absolute (left/top) в фиксированные координаты
+        // (чтобы не зависеть от родителя)
+        textInputOverlayEl.style.position = 'fixed';
+        textInputOverlayEl.style.left = rect.left + 'px';
+        textInputOverlayEl.style.top = rect.top + 'px';
+        textInputOverlayEl.style.margin = '0';
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+        if (!isDraggingOverlay) return;
+        
+        let newLeft = overlayStartLeft + (e.clientX - dragStartX);
+        let newTop = overlayStartTop + (e.clientY - dragStartY);
+        
+        // Clamp в пределах окна
+        const w = textInputOverlayEl.offsetWidth;
+        const h = textInputOverlayEl.offsetHeight;
+        newLeft = Math.max(0, Math.min(window.innerWidth - w, newLeft));
+        newTop = Math.max(0, Math.min(window.innerHeight - h, newTop));
+        
+        textInputOverlayEl.style.left = newLeft + 'px';
+        textInputOverlayEl.style.top = newTop + 'px';
+		overlayLeft = newLeft;
+		overlayTop = newTop;
+    });
+    
+    document.addEventListener('mouseup', () => {
+        if (isDraggingOverlay) {
+            isDraggingOverlay = false;
+        }
+    });
+}
+if (textInput) {
+    textInput.addEventListener('input', () => {
+        const idxRaw = textInput.dataset.index;
+        if (idxRaw === undefined) return;   // новый текст — элемента ещё нет
+        
+        const idx = parseInt(idxRaw);
+        if (isNaN(idx) || idx < 0 || idx >= textElements.length) return;
+        
+        if (liveEditDebounceTimer) clearTimeout(liveEditDebounceTimer);
+        liveEditDebounceTimer = setTimeout(async () => {
+            const el = textElements[idx];
+            if (!el) return;
+            el.text = textInput.value;
+            await el.generatePathsForPage();
+            drawScene();
+            updateElementProperties();
+            immediateCalculateEstimatedTime();
+        }, 80);
     });
 }
 	}
@@ -19842,12 +20041,15 @@ async function updateTextElementText(index, newText) {
 	if (index < 0 || index >= textElements.length) return;
 	
 	const element = textElements[index];
-	const oldText = element.text;
+	const oldText = textInput.dataset.originalText !== undefined
+    ? textInput.dataset.originalText
+    : (element.originalText !== undefined ? element.originalText : element.text);
 	
 	showLoading(true);
 	try {
 		element.text = newText;
-		await element.generatePaths();
+		element.originalText = newText;
+		await element.generatePathsForPage();
 		
 		updateTextElementsList();
 		drawScene();
@@ -19862,6 +20064,20 @@ async function updateTextElementText(index, newText) {
 }
 
 function cancelTextInput() {
+if (textInput.dataset.index !== undefined) {
+    const idx = parseInt(textInput.dataset.index);
+    if (!isNaN(idx) && idx >= 0 && idx < textElements.length) {
+        const el = textElements[idx];
+        if (textInput.dataset.originalText !== undefined) {
+            el.text = textInput.dataset.originalText;
+            el.generatePathsForPage().then(() => {
+                drawScene();
+                updateElementProperties();
+                immediateCalculateEstimatedTime();
+            });
+        }
+    }
+}
 	textInputOverlay.style.display = 'none';
 	isAddingText = false;
 	delete textInput.dataset.type;
@@ -19888,17 +20104,20 @@ async function addTextElementAtPosition(text, x, y) {
         // Вычисляем максимальную ширину как 95% от ширины листа
         const maxWidth = Math.round(sheetWidth * 0.95);
         
-        const newElement = new TextElement(
-            Date.now(),
-            text,
-            selectedFont.instance,
-            fontSize,
-            x,
-            y,
-            maxWidth > 0 ? maxWidth : sheetWidth * 0.95  // Если x слишком близко к краю
-        );
-        
-        await newElement.generatePaths();
+const newElement = new TextElement(
+    Date.now(),
+    "Новый текст",
+    selectedFont.instance,
+    fontSize,
+    sheetWidth / 2 - maxWidth / 2,
+    sheetHeight - 10,
+    maxWidth,
+    sheetHeight, 
+    0,
+    null 
+);
+
+		await newElement.generatePathsForPage();
         
         textElements.push(newElement);
         selectedElementIndex = textElements.length - 1;
@@ -20035,17 +20254,14 @@ function startTextEdit(element, index) {
 	// Получаем bounding box элемента со смещением
 	const bbox = element.getBoundingBox();
 	
-	// Позиционируем окно ввода с учетом высоты шрифта
-	const screenX = element.x * scaleFactor;
-	const screenY = (sheetHeight - element.y - element.fontSize) * scaleFactor; // СМЕЩАЕМ ВНИЗ
-	
-	textInputOverlay.style.left = (screenX + 5) + 'px';
-	textInputOverlay.style.top = (screenY - 5) + 'px'; // Корректируем позицию
+	textInputOverlay.style.left = overlayLeft + 'px';
+	textInputOverlay.style.top = overlayTop + 'px';
 	textInputOverlay.style.display = 'block';
 	textInput.value = element.text;
 	textInput.focus();
 	
 	textInput.dataset.index = index;
+	textInput.dataset.originalText = element.text;
 	updateDeleteButtonsVisibility();
 }
 
@@ -20089,6 +20305,8 @@ function updateElementProperties() {
         
         // Скрываем макс. ширину
         maxWidthContainer.style.display = 'none';
+		const textSheetContainer = document.getElementById('textSheetContainer');
+		if (textSheetContainer) textSheetContainer.style.display = 'none';
         
     } else if (isSVGSelected && selectedSVGIndex !== -1) {
         qrSpecificProps.style.display = 'none';
@@ -20105,6 +20323,8 @@ function updateElementProperties() {
         
         // Скрываем макс. ширину
         maxWidthContainer.style.display = 'none';
+		const textSheetContainer = document.getElementById('textSheetContainer');
+		if (textSheetContainer) textSheetContainer.style.display = 'none';
         
     } else if (selectedElementIndex !== -1) {
         qrSpecificProps.style.display = 'none';
@@ -20113,11 +20333,12 @@ function updateElementProperties() {
         elementYInput.value = element.y.toFixed(1);
         elementFontSizeInput.value = element.fontSize;
         elementRotationInput.value = (element.rotation * 180 / Math.PI).toFixed(1);
-        
+        const alignSelect = document.getElementById('elementAlign');
+		if (alignSelect) alignSelect.value = element.align || 'left';
         // Показываем текстовые поля
         elementFontLabel.style.display = 'block';
         elementFontSelect.style.display = 'block';
-        fontSizeLabel.textContent = 'Размер шрифта (мм):';
+        fontSizeLabel.textContent = 'Размер (мм):';
         
         // Показываем макс. ширину только для текста
         maxWidthContainer.style.display = 'block';
@@ -20127,7 +20348,31 @@ function updateElementProperties() {
         if (maxWidthInput) {
             maxWidthInput.value = element.maxWidth ? element.maxWidth.toFixed(0) : '';
         }
-        
+const lineSpacingInput = document.getElementById('elementLineSpacing');
+if (lineSpacingInput) {
+    lineSpacingInput.value = element.lineSpacing.toFixed(1);
+}
+const textSheetContainer = document.getElementById('textSheetContainer');
+if (textSheetContainer) textSheetContainer.style.display = 'block';
+
+const shInput = document.getElementById('elementSheetHeight');
+if (shInput) shInput.value = element.sheetHeight || 297;
+
+const pgInput = document.getElementById('elementPage');
+if (pgInput) pgInput.value = (element.page || 0) + 1;
+
+const ptLabel = document.getElementById('elementFontSizePt');
+const FontSizein = document.getElementById('elementFontSize');
+if (ptLabel) {
+    const pt = (FontSizein.value / 0.3528).toFixed(1);
+    ptLabel.textContent = `≈ ${pt} pt`;
+}
+const pgInfo = document.getElementById('elementPageInfo');
+if (pgInfo) {
+    const range = element.getPageRange();
+    const totalPages = Math.max(1, Math.ceil(range.totalLines / range.linesPerPage));
+    pgInfo.textContent = `Строк: ${range.linesPerPage}, страниц: ${totalPages}`;
+}
         // Устанавливаем выбранный шрифт
         if (element.font && element.font.fontName) {
             for (let i = 0; i < elementFontSelect.options.length; i++) {
@@ -20436,37 +20681,58 @@ async function updateSelectedElement() {
         } 
         
         // Обработка текстового элемента
-        else if (selectedElementIndex !== -1) {
-            const element = textElements[selectedElementIndex];
-            const newX = parseFloat(elementXInput.value);
-            const newY = parseFloat(elementYInput.value);
-            const newFontSize = parseFloat(elementFontSizeInput.value);
-            const newRotation = parseFloat(elementRotationInput.value) * Math.PI / 180;
-            const newFontPath = elementFontSelect.value;
-
-            // Проверяем, изменился ли шрифт
-            if (newFontPath) {
-                const selectedFont = fonts.find(f => f.path === newFontPath);
-                if (selectedFont && selectedFont.instance !== element.font) {
-                    element.font = selectedFont.instance;
-                    await element.generatePaths();
-                }
-            }
-
-            if (newFontSize !== element.fontSize) {
-                await element.updateFontSize(newFontSize);
-            }
-			 const newMaxWidth = parseFloat(document.getElementById('elementMaxWidth').value) || null;
-				if (newMaxWidth !== element.maxWidth) {
-					await element.setMaxWidth(newMaxWidth);
-				}
-            element.x = newX;
-            element.y = newY;
-            element.rotation = newRotation;
-
-            drawScene();
-            updateStatus('Свойства элемента обновлены', 'success');
-        }
+else if (selectedElementIndex !== -1) {
+    const element = textElements[selectedElementIndex];
+    const newX = parseFloat(elementXInput.value);
+    const newY = parseFloat(elementYInput.value);
+    const newFontSize = parseFloat(elementFontSizeInput.value);
+    const newRotation = parseFloat(elementRotationInput.value) * Math.PI / 180;
+    const newFontPath = elementFontSelect.value;
+    
+    // ─── Чтение всех полей ───
+    const newMaxWidth = parseFloat(document.getElementById('elementMaxWidth')?.value) || null;
+    const newSheetHeight = parseFloat(document.getElementById('elementSheetHeight')?.value) || 297;
+const newPageInput = parseInt(document.getElementById('elementPage')?.value) || 1;
+const newPage = Math.max(0, newPageInput - 1);
+    const newLineSpacing = parseFloat(document.getElementById('elementLineSpacing')?.value) || element.lineSpacing;
+const newAlign = document.getElementById('elementAlign')?.value || element.align || 'left';    
+    // ─── Проверка изменений ───
+    const selectedFont = newFontPath ? fonts.find(f => f.path === newFontPath) : null;
+    const fontChanged = (selectedFont && selectedFont.instance !== element.font);
+    const sizeChanged = (newFontSize !== element.fontSize);
+    const widthChanged = (newMaxWidth !== element.maxWidth);
+    const pageChanged = (newPage !== element.page);
+    const sheetChanged = (newSheetHeight !== element.sheetHeight);
+    const lineSpacingChanged = (newLineSpacing !== element.lineSpacing);
+	const alignChanged = (newAlign !== element.align);
+    
+    // ─── Применение ───
+    if (fontChanged) element.font = selectedFont.instance;
+    element.fontSize = newFontSize;
+    element.maxWidth = newMaxWidth;
+    element.page = newPage;
+    element.sheetHeight = newSheetHeight;
+    element.lineSpacing = newLineSpacing;
+    element.x = newX;
+    element.y = newY;
+    element.rotation = newRotation;
+	element.align = newAlign;
+    
+    // ─── Перегенерация (если что-то изменилось) ───
+if (fontChanged || sizeChanged || widthChanged || pageChanged || sheetChanged || lineSpacingChanged || alignChanged) {
+    await element.generatePathsForPage();
+}
+    
+    // ─── Обновить подсказку "≈ N pt" ───
+    const ptLabel = document.getElementById('elementFontSizePt');
+    if (ptLabel) {
+        const pt = (element.fontSize / 0.3528).toFixed(1);
+        ptLabel.textContent = `≈ ${pt} pt`;
+    }
+    
+    drawScene();
+    updateStatus('Свойства элемента обновлены', 'success');
+}
     } catch (error) {
         console.error('Ошибка обновления элемента:', error);
         updateStatus('Ошибка обновления элемента', 'error');
@@ -20748,23 +21014,19 @@ function handleMouseUp(event) {
 }
        
 function isPointInTextElement(x, y, element) {
-	const bbox = element.getBoundingBox();
-	
-	// Центр элемента для поворота
-	const centerX = element.x + bbox.width / 2;
-	const centerY = element.y + bbox.height / 2;
-	
-	const cos = Math.cos(element.rotation); // Оставляем положительный угол
-	const sin = Math.sin(element.rotation); // Оставляем положительный угол
-	
-	// Преобразуем точку клика относительно центра элемента
-	// Учитываем что Y в системе плоттера растет вверх
-	const localX = (x - centerX) * cos - (y - centerY) * sin;
-	const localY = (x - centerX) * sin + (y - centerY) * cos;
-	
-	// Проверяем попадание в bounding box относительно центра
-	return localX >= -bbox.width / 2 && localX <= bbox.width / 2 && 
-		   localY >= -bbox.height / 2 && localY <= bbox.height / 2;
+    const bbox = element.getBoundingBox();
+    
+    const centerX = bbox.x + bbox.width / 2;
+    const centerY = bbox.y - bbox.height / 2;   // ← y верхний, центр ниже
+    
+    const cos = Math.cos(element.rotation);
+    const sin = Math.sin(element.rotation);
+    
+    const localX = (x - centerX) * cos - (y - centerY) * sin;
+    const localY = (x - centerX) * sin + (y - centerY) * cos;
+    
+    return localX >= -bbox.width / 2 && localX <= bbox.width / 2 &&
+           localY >= -bbox.height / 2 && localY <= bbox.height / 2;
 }
 		
 function isPointInSVGElement(x, y, element) {
@@ -20987,70 +21249,63 @@ if (backgroundVisible && backgroundImage) {
 function drawTextElement(element, isSelected) {
     ctx.save();
     
-    // Используем displayPaths которые уже повернуты
+    // Текст
     const paths = element.getDisplayPaths();
-    
-    // Рисование текста
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 1;
     
     for (const path of paths) {
         if (path.length < 2) continue;
-        
         ctx.beginPath();
-        // Конвертируем в координаты канваса (инвертируем Y)
         const startX = path[0].x * scaleFactor;
         const startY = (sheetHeight - path[0].y) * scaleFactor;
-        
         ctx.moveTo(startX, startY);
-        
         for (let i = 1; i < path.length; i++) {
             const pointX = path[i].x * scaleFactor;
             const pointY = (sheetHeight - path[i].y) * scaleFactor;
             ctx.lineTo(pointX, pointY);
         }
-        
         ctx.stroke();
     }
     
     // Рамка выделения
     if (isSelected) {
         const bbox = element.getBoundingBox();
-        const centerX = bbox.x + bbox.width / 2;
-        const centerY = bbox.y + bbox.height / 2;
         
-        // Конвертируем центр в координаты канваса
-        const screenCenterX = centerX * scaleFactor;
-        const screenCenterY = (sheetHeight - centerY) * scaleFactor;
+        // bbox.y — верхний край (мир, Y вверх) → screen Y (canvas, Y вниз)
+        const screenX = bbox.x * scaleFactor;
+        const screenY = (sheetHeight - bbox.y) * scaleFactor;
+        const screenW = bbox.width * scaleFactor;
+        const screenH = bbox.height * scaleFactor;
+        
+        // Центр рамки на canvas
+        const cx = screenX + screenW / 2;
+        const cy = screenY + screenH / 2;
         
         ctx.save();
-        ctx.translate(screenCenterX, screenCenterY);
-        // ИНВЕРТИРУЕМ УГОЛ ДЛЯ КАНВАСА (отрицательное вращение)
+        ctx.translate(cx, cy);
         ctx.rotate(-element.rotation);
-        
-        const scaledWidth = bbox.width * scaleFactor;
-        const scaledHeight = bbox.height * scaleFactor;
         
         ctx.strokeStyle = '#007cba';
         ctx.lineWidth = 1;
         ctx.setLineDash([5, 5]);
-        ctx.strokeRect(-scaledWidth / 2, -scaledHeight / 2, scaledWidth, scaledHeight);
+        ctx.strokeRect(-screenW / 2, -screenH / 2, screenW, screenH);
         ctx.setLineDash([]);
         
-        // Добавим угловые маркеры для наглядности
+        // Угловые маркеры
         ctx.fillStyle = '#007cba';
-        const markerSize = 6;
-        ctx.fillRect(-scaledWidth/2 - markerSize/2, -scaledHeight/2 - markerSize/2, markerSize, markerSize);
-        ctx.fillRect(scaledWidth/2 - markerSize/2, -scaledHeight/2 - markerSize/2, markerSize, markerSize);
-        ctx.fillRect(-scaledWidth/2 - markerSize/2, scaledHeight/2 - markerSize/2, markerSize, markerSize);
-        ctx.fillRect(scaledWidth/2 - markerSize/2, scaledHeight/2 - markerSize/2, markerSize, markerSize);
+        const m = 6;
+        ctx.fillRect(-screenW / 2 - m / 2, -screenH / 2 - m / 2, m, m);
+        ctx.fillRect( screenW / 2 - m / 2, -screenH / 2 - m / 2, m, m);
+        ctx.fillRect(-screenW / 2 - m / 2,  screenH / 2 - m / 2, m, m);
+        ctx.fillRect( screenW / 2 - m / 2,  screenH / 2 - m / 2, m, m);
         
         ctx.restore();
     }
     
     ctx.restore();
 }
-   
+  
 function drawSVGElement(element, isSelected) {
     if (!element.svgImage) return;
     

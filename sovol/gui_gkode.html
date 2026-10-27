@@ -849,6 +849,8 @@ h1, h2, h3 {
 		let moveDragActive = false;
 		let moveDragStartX = 0, moveDragStartY = 0;
 		let moveOffsetStartX = 0, moveOffsetStartY = 0;		
+		let _recalcTimer = null;
+        let _recalcPending = false;
 		
 		let currentTransformation = {
 			offsetX: 0,
@@ -932,23 +934,23 @@ function toggleCenterlineOptions() {
 		}
 
 		// Функция для применения ластика к исходному изображению
-		function updateEditedImageDisplay() {
-			if (!editedImageData) return;
-			
-			processedImageCache = null;
-			processedImageCacheKey = '';
-			
-			const tempCanvas = document.createElement('canvas');
-			tempCanvas.width = editedImageData.width;
-			tempCanvas.height = editedImageData.height;
-			const tempCtx = tempCanvas.getContext('2d');
-			tempCtx.putImageData(editedImageData, 0, 0);
-			
-			originalImage = tempCanvas;         // ← canvas вместо Image
-			displayImage(tempCanvas);           // ← синхронно
-			
-			//console.log('CANVAS ASSIGNED', originalImage.width, originalImage.height);
-		}
+function updateEditedImageDisplay() {
+    if (!editedImageData) return;
+
+    // Сброс кэшей
+    processedImageCache = null;
+    processedImageCacheKey = '';
+    window._levelsImageKey = null;
+    window._levelsGrayKey = null;
+
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = editedImageData.width;
+    tempCanvas.height = editedImageData.height;
+    tempCanvas.getContext('2d').putImageData(editedImageData, 0, 0);
+
+    originalImage = tempCanvas;
+    displayImage(tempCanvas);   // верхнее — getProcessedImageCanvas построится заново
+}
 
 		// ПОЛНАЯ ОЧИСТКИ ПАМЯТИ
 		function clearAllImageData() {
@@ -1061,20 +1063,19 @@ function updateConversionMethods() {
     }
 }
 
-		thresholdSlider.addEventListener('input', function() {
-			thresholdInput.value = this.value;
-			showTemporaryImage();
-			scheduleVectorUpdate();
+thresholdSlider.addEventListener('input', function() {
+    thresholdInput.value = this.value;
+    previewForMethod('threshold');
+    scheduleHeavyRecalc('threshold');
+});
 
-		});
-
-		thresholdInput.addEventListener('input', function() {
-			thresholdSlider.value = this.value;
-			processedImageCache = null;
-			showTemporaryImage();
-			scheduleVectorUpdate();
-
-		});
+thresholdInput.addEventListener('input', function() {
+    thresholdSlider.value = this.value;
+    processedImageCache = null;
+    processedImageCacheKey = '';
+    previewForMethod('threshold');
+    scheduleHeavyRecalc('threshold');
+});
 
 		// Настройки толщины линий
 		function getLineSettings(type) {
@@ -1175,252 +1176,35 @@ function updateConversionMethods() {
 		function isSvgVectorMethod() {
 			return isSvgFile && document.getElementById('conversionMethod').value === 'svg';
 		}
-function showLevelsImage() {
-    if (!originalImage) return;
-    if (isSvgFile && isSvgVectorMethod()) return;
-
-    const method = document.getElementById('conversionMethod').value;
-    const isLevelsMethod = (method === 'edge' || method === 'quantize' || method === 'none');
-
-    vectorCtx.fillStyle = 'white';
-    vectorCtx.fillRect(0, 0, vectorPreview.width, vectorPreview.height);
-
-    if (isLevelsMethod) {
-        drawImageWithLevelsColor();   // ← цветное
-    } else {
-        drawImageWithLevels();        // ← серое (для растровых)
+function scheduleHeavyRecalc(reason) {
+    if (_recalcTimer) {
+        clearTimeout(_recalcTimer);
     }
+    _recalcPending = true;
 
-    updateFrameSizes();
-}
-function drawImageWithLevelsColor() {
-    if (!originalImage) return;
+    _recalcTimer = setTimeout(async () => {
+        _recalcTimer = null;
+        if (!_recalcPending) return;
+        _recalcPending = false;
 
-    const areaWidth  = parseInt(areaWidthInput.value);
-    const areaHeight = parseInt(areaHeightInput.value);
-    const sheetWidth = parseInt(sheetWidthInput.value);
-    const sheetHeight= parseInt(sheetHeightInput.value);
-    const offsetX    = parseFloat(offsetXInput.value);
-    const offsetY    = parseFloat(offsetYInput.value);
-    const rotation   = parseFloat(rotationInput.value);
-
-    const scaleX = vectorPreview.width / sheetWidth;
-    const scaleY = vectorPreview.height / sheetHeight;
-
-    const areaCanvasX = offsetX * scaleX;
-    const areaCanvasY = vectorPreview.height - (offsetY * scaleY) - (areaHeight * scaleY);
-    const areaCanvasWidth  = areaWidth * scaleX;
-    const areaCanvasHeight = areaHeight * scaleY;
-
-    vectorCtx.save();
-    vectorCtx.translate(areaCanvasX + areaCanvasWidth / 2, areaCanvasY + areaCanvasHeight / 2);
-    vectorCtx.rotate(rotation * Math.PI / 180);
-
-    const imageRatio = originalImage.width / originalImage.height;
-    const areaRatio  = areaWidth / areaHeight;
-
-    let drawWidth, drawHeight;
-    if (areaRatio > imageRatio) {
-        drawHeight = areaCanvasHeight;
-        drawWidth  = drawHeight * imageRatio;
-    } else {
-        drawWidth  = areaCanvasWidth;
-        drawHeight = drawWidth / imageRatio;
-    }
-
-    // ── Копия с levels (цвет)
-    const src = window.previewSmallImage || originalImage;
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width  = src.width;
-    tempCanvas.height = src.height;
-    const tempCtx = tempCanvas.getContext('2d');
-    tempCtx.drawImage(src, 0, 0);
-
-    const tempImageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-    const data = tempImageData.data;
-
-    const left  = parseFloat(document.getElementById('levelsLeft').value);
-    const right = parseFloat(document.getElementById('levelsRight').value);
-    const gamma = parseFloat(document.getElementById('levelsGamma').value);
-
-    // LUT — 256 значений
-    const lut = new Uint8Array(256);
-    for (let v = 0; v < 256; v++) lut[v] = Math.round(applyLevels(v, left, right, gamma));
-
-    // Levels по каждому каналу — цвет
-    for (let i = 0; i < data.length; i += 4) {
-        data[i]     = lut[data[i]];       // R
-        data[i + 1] = lut[data[i + 1]];   // G
-        data[i + 2] = lut[data[i + 2]];   // B
-    }
-
-    tempCtx.putImageData(tempImageData, 0, 0);
-
-    vectorCtx.drawImage(tempCanvas, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
-
-    vectorCtx.restore();
-
-    updateStatus('Показано цветное фото с уровнями', 'success');
-}
-
-		// Функция для показа временного изображения с текущим порогом
-		function showTemporaryImage() {
-			if (!originalImage || isSvgFile) return;
-			
-			vectorCtx.fillStyle = 'white';
-			vectorCtx.fillRect(0, 0, vectorPreview.width, vectorPreview.height);
-			
-			drawImageWithThreshold();
-			updateFrameSizes();
-		}
-
-		function drawImageWithThreshold() {
-			if (!originalImage || isSvgFile) return;
-			
-			const areaWidth = parseInt(areaWidthInput.value);
-			const areaHeight = parseInt(areaHeightInput.value);
-			const sheetWidth = parseInt(sheetWidthInput.value);
-			const sheetHeight = parseInt(sheetHeightInput.value);
-			const offsetX = parseFloat(offsetXInput.value);
-			const offsetY = parseFloat(offsetYInput.value);
-			const rotation = parseFloat(rotationInput.value);
-			
-			const scaleX = vectorPreview.width / sheetWidth;
-			const scaleY = vectorPreview.height / sheetHeight;
-			
-			const areaCanvasX = offsetX * scaleX;
-			const areaCanvasY = vectorPreview.height - (offsetY * scaleY) - (areaHeight * scaleY);
-			const areaCanvasWidth = areaWidth * scaleX;
-			const areaCanvasHeight = areaHeight * scaleY;
-			
-			vectorCtx.save();
-			
-			vectorCtx.translate(areaCanvasX + areaCanvasWidth / 2, areaCanvasY + areaCanvasHeight / 2);
-			
-			vectorCtx.rotate(rotation * Math.PI / 180);
-			
-			const imageRatio = originalImage.width / originalImage.height;
-			const areaRatio = areaWidth / areaHeight;
-			
-			let drawWidth, drawHeight;
-			
-			if (areaRatio > imageRatio) {
-				drawHeight = areaCanvasHeight;
-				drawWidth = drawHeight * imageRatio;
-			} else {
-				drawWidth = areaCanvasWidth;
-				drawHeight = drawWidth / imageRatio;
-			}
-			
-			const tempCanvas = document.createElement('canvas');
-			const tempCtx = tempCanvas.getContext('2d');
-const src = window.previewSmallImage || originalImage;
-tempCanvas.width = src.width;
-tempCanvas.height = src.height;
-tempCtx.drawImage(src, 0, 0);
-const tempImageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-			
-			const threshold = parseInt(thresholdInput.value);
-			const invert = document.getElementById('invertImage').value === 'true';
-			const data = tempImageData.data;
-			
-			for (let i = 0; i < data.length; i += 4) {
-				const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
-				const value = invert ? brightness > threshold : brightness < threshold;
-				
-				if (value) {
-					data[i] = 0;
-					data[i+1] = 0;
-					data[i+2] = 0;
-				} else {
-					data[i] = 255;
-					data[i+1] = 255;
-					data[i+2] = 255;
+        if (!originalImage && !isSvgFile) return;
+        const method = document.getElementById('conversionMethod').value;
+        if (method === 'none') return;   // для none — только превью
+				if (originalImage || isSvgFile) {
+					if (isSvgFile) {
+						displaySvg();
+					} else {
+						displayImage(originalImage);
+					}
 				}
-			}
-			
-			tempCtx.putImageData(tempImageData, 0, 0);
-			
-			vectorCtx.drawImage(tempCanvas, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
-			vectorCtx.globalAlpha = 1.0;
-			
-			vectorCtx.restore();
-			
-			updateStatus('Показано изображение с текущим порогом.', 'success');
-		}
-		// Функция для отрисовки изображения с примененным порогом
-		function drawImageWithLevels() {
-			if (!originalImage || isSvgFile) return;
-			
-			const areaWidth = parseInt(areaWidthInput.value);
-			const areaHeight = parseInt(areaHeightInput.value);
-			const sheetWidth = parseInt(sheetWidthInput.value);
-			const sheetHeight = parseInt(sheetHeightInput.value);
-			const offsetX = parseFloat(offsetXInput.value);
-			const offsetY = parseFloat(offsetYInput.value);
-			const rotation = parseFloat(rotationInput.value);
-			
-			const scaleX = vectorPreview.width / sheetWidth;
-			const scaleY = vectorPreview.height / sheetHeight;
-			
-			const areaCanvasX = offsetX * scaleX;
-			const areaCanvasY = vectorPreview.height - (offsetY * scaleY) - (areaHeight * scaleY);
-			const areaCanvasWidth = areaWidth * scaleX;
-			const areaCanvasHeight = areaHeight * scaleY;
-			
-			vectorCtx.save();
-			
-			vectorCtx.translate(areaCanvasX + areaCanvasWidth / 2, areaCanvasY + areaCanvasHeight / 2);
-			
-			vectorCtx.rotate(rotation * Math.PI / 180);
-			
-			const imageRatio = originalImage.width / originalImage.height;
-			const areaRatio = areaWidth / areaHeight;
-			
-			let drawWidth, drawHeight;
-			
-			if (areaRatio > imageRatio) {
-				drawHeight = areaCanvasHeight;
-				drawWidth = drawHeight * imageRatio;
-			} else {
-				drawWidth = areaCanvasWidth;
-				drawHeight = drawWidth / imageRatio;
-			}
-			
-			const tempCanvas = document.createElement('canvas');
-			const tempCtx = tempCanvas.getContext('2d');
-const src = window.previewSmallImage || originalImage;
-tempCanvas.width = src.width;
-tempCanvas.height = src.height;
-tempCtx.drawImage(src, 0, 0);
-const tempImageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-			
-const threshold = parseInt(thresholdInput.value);
-const invert = document.getElementById('invertImage').value === 'true';
-const left = parseFloat(document.getElementById('levelsLeft').value);
-const right = parseFloat(document.getElementById('levelsRight').value);
-const gamma = parseFloat(document.getElementById('levelsGamma').value);
-const data = tempImageData.data;
-
-for (let i = 0; i < data.length; i += 4) {
-    const b0 = (data[i] + data[i+1] + data[i+2]) / 3;
-    const b1 = applyLevels(b0, left, right, gamma);
-    
-    // Если хочешь видеть картинку ПОСЛЕ Levels в градациях серого:
-    data[i] = b1;
-    data[i+1] = b1;
-    data[i+2] = b1;
+        if (reason) {
+            await processAndDrawVectors();
+			updateStatus(reason, 'success');
+        } else {
+            await processAndDrawVectors();
+        }
+    }, VECTOR_UPDATE_DELAY);   // одна задержка для всех
 }
-			
-			tempCtx.putImageData(tempImageData, 0, 0);
-			
-			vectorCtx.drawImage(tempCanvas, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
-			vectorCtx.globalAlpha = 1.0;
-			
-			vectorCtx.restore();
-			updateStatus('Показано изображение с текущим порогом.', 'success');
-		}
-
 		// Функция для планирования обновления векторов
 		function scheduleVectorUpdate() {
 			if (vectorUpdateTimeout) clearTimeout(vectorUpdateTimeout);
@@ -1533,12 +1317,6 @@ for (let i = 0; i < data.length; i += 4) {
 
 
 		// Обработчики расширения области 
-		const debouncedExpansionUpdate = debounce(function() {
-			if (originalImage && !isSvgFile) {
-				processAndDrawVectors();
-				updateStatus('Расширение области обновлено', 'success');
-			}
-		}, 2000); 
 		const debouncedImageUpdate = debounce(function() {
 			if (originalImage && !isSvgFile) {
 				displayImage(originalImage);
@@ -1554,29 +1332,29 @@ for (let i = 0; i < data.length; i += 4) {
 		});
 
 		document.getElementById('lineThickness').addEventListener('input', function() {
-			debouncedExpansionUpdate();
+			scheduleHeavyRecalc();
 			debouncedImageUpdate();
 		});
 
 		document.getElementById('hatchStep').addEventListener('input', function() {
-			debouncedExpansionUpdate();
+			scheduleHeavyRecalc();
 		});
 		document.getElementById('borderOffset').addEventListener('input', function() {
-			debouncedExpansionUpdate();
+			scheduleHeavyRecalc();
 			debouncedImageUpdate();
 		});
 		document.getElementById('hatchAngle').addEventListener('input', function() {
-			debouncedExpansionUpdate();
+			scheduleHeavyRecalc();
 		});
 		document.getElementById('combinedThickness').addEventListener('input', function() {
-    debouncedExpansionUpdate();
+			scheduleHeavyRecalc();
 		});
 		const dedupEnabledEl = document.getElementById('dedupEnabled');
 		if (dedupEnabledEl) {
 			dedupEnabledEl.addEventListener('change', function() {
 				if (!originalImage && !isSvgFile) return;
 				if (conversionMethod.value !== 'svg') return;
-				processAndDrawVectors();
+				scheduleHeavyRecalc();
 			});
 		}
         // Обработчик блокировки пропорций
@@ -1593,7 +1371,7 @@ for (let i = 0; i < data.length; i += 4) {
 					} else {
 						displayImage(originalImage);
 					}
-					processAndDrawVectors();
+					scheduleHeavyRecalc();
 				}
 			}
 		});
@@ -1612,40 +1390,34 @@ for (let i = 0; i < data.length; i += 4) {
 		}, 600);
 		const debouncedRebuildPaths = debounce(rebuildPathsFromRaw, 600);
 
-		document.getElementById('levelsLeft').addEventListener('input', function() {
-			let left = parseFloat(this.value);
-			const right = parseFloat(document.getElementById('levelsRight').value);
-			
-			// Ограничение: left не должен доходить до right
-			if (left >= right) {
-				// Откатываем на предыдущее валидное значение
-				left = right - 1;
-				this.value = left;
-			}
-			document.getElementById('levelsinfo').textContent = `Настройка: ${left} – ${right}`;
-			showLevelsImage();
-			scheduleVectorUpdate();
-			displayImage(originalImage)
-		});
+document.getElementById('levelsLeft').addEventListener('input', function() {
+    let left = parseFloat(this.value);
+    const right = parseFloat(document.getElementById('levelsRight').value);
+    if (left >= right) {
+        left = right - 1;
+        this.value = left;
+    }
+    document.getElementById('levelsinfo').textContent = `Настройка: ${left} – ${right}`;
+    previewForMethod('levels');
+    scheduleHeavyRecalc('levels');
+});
 
-		document.getElementById('levelsRight').addEventListener('input', function() {
-			let right = parseFloat(this.value);
-			const left = parseFloat(document.getElementById('levelsLeft').value);
-			
-			if (right <= left) {
-				right = left + 1;
-				this.value = right;
-			}
+document.getElementById('levelsRight').addEventListener('input', function() {
+    let right = parseFloat(this.value);
+    const left = parseFloat(document.getElementById('levelsLeft').value);
+    if (right <= left) {
+        right = left + 1;
+        this.value = right;
+    }
+    document.getElementById('levelsinfo').textContent = `Настройка: ${left} – ${right}`;
+    previewForMethod('levels');
+    scheduleHeavyRecalc('levels');
+});
 
-			document.getElementById('levelsinfo').textContent = `Настройка: ${left} – ${right}`;
-			showLevelsImage();
-			scheduleVectorUpdate();
-		});
-
-		document.getElementById('levelsGamma').addEventListener('input', function() {
-			showLevelsImage();
-			scheduleVectorUpdate();
-		});
+document.getElementById('levelsGamma').addEventListener('input', function() {
+    previewForMethod('levels');
+    scheduleHeavyRecalc('levels');
+});
 		document.getElementById('simplifyEpsilon').addEventListener('input', debouncedRebuildPaths);
 		document.getElementById('smoothStrength').addEventListener('input', debouncedRebuildPaths);
 			
@@ -1653,8 +1425,8 @@ for (let i = 0; i < data.length; i += 4) {
 			if (!originalImage && !isSvgFile) return;
 			updateStatus('Пересчёт с новым порогом ...', 'success');
 			cachedOptimizedBeforeClip = null;
-			processAndDrawVectors();
-		}, 1000);
+			scheduleHeavyRecalc();
+		}, 100);
 
 		document.getElementById('maxBridgeLengthMM').addEventListener('input', debouncedBridgeLengthUpdate);
 		document.getElementById('doorOffsetMM').addEventListener('input', debouncedBridgeLengthUpdate);
@@ -1671,16 +1443,14 @@ for (let i = 0; i < data.length; i += 4) {
 const debouncedEdgeRecalc = debounce(function() {
     if (!originalImage && !isSvgFile) return;
     if (conversionMethod.value !== 'edge') return;
-    updateStatus('Пересчёт границ цвета...', 'success');
-    processAndDrawVectors();
-}, 1000);
+    scheduleHeavyRecalc('Пересчёт границ цвета...');
+}, 10);
 
 const debouncedQuantizeRecalc = debounce(function() {
     if (!originalImage && !isSvgFile) return;
     if (conversionMethod.value !== 'quantize') return;
-    updateStatus('Пересчёт квантования...', 'success');
-    processAndDrawVectors();
-}, 1000);
+    scheduleHeavyRecalc('Пересчёт квантования...');
+}, 10);
 
 // ── EDGE: чувствительность (number + slider)
 const edgeSensNum = document.getElementById('edgeSensitivity');
@@ -2814,37 +2584,49 @@ console.log(`[TIME] filterPathsByLength: ${(performance.now() - tfilterPathsByLe
 function prepareMask(options = {}) {
     const {
         threshold = parseInt(thresholdInput.value),
-        invert = document.getElementById('invertImage').value === 'true',
         applyMorphology = true
     } = options;
+
+    if (!originalImage) {
+        return { binary: new Uint8Array(0), width: 0, height: 0 };
+    }
 
     const width = originalImage.width;
     const height = originalImage.height;
 
-    const left  = parseFloat(document.getElementById('levelsLeft').value);
-    const right = parseFloat(document.getElementById('levelsRight').value);
-    const gamma = parseFloat(document.getElementById('levelsGamma').value);
+    // ── Каскад: levels → invert → серое
+    const grayCanvas = prepareLevelsGray();
+    if (!grayCanvas) {
+        return { binary: new Uint8Array(0), width, height };
+    }
 
-    let binary = createBinaryImage(threshold, invert, left, right, gamma);
+    const grayCtx = grayCanvas.getContext('2d');
+    const grayData = grayCtx.getImageData(0, 0, width, height);
 
+    // ── Порог
+    const binary = new Uint8Array(width * height);
+    const d = grayData.data;
+    for (let i = 0, j = 0; i < binary.length; i++, j += 4) {
+        binary[i] = d[j] < threshold ? 1 : 0;   // серое уже после levels+invert
+    }
+
+    // ── Морфология (если нужно)
+    let processed = binary;
     if (applyMorphology) {
         const lineThicknessMM = parseFloat(document.getElementById('lineThickness').value) || 0;
         const borderOffsetMM  = parseFloat(document.getElementById('borderOffset').value) || 0;
 
         if (lineThicknessMM > 0) {
-            const thicknessPixels = Math.max(1, Math.round(lineThicknessMM / pixelToMM));
-            binary = expandBinary(binary, thicknessPixels);
+            const r = Math.max(1, Math.round(lineThicknessMM / pixelToMM));
+            processed = expandBinary(processed, r);
         }
-
         if (borderOffsetMM > 0) {
-            const borderOffsetPixels = Math.max(0, Math.round(borderOffsetMM / pixelToMM));
-            if (borderOffsetPixels > 0) {
-                binary = erodeBinary(binary, borderOffsetPixels);
-            }
+            const r = Math.max(0, Math.round(borderOffsetMM / pixelToMM));
+            if (r > 0) processed = erodeBinary(processed, r);
         }
     }
 
-    return { binary, width, height };
+    return { binary: processed, width, height };
 }
 
 async function skeletonizeAndChain(binary, width, height) {
@@ -3281,27 +3063,28 @@ async function generateCombinedPathsWithProgress() {
 				processAndDrawVectors();
 			}
 		}
-function buildLevelsPreviewCanvas() {
+
+function prepareLevelsGray() {
     if (!originalImage) return null;
-
-    // Кэш по ключу (levels + originalImage)
-    const key = [
-        originalImage.width, originalImage.height,
-        document.getElementById('levelsLeft').value,
-        document.getElementById('levelsRight').value,
-        document.getElementById('levelsGamma').value
-    ].join('|');
-
-    if (window._levelsPreviewKey === key && window._levelsPreviewCanvas) {
-        return window._levelsPreviewCanvas;
-    }
 
     const left  = parseFloat(document.getElementById('levelsLeft').value);
     const right = parseFloat(document.getElementById('levelsRight').value);
     const gamma = parseFloat(document.getElementById('levelsGamma').value);
+    const invert = document.getElementById('invertImage').value === 'true';
+
+    const key = [
+        'levelsGray',
+        originalImage.width, originalImage.height,
+        left, right, gamma, invert,
+        window.imageLoadCounter || 0
+    ].join('|');
+
+    if (window._levelsGrayKey === key && window._levelsGrayCanvas) {
+        return window._levelsGrayCanvas;
+    }
 
     const canvas = document.createElement('canvas');
-    canvas.width = originalImage.width;
+    canvas.width  = originalImage.width;
     canvas.height = originalImage.height;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(originalImage, 0, 0);
@@ -3309,20 +3092,168 @@ function buildLevelsPreviewCanvas() {
     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imgData.data;
 
-    // LUT для applyLevels (256 значений) — быстро
-	const lut = new Uint8Array(256);
-	for (let v = 0; v < 256; v++) lut[v] = Math.round(applyLevels(v, left, right, gamma));
+    const lut = new Uint8Array(256);
+    for (let v = 0; v < 256; v++) lut[v] = Math.round(applyLevels(v, left, right, gamma));
 
-	for (let i = 0; i < data.length; i += 4) {
-		data[i]     = lut[data[i]];       // R
-		data[i + 1] = lut[data[i + 1]];   // G
-		data[i + 2] = lut[data[i + 2]];   // B
-	}
+    for (let i = 0; i < data.length; i += 4) {
+        const b = ((data[i] + data[i+1] + data[i+2]) / 3) | 0;
+        let v = lut[b];
+        if (invert) v = 255 - v;
+        data[i]     = v;
+        data[i + 1] = v;
+        data[i + 2] = v;
+    }
     ctx.putImageData(imgData, 0, 0);
 
-    window._levelsPreviewKey = key;
-    window._levelsPreviewCanvas = canvas;
+    window._levelsGrayKey = key;
+    window._levelsGrayCanvas = canvas;
     return canvas;
+}
+
+function maskToCanvas(binary, width, height) {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    const idata = ctx.createImageData(width, height);
+    for (let i = 0; i < binary.length; i++) {
+        const v = binary[i] === 1 ? 0 : 255;
+        idata.data[i*4]     = v;
+        idata.data[i*4 + 1] = v;
+        idata.data[i*4 + 2] = v;
+        idata.data[i*4 + 3] = 255;
+    }
+    ctx.putImageData(idata, 0, 0);
+    return canvas;
+}
+
+function drawCanvasInCtx(ctx, source, canvasWidth, canvasHeight) {
+    const areaWidth  = parseInt(areaWidthInput.value);
+    const areaHeight = parseInt(areaHeightInput.value);
+    const sheetWidth = parseInt(sheetWidthInput.value);
+    const sheetHeight= parseInt(sheetHeightInput.value);
+    const offsetX    = parseFloat(offsetXInput.value);
+    const offsetY    = parseFloat(offsetYInput.value);
+    const rotation   = parseFloat(rotationInput.value);
+    const lockProp   = document.getElementById('lockProportions').checked;
+
+    const scaleX = canvasWidth / sheetWidth;
+    const scaleY = canvasHeight / sheetHeight;
+
+    const areaCanvasX = offsetX * scaleX;
+    const areaCanvasY = canvasHeight - (offsetY * scaleY) - (areaHeight * scaleY);
+    const areaCanvasWidth  = areaWidth * scaleX;
+    const areaCanvasHeight = areaHeight * scaleY;
+
+    ctx.save();
+    ctx.translate(areaCanvasX + areaCanvasWidth / 2, areaCanvasY + areaCanvasHeight / 2);
+    ctx.rotate(rotation * Math.PI / 180);
+
+    const imgRatio  = source.width / source.height;
+    const areaRatio = areaWidth / areaHeight;
+
+    let dw, dh;
+    if (lockProp) {
+        if (areaRatio > imgRatio) {
+            dh = areaCanvasHeight;
+            dw = dh * imgRatio;
+        } else {
+            dw = areaCanvasWidth;
+            dh = dw / imgRatio;
+        }
+    } else {
+        dw = areaCanvasWidth;
+        dh = areaCanvasHeight;
+    }
+
+    ctx.drawImage(source, -dw/2, -dh/2, dw, dh);
+    ctx.restore();
+}
+
+function prepareLevelsImage() {
+    if (!originalImage) return null;
+
+    const left  = parseFloat(document.getElementById('levelsLeft').value);
+    const right = parseFloat(document.getElementById('levelsRight').value);
+    const gamma = parseFloat(document.getElementById('levelsGamma').value);
+    const invert = document.getElementById('invertImage').value === 'true';
+
+    const key = [
+        'levels',
+        originalImage.width, originalImage.height,
+        left, right, gamma, invert,
+        window.imageLoadCounter || 0
+    ].join('|');
+
+    if (window._levelsImageKey === key && window._levelsImageCanvas) {
+        return window._levelsImageCanvas;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width  = originalImage.width;
+    canvas.height = originalImage.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(originalImage, 0, 0);
+
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imgData.data;
+
+    const lut = new Uint8Array(256);
+    for (let v = 0; v < 256; v++) lut[v] = Math.round(applyLevels(v, left, right, gamma));
+
+    for (let i = 0; i < data.length; i += 4) {
+        let r = lut[data[i]];
+        let g = lut[data[i + 1]];
+        let b = lut[data[i + 2]];
+        if (invert) { r = 255 - r; g = 255 - g; b = 255 - b; }
+        data[i]     = r;
+        data[i + 1] = g;
+        data[i + 2] = b;
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    window._levelsImageKey = key;
+    window._levelsImageCanvas = canvas;
+    return canvas;
+}
+
+function previewForMethod(mode = 'levels') {
+    if (!originalImage) return;
+    if (isSvgFile && isSvgVectorMethod()) return;
+
+    const method = document.getElementById('conversionMethod').value;
+    const isLevelsMethod = (method === 'edge' || method === 'quantize' || method === 'none');
+
+    // Очистить
+    vectorCtx.fillStyle = 'white';
+    vectorCtx.fillRect(0, 0, vectorPreview.width, vectorPreview.height);
+
+    let source = null;
+
+    if (mode === 'threshold') {
+        // Порог → маска
+        const { binary, width, height } = prepareMask();
+        source = maskToCanvas(binary, width, height);
+    } else {
+        // Levels → фото с levels (цветное или серое)
+        if (isLevelsMethod) {
+            source = prepareLevelsImage();
+        } else {
+            source = prepareLevelsGray();
+        }
+    }
+
+    if (!source) return;
+
+    drawCanvasInCtx(vectorCtx, source, vectorPreview.width, vectorPreview.height);
+
+    if (showCrosshair.checked) {
+        const sheetWidth = parseInt(sheetWidthInput.value);
+        const sheetHeight = parseInt(sheetHeightInput.value);
+        drawCrosshair(vectorCtx, vectorPreview, sheetWidth, sheetHeight);
+    }
+
+    updateFrameSizes();
 }
 
         // Отображение изображения с учетом трансформаций
@@ -3333,6 +3264,34 @@ function displayImage(img) {
     const isLevelsMethod = (method === 'edge' || method === 'quantize');
     const isRawPreview   = (method === 'none');
 
+    // Очистка
+    imageCtx.fillStyle = 'white';
+    imageCtx.fillRect(0, 0, imagePreview.width, imagePreview.height);
+
+    // ── Выбор источника через блоки
+    let source = null;
+    if (isLevelsMethod) {
+        source = prepareLevelsImage();      // цветное с levels + invert
+    } else if (isRawPreview) {
+        source = img;                       // оригинал
+    } else {
+        // растровые — маска
+    source = getProcessedImageCanvas();
+
+    }
+
+    if (!source) source = img;
+
+    // ── Отрисовка через общий блок
+    drawCanvasInCtx(imageCtx, source, imagePreview.width, imagePreview.height);
+
+    if (showCrosshair.checked) {
+        const sheetWidth = parseInt(sheetWidthInput.value);
+        const sheetHeight = parseInt(sheetHeightInput.value);
+        drawCrosshair(imageCtx, imagePreview, sheetWidth, sheetHeight);
+    }
+
+    // Info
     const areaWidth  = parseInt(areaWidthInput.value);
     const areaHeight = parseInt(areaHeightInput.value);
     const sheetWidth = parseInt(sheetWidthInput.value);
@@ -3341,68 +3300,8 @@ function displayImage(img) {
     const offsetY    = parseFloat(offsetYInput.value);
     const rotation   = parseFloat(rotationInput.value);
 
-    imageCtx.fillStyle = 'white';
-    imageCtx.fillRect(0, 0, imagePreview.width, imagePreview.height);
-
-    const scaleX = imagePreview.width / sheetWidth;
-    const scaleY = imagePreview.height / sheetHeight;
-
-    const areaCanvasX = offsetX * scaleX;
-    const areaCanvasY = imagePreview.height - (offsetY * scaleY) - (areaHeight * scaleY);
-    const areaCanvasWidth  = areaWidth * scaleX;
-    const areaCanvasHeight = areaHeight * scaleY;
-
-    imageCtx.save();
-    imageCtx.translate(areaCanvasX + areaCanvasWidth / 2, areaCanvasY + areaCanvasHeight / 2);
-    imageCtx.rotate(rotation * Math.PI / 180);
-
-    const imageRatio = img.width / img.height;
-    const areaRatio  = areaWidth / areaHeight;
-    const lockProp   = document.getElementById('lockProportions').checked;
-
-    let drawWidth, drawHeight;
-    if (lockProp) {
-        if (areaRatio > imageRatio) {
-            drawHeight = areaCanvasHeight;
-            drawWidth  = drawHeight * imageRatio;
-        } else {
-            drawWidth  = areaCanvasWidth;
-            drawHeight = drawWidth / imageRatio;
-        }
-    } else {
-        drawWidth  = areaCanvasWidth;
-        drawHeight = areaCanvasHeight;
-    }
-
-    // ── Выбор источника
-    let source = null;
-
-    if (isLevelsMethod) {
-        // edge / quantize — фото с применёнными levels
-        source = buildLevelsPreviewCanvas();
-    } else if (isRawPreview) {
-        // none — оригинал
-        source = img;
-    } else {
-        // растровые методы — маска
-        source = getProcessedImageCanvas();
-    }
-
-    if (source) {
-        imageCtx.drawImage(source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
-    } else {
-        imageCtx.drawImage(img, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
-    }
-
-    imageCtx.restore();
-
-    if (showCrosshair.checked) {
-        drawCrosshair(imageCtx, imagePreview, sheetWidth, sheetHeight);
-    }
-
     pixelToMM = Math.min(areaWidth / img.width, areaHeight / img.height);
 
-    // ── Info-строка
     const fileType = isSvgFile ? 'SVG' : 'Изображение';
     const threshold = parseInt(thresholdInput.value);
     const invert = document.getElementById('invertImage').value === 'true';
@@ -3414,10 +3313,7 @@ function displayImage(img) {
         processingInfo = ' | Без обработки';
     } else if (isLevelsMethod) {
         const methodName = method === 'edge' ? 'Границы цвета' : 'Квантование цвета';
-        const levelsLeft  = document.getElementById('levelsLeft').value;
-        const levelsRight = document.getElementById('levelsRight').value;
-        const levelsGamma = document.getElementById('levelsGamma').value;
-        processingInfo = ` | ${methodName} | Уровни: ${levelsLeft}–${levelsRight} (γ ${levelsGamma})`;
+        processingInfo = ` | ${methodName} | Уровни: ${document.getElementById('levelsLeft').value}–${document.getElementById('levelsRight').value}`;
     } else {
         processingInfo = ` | Порог: ${threshold} | Инвертирование: ${invert ? 'Да' : 'Нет'}`
                        + ` | Расширение: ${lineThicknessMM}мм | Сужение: ${borderOffsetMM}мм`;
@@ -3430,6 +3326,7 @@ function displayImage(img) {
         + ` | Вращение: ${rotation}°`
         + processingInfo;
 }
+
         // Обработка изображения с поддержкой прозрачности PNG
 		function processImage() {
 
@@ -5035,35 +4932,6 @@ const candidates = findRealNodeCandidates(skeleton, width, height);
 			return v * 255;
 		}
 
-		function createBinaryImage(threshold, invert, left = 0, right = 255, gamma = 1) {
-			const imageToProcess = isSvgFile && originalImage ? originalImage : originalImage;
-			if (!imageToProcess) return [];
-
-			const width = imageToProcess.width;
-			const height = imageToProcess.height;
-			const binary = new Array(width * height);
-
-			for (let y = 0; y < height; y++) {
-				for (let x = 0; x < width; x++) {
-					const pixel = getPixel(imageData, x, y);
-					const b0 = (pixel[0] + pixel[1] + pixel[2]) / 3;
-					const alpha = pixel[3];
-
-					if (alpha === 0) {
-						binary[y * width + x] = 0;
-						continue;
-					}
-
-					// ← применяем Levels
-					const b = applyLevels(b0, left, right, gamma);
-
-					const value = invert ? b > threshold : b < threshold;
-					binary[y * width + x] = value ? 1 : 0;
-				}
-			}
-			return binary;
-		}
-
 		// Алгоритм Чжана-Суэна для скелетизации
 		function zhangSuenSkeletonization(binary, width, height) {
 			const skeleton = binary.slice();
@@ -6577,16 +6445,6 @@ console.log(`[CACHE] total: ${(performance.now() - tTotal).toFixed(0)}мс`);
 				isSvgFile ? 'svg' : 'img'
 			].join('|');
 		}
-        // Получение пикселя
-        function getPixel(imageData, x, y) {
-            const index = (y * imageData.width + x) * 4;
-            return [
-                imageData.data[index],
-                imageData.data[index + 1],
-                imageData.data[index + 2],
-                imageData.data[index + 3]
-            ];
-        }
 
 		// генерация G-code
 		function generateGCode(pauseTime, travelSpeed, drawSpeed, areaWidth, areaHeight, startX, startY, minLineLength, offsetX, offsetY, rotation) {
@@ -7060,11 +6918,22 @@ console.log(`[CACHE] total: ${(performance.now() - tTotal).toFixed(0)}мс`);
 			}
 		}	
 		 
-		document.getElementById('invertImage').addEventListener('change', function() {
-					if (originalImage && !isSvgFile) {
-					displayImage(originalImage);
-					processAndDrawVectors();
-				}});
+document.getElementById('invertImage').addEventListener('change', function() {
+    // Сброс кэшей
+    processedImageCache = null;
+    processedImageCacheKey = '';
+    window._levelsImageKey = null;
+    window._levelsGrayKey = null;
+
+    if (originalImage && !isSvgFile) {
+        const method = document.getElementById('conversionMethod').value;
+        const isLevelsMethod = (method === 'edge' || method === 'quantize' || method === 'none');
+        previewForMethod(isLevelsMethod ? 'levels' : 'threshold');
+
+        displayImage(originalImage);
+        scheduleHeavyRecalc('invert');
+    }
+});
 					
 		conversionMethod.addEventListener('change', async function() {
 			toggleCenterlineOptions();
@@ -9201,52 +9070,27 @@ async function generateEdgePathsWithProgress() {
         const width = originalImage.width;
         const height = originalImage.height;
 
-        // ── Levels к копии imageData
-        const left  = parseFloat(document.getElementById('levelsLeft').value);
-        const right = parseFloat(document.getElementById('levelsRight').value);
-        const gamma = parseFloat(document.getElementById('levelsGamma').value);
+        const levelsCanvas = prepareLevelsImage();     // ← готовое фото
+        const levelsCtx = levelsCanvas.getContext('2d');
+        const imgData = levelsCtx.getImageData(0, 0, width, height);
 
-        const imgData = new ImageData(
-            new Uint8ClampedArray(imageData.data),
-            imageData.width,
-            imageData.height
-        );
-const lut = new Uint8Array(256);
-for (let v = 0; v < 256; v++) lut[v] = Math.round(applyLevels(v, left, right, gamma));
+        const sensitivity   = parseInt(document.getElementById('edgeSensitivity').value);
+        const blurSigma     = parseFloat(document.getElementById('edgeBlur').value);
+        const edgeMethod    = document.getElementById('edgeMethod').value;
+        const useHysteresis = document.getElementById('edgeHysteresis').checked;
 
-for (let i = 0; i < imgData.data.length; i += 4) {
-    imgData.data[i]     = lut[imgData.data[i]];       // R
-    imgData.data[i + 1] = lut[imgData.data[i + 1]];   // G
-    imgData.data[i + 2] = lut[imgData.data[i + 2]];   // B
-}
-
-        // ── Настройки
-        const sensitivity    = parseInt(document.getElementById('edgeSensitivity').value);
-        const blurSigma      = parseFloat(document.getElementById('edgeBlur').value);
-        const edgeMethod     = document.getElementById('edgeMethod').value;
-        const useHysteresis  = document.getElementById('edgeHysteresis').checked;
-        const invert         = document.getElementById('invertImage').value === 'true';
-
-        // ── 1. Размытие (по imgData, не imageData!)
         drawProgressIndicator(5, 'Размытие...');
         await new Promise(r => setTimeout(r, 0));
         const blurred = gaussianBlurRGB(imgData, width, height, blurSigma);
 
-        // ── 2. Градиент
         drawProgressIndicator(20, 'Вычисление градиента...');
         await new Promise(r => setTimeout(r, 0));
         const gradient = sobelColorGradient(blurred, width, height, edgeMethod);
 
-        // ── 3. Порог + гистерезис
         drawProgressIndicator(35, 'Пороговая обработка...');
         await new Promise(r => setTimeout(r, 0));
-        let binary = buildBinaryFromGradient(gradient, width, height, sensitivity, useHysteresis);
+        const binary = buildBinaryFromGradient(gradient, width, height, sensitivity, useHysteresis);
 
-        if (invert) {
-            for (let i = 0; i < binary.length; i++) binary[i] ^= 1;
-        }
-
-        // ── 4. Общий пайплайн
         const paths = await edgeMaskToVectorPaths(binary, width, height, 40, 100);
 
         vectorPaths = paths;
@@ -9525,38 +9369,19 @@ async function generateQuantizePathsWithProgress() {
         const width = originalImage.width;
         const height = originalImage.height;
 
-        // ── Levels к копии imageData
-        const left  = parseFloat(document.getElementById('levelsLeft').value);
-        const right = parseFloat(document.getElementById('levelsRight').value);
-        const gamma = parseFloat(document.getElementById('levelsGamma').value);
+        const levelsCanvas = prepareLevelsImage();
+        const levelsCtx = levelsCanvas.getContext('2d');
+        let workData = levelsCtx.getImageData(0, 0, width, height);
 
-        const leveledData = new ImageData(
-            new Uint8ClampedArray(imageData.data),
-            imageData.width,
-            imageData.height
-        );
-		const lut = new Uint8Array(256);
-		for (let v = 0; v < 256; v++) lut[v] = Math.round(applyLevels(v, left, right, gamma));
-
-		for (let i = 0; i < leveledData.data.length; i += 4) {
-			leveledData.data[i]     = lut[leveledData.data[i]];       // R
-			leveledData.data[i + 1] = lut[leveledData.data[i + 1]];   // G
-			leveledData.data[i + 2] = lut[leveledData.data[i + 2]];   // B
-		}
-
-        // ── Настройки
         const numColors      = parseInt(document.getElementById('quantizeColors').value);
         const blurSigma      = parseFloat(document.getElementById('quantizeBlur').value);
         const minRegionSize  = parseInt(document.getElementById('quantizeMinRegion').value);
-        const invert         = document.getElementById('invertImage').value === 'true';
 
-        // ── 1. Размытие
         drawProgressIndicator(5, 'Размытие...');
         await new Promise(r => setTimeout(r, 0));
 
-        let workData = leveledData;   // ← с levels
         if (blurSigma > 0) {
-            const blurred = gaussianBlurRGB(leveledData, width, height, blurSigma);
+            const blurred = gaussianBlurRGB(workData, width, height, blurSigma);
             const temp = new ImageData(width, height);
             for (let i = 0, j = 0; i < temp.data.length; i += 4, j += 3) {
                 temp.data[i]     = blurred[j];
@@ -9567,44 +9392,27 @@ async function generateQuantizePathsWithProgress() {
             workData = temp;
         }
 
-        // ── 2. Палитра
         drawProgressIndicator(20, 'Построение палитры...');
         await new Promise(r => setTimeout(r, 0));
         const palette = medianCutPalette(workData, width, height, numColors, 4);
 
-        // ── 3. Labels
-		drawProgressIndicator(45, 'Квантование...');
-		await new Promise(r => setTimeout(r, 0));
-		const labels = new Uint8Array(width * height);
-		const colorCache = createNearestColorCache();
-		const workDataArr = workData.data;
-		for (let i = 0, j = 0; i < width * height; i++, j += 4) {
-			labels[i] = nearestColorIndexCached(
-				palette,
-				workDataArr[j],
-				workDataArr[j + 1],
-				workDataArr[j + 2],
-				colorCache
-			);
-		}
-
-        // ── 4. Границы
-        drawProgressIndicator(60, 'Поиск границ...');
+        drawProgressIndicator(45, 'Квантование...');
         await new Promise(r => setTimeout(r, 0));
-        let binary = labelsToEdges(labels, width, height, minRegionSize);
-
-        if (invert) {
-            for (let i = 0; i < binary.length; i++) binary[i] ^= 1;
+        const labels = new Uint8Array(width * height);
+        const colorCache = createNearestColorCache();
+        const arr = workData.data;
+        for (let i = 0, j = 0; i < width * height; i++, j += 4) {
+            labels[i] = nearestColorIndexCached(palette, arr[j], arr[j+1], arr[j+2], colorCache);
         }
 
-        // ── 5. Общий пайплайн
+        drawProgressIndicator(60, 'Поиск границ...');
+        await new Promise(r => setTimeout(r, 0));
+        const binary = labelsToEdges(labels, width, height, minRegionSize);
+
         const paths = await edgeMaskToVectorPaths(binary, width, height, 65, 100);
 
         vectorPaths = paths;
-        updateStatus(
-            `Квантование: ${palette.length} цветов → ${paths.length} путей`,
-            'success'
-        );
+        updateStatus(`Квантование: ${palette.length} цветов → ${paths.length} путей`, 'success');
         return paths;
     } finally {
         vectorPaths = saved;
