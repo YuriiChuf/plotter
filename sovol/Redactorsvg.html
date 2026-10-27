@@ -1380,49 +1380,68 @@
 					reader.readAsText(file);
 				});
 							
-				document.getElementById('underlay-font-input').addEventListener('change', async (e) => {
-					const file = e.target.files[0];
-					if (!file) return;
-					
-					const fontName = file.name.replace(/\.[^/.]+$/, "");
-					
-					// Читаем метрики из файла
-					const metrics = await this.readFontMetrics(file);
-					
-					const reader = new FileReader();
-					reader.onload = (event) => {
-						try {
-							const fontDataUrl = event.target.result;
-							const fontFace = new FontFace(fontName, `url(${fontDataUrl})`);
-							
-							fontFace.load().then(loadedFont => {
-								document.fonts.add(loadedFont);
-								this.state.underlayFont = fontName;
-								
-								// ПОКАЗЫВАЕМ ТОТ ЖЕ ДИАЛОГ ДЛЯ ФАЙЛА
-								if (this.state.underlayMetrics) {
-									this.showMetricsDialog(this.state.underlayMetrics, fontName);
-								} else {
-									document.getElementById('font-modal').style.display = 'none';
-									this.updateUnderlay();
-								}
-								
-								this.showNotification(
-									`Шрифт "${fontName}" загружен из файла`,
-									'success'
-								);
-							}).catch(error => {
-								console.error('Ошибка загрузки шрифта:', error);
-								alert('Не удалось загрузить шрифт из файла.');
-							});
-						} catch (error) {
-							console.error('Ошибка обработки файла:', error);
-							alert('Ошибка при чтении файла шрифта.');
-						}
-					};
-					
-					reader.readAsDataURL(file);
-				});
+document.getElementById('underlay-font-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) {
+        e.target.value = '';
+        return;
+    }
+    
+    const fontName = file.name.replace(/\.[^/.]+$/, "");
+    
+    // === ЧИТАЕМ МЕТРИКИ И СРАЗУ ПИШЕМ В STATE ===
+    let metrics = null;
+    try {
+        metrics = await this.readFontMetrics(file);
+    } catch (err) {
+        console.warn('Не удалось прочитать метрики:', err);
+    }
+    
+    this.state.underlayMetrics = metrics;
+    this.state.underlayFont = fontName;
+    
+    // === ЧИТАЕМ КАК ARRAYBUFFER (надёжнее DataURL) ===
+    let buffer;
+    try {
+        buffer = await file.arrayBuffer();
+    } catch (err) {
+        this.showNotification('Не удалось прочитать файл: ' + err.message, 'error');
+        e.target.value = '';
+        return;
+    }
+    
+    // === ЗАГРУЖАЕМ ЧЕРЕЗ FontFace ===
+    try {
+        const fontFace = new FontFace(fontName, buffer);
+        const loadedFont = await fontFace.load();
+        document.fonts.add(loadedFont);
+    } catch (err) {
+        console.error('FontFace.load failed:', err);
+        this.showNotification(
+            `Не удалось загрузить "${fontName}". Формат не поддерживается.`,
+            'error'
+        );
+        e.target.value = '';
+        return;
+    }
+    
+    this.showNotification(`Шрифт "${fontName}" загружен из файла`, 'success');
+    
+    // === ПОКАЗЫВАЕМ ДИАЛОГ МЕТРИК ===
+    const fontModal = document.getElementById('font-modal');
+    if (fontModal) fontModal.style.display = 'none';
+    
+    if (metrics) {
+        this.showMetricsDialog(metrics, fontName);
+    } else {
+        this.updateUnderlay();
+    }
+    
+    // Сбрасываем input, чтобы можно было загрузить тот же файл повторно
+    e.target.value = '';
+});
+
+
 				document.addEventListener('contextmenu', (e) => {
 					if (e.target.closest('#svg-canvas')) {
 						e.preventDefault();
@@ -1494,13 +1513,12 @@ saveToHistory(action, description) {
     // Обновляем индекс
     this.history.currentIndex = this.history.actions.length - 1;
     
-    console.log(`Сохранено в историю: ${description} (всего: ${this.history.actions.length})`);
+    //console.log(`Сохранено в историю: ${description} (всего: ${this.history.actions.length})`);
 }
    
     // НОВЫЙ МЕТОД: Отмена последнего действия
 undo() {
     if (this.history.currentIndex <= 0) {
-        console.log("Нет действий для отмены");
         this.showNotification("Нет действий для отмены", "info");
         return;
     }
@@ -1515,7 +1533,7 @@ undo() {
     // Если у текущего состояния есть previousState, используем его для точной отмены
     let restoreState = previousState;
     if (currentState.previousState) {
-        console.log("Используем сохраненное предыдущее состояние для точной отмены");
+        //console.log("Используем сохраненное предыдущее состояние для точной отмены");
         restoreState = currentState.previousState;
     }
     
@@ -1566,7 +1584,7 @@ undo() {
     // Обновляем направляющие
     this.renderGuidelines();
     
-    console.log(`Отменено: ${currentState.description}`);
+    //console.log(`Отменено: ${currentState.description}`);
     this.showNotification(`Отменено: ${currentState.description}`, "info");
 }
 
@@ -2566,7 +2584,7 @@ handlePointDoubleClick(pointElement) {
     
     // ЕСЛИ КРАЙНЯЯ ТОЧКА - ПОЛНАЯ ОТМЕНА ДЕЙСТВИЯ
     if (isEndPoint) {
-        console.log('Двойной клик на крайней точке - отмена всех действий');
+        //console.log('Двойной клик на крайней точке - отмена всех действий');
         return;
     }
     
@@ -4294,7 +4312,6 @@ async loadUnderlayFont() {
     const customFontInput = document.getElementById('custom-font');
     let fontName = customFontInput.value.trim();
     
-    // Если выбрали из списка
     const selectedFont = document.querySelector('.font-item.active');
     if (selectedFont && !fontName) {
         fontName = selectedFont.textContent;
@@ -4302,85 +4319,101 @@ async loadUnderlayFont() {
     }
     
     if (!fontName) {
-        alert('Выберите или введите название шрифта');
+        this.showNotification('Выберите или введите название шрифта', 'warning');
         return;
     }
     
-    // Простая проверка существования шрифта
-    const testElement = document.createElement('span');
-    testElement.style.cssText = `
-        position: absolute;
-        left: -9999px;
-        font-size: 100px;
-        font-family: sans-serif;
-    `;
-    testElement.textContent = 'A';
+    try {
+        await document.fonts.ready;
+    } catch (e) {}
     
-    document.body.appendChild(testElement);
-    const defaultWidth = testElement.offsetWidth;
+    const isAvailable =
+        document.fonts.check(`16px "${fontName}"`) ||
+        document.fonts.check(`16px ${fontName}`);
     
-    testElement.style.fontFamily = `"${fontName}", sans-serif`;
+    if (!isAvailable) {
+        this.showNotification(
+            `Шрифт "${fontName}" не найден браузером. ` +
+            `Проверьте точное имя в свойствах файла или загрузите файл напрямую.`,
+            'warning'
+        );
+        return;
+    }
     
-    setTimeout(async () => {
-        const newWidth = testElement.offsetWidth;
-        document.body.removeChild(testElement);
+    // === ПОЛУЧАЕМ МЕТРИКИ ===
+    let metrics = null;
+    try {
+        metrics = await this.getSimpleFontMetrics(fontName);
+    } catch (error) {
+        console.warn('Не удалось получить метрики:', error);
+    }
+    
+    this.state.underlayMetrics = metrics;
+    this.state.underlayFont = fontName;
+    
+    // === ЗАКРЫВАЕМ МОДАЛКУ ПОДЛОЖКИ ДО ДИАЛОГА МЕТРИК ===
+    const fontModal = document.getElementById('font-modal');
+    
+    if (metrics) {
+        // Нормализуем перед показом (защита от +descent)
+        let ascent  = Number(metrics.ascent);
+        let descent = Number(metrics.descent);
+        if (!isFinite(ascent)  || ascent  <= 0) ascent  = 800;
+        if (!isFinite(descent))                  descent = -200;
+        if (descent > 0)                         descent = -descent;
+        if (descent >= 0)                        descent = -200;
+        metrics = { ...metrics, ascent, descent };
         
-        if (Math.abs(newWidth - defaultWidth) < 5) {
-            this.showNotification(`Шрифт "${fontName}" не найден в системе.`, 'warning');
-            return;
-        }
+        if (fontModal) fontModal.style.display = 'none';
         
-        // Получаем метрики
-        let metrics;
-        try {
-            metrics = await this.getSimpleFontMetrics(fontName);
-        } catch (error) {
-            console.warn('Не удалось получить метрики:', error);
-            metrics = null;
-        }
-        
-        // Сохраняем метрики подложки
-        this.state.underlayMetrics = metrics;
-        this.state.underlayFont = fontName;
-        
-        // ПОКАЗЫВАЕМ ДИАЛОГ ВЫБОРА
-        if (metrics && (metrics.ascent !== 800 || metrics.descent !== -200)) {
-            this.showMetricsDialog(metrics, fontName);
-        } else {
-            // Метрики стандартные или не получены - просто закрываем
-            document.getElementById('font-modal').style.display = 'none';
-            this.updateUnderlay();
-        }
-        
-    }, 100);
+        // ВАЖНО: без callback — это подложка, а не шаблон
+        this.showMetricsDialog(metrics, fontName);
+    } else {
+        if (fontModal) fontModal.style.display = 'none';
+        this.updateUnderlay();
+    }
 }
 
 showGroupSelectionWithMetrics(fontName, metrics) {
-    // Проверяем отличаются ли метрики от стандартных
-    if (metrics.ascent !== 800 || metrics.descent !== -200) {
-        // Показываем существующий диалог с callback
-        this.showMetricsDialog(metrics, fontName, (useMetrics) => {
-            // Закрываем модальное окно метрик
+
+    // === ЗАЩИТА ОТ КРИВЫХ МЕТРИК ===
+    if (!metrics || !isFinite(metrics.ascent) || !isFinite(metrics.descent)) {
+        metrics = { ascent: 800, descent: -200, unitsPerEm: 1000 };
+    }
+    
+    // НОРМАЛИЗАЦИЯ: descent всегда отрицательный
+    let ascent  = Number(metrics.ascent);
+    let descent = Number(metrics.descent);
+    
+    if (!isFinite(ascent)  || ascent  <= 0) ascent  = 800;
+    if (!isFinite(descent))                  descent = -200;
+    if (descent > 0)                         descent = -descent;
+    if (descent >= 0)                        descent = -200;
+    
+    const normalizedMetrics = { ...metrics, ascent, descent };
+    
+    // Проверяем отличаются ли от стандартных
+    const isDefault = (ascent === 800 && descent === -200);
+
+    if (!isDefault) {
+        
+        this.showMetricsDialog(normalizedMetrics, fontName, (useMetrics) => {
+
             const metricsModal = document.getElementById('metrics-modal');
             if (metricsModal) metricsModal.remove();
             
-            if (useMetrics) {
-                // Пользователь выбрал использовать метрики подложки
-                this.templateMetrics = metrics;
-            } else {
-                // Используем стандартные метрики
-                this.templateMetrics = { ascent: 800, descent: -200 };
-            }
+            this.templateMetrics = useMetrics 
+                ? normalizedMetrics 
+                : { ascent: 800, descent: -200 };
             
-            // После выбора метрик - показываем выбор групп символов
             this.showGroupSelection(fontName);
         });
     } else {
-        // Метрики стандартные - сразу показываем группы
-        this.templateMetrics = metrics;
+        this.templateMetrics = normalizedMetrics;
         this.showGroupSelection(fontName);
     }
 }
+
 
 
 // Вспомогательный метод для обновления подложки
@@ -4403,40 +4436,36 @@ async getSimpleFontMetrics(fontName) {
         const ctx = canvas.getContext('2d');
         const fontSize = 100;
         
+        // ВАЖНО: для кириллических шрифтов используем кириллицу
+        // + латиницу на случай, если шрифт только латинский
         ctx.font = `${fontSize}px "${fontName}", Arial`;
         
-        // Тестируем высоту строки
-        const testString = 'Hjgyp';
+        const testString = 'НЁЖЩАБ'; // кириллица + специфические буквы
         const metrics = ctx.measureText(testString);
         
         if (metrics.actualBoundingBoxAscent && metrics.actualBoundingBoxDescent) {
-            // Масштабируем к 1000 UPM
             const scale = 1000 / fontSize;
-            
             resolve({
                 ascent: Math.round(metrics.actualBoundingBoxAscent * scale),
                 descent: -Math.round(metrics.actualBoundingBoxDescent * scale),
                 unitsPerEm: 1000
             });
         } else {
-            // Альтернативный метод через DOM
+            // Fallback через DOM с кириллицей
             const div = document.createElement('div');
             div.style.cssText = `
                 position: absolute;
-                left: -9999px;
+                top: 0; left: -9999px;
                 font-size: ${fontSize}px;
                 font-family: "${fontName}", Arial;
                 line-height: 1;
             `;
-            div.textContent = 'Hjgyp';
-            
+            div.textContent = 'НЁЖЩАБ';
             document.body.appendChild(div);
             
             setTimeout(() => {
                 const height = div.offsetHeight;
                 document.body.removeChild(div);
-                
-                // Эмпирическая формула
                 const scale = 1000 / fontSize;
                 resolve({
                     ascent: Math.round(height * 0.8 * scale),
@@ -4449,16 +4478,15 @@ async getSimpleFontMetrics(fontName) {
 }
 
 async getSystemFontMetrics(fontName) {
-    return new Promise((resolve, reject) => {
-        // Сначала ждем загрузки шрифтов
+    return new Promise((resolve) => {
         document.fonts.ready.then(() => {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             
             const fontSize = 100;
-            const testStrings = ['Hg', 'Aj', 'Tg', 'yp'];
+            // Кириллица + латиница — для универсальности
+            const testStrings = ['НЁЖЩАБ', 'Hgyp', 'AбВг'];
             
-            // Пробуем несколько раз с задержкой
             const attemptMeasurement = (attempt = 0) => {
                 let anyDifference = false;
                 let totalAscent = 0;
@@ -4466,21 +4494,19 @@ async getSystemFontMetrics(fontName) {
                 let count = 0;
                 
                 for (const testString of testStrings) {
-                    // Измеряем с fallback
                     ctx.font = `${fontSize}px "Arial"`;
                     const defaultMetrics = ctx.measureText(testString);
                     
-                    // Измеряем с нашим шрифтом
                     ctx.font = `${fontSize}px "${fontName}", Arial`;
                     const newMetrics = ctx.measureText(testString);
                     
-                    // Проверяем разницу
                     if (Math.abs(newMetrics.width - defaultMetrics.width) > 1) {
                         anyDifference = true;
                     }
                     
-                    // Собираем метрики если они доступны
-                    if (newMetrics.actualBoundingBoxAscent) {
+                    // ВАЖНО: actualBoundingBoxDescent ВСЕГДА положительный
+                    // (это расстояние ВНИЗ от baseline)
+                    if (newMetrics.actualBoundingBoxAscent && newMetrics.actualBoundingBoxDescent !== undefined) {
                         totalAscent += newMetrics.actualBoundingBoxAscent;
                         totalDescent += newMetrics.actualBoundingBoxDescent;
                         count++;
@@ -4488,54 +4514,62 @@ async getSystemFontMetrics(fontName) {
                 }
                 
                 if (!anyDifference && attempt < 3) {
-                    // Шрифт еще не применился, ждем и пробуем снова
                     setTimeout(() => attemptMeasurement(attempt + 1), 100);
-                    return;
-                }
-                
-                if (!anyDifference) {
-                    reject(new Error('Шрифт не применился'));
                     return;
                 }
                 
                 const scale = 1000 / fontSize;
                 
+                let ascent, descent;
+                let capHeight = 700, xHeight = 500;
+                
                 if (count > 0) {
-                    // Есть расширенные метрики
-                    resolve({
-                        ascent: Math.round((totalAscent / count) * scale),
-                        descent: Math.round((totalDescent / count) * scale),
-                        unitsPerEm: 1000,
-                        capHeight: Math.round((totalAscent / count) * scale * 0.7),
-                        xHeight: Math.round((totalAscent / count) * scale * 0.5)
-                    });
+                    // actualBoundingBoxDescent — положительное значение (расстояние вниз)
+                    // поэтому для descent шрифта (по спецификации — отрицательный) берём со знаком минус
+                    ascent  = Math.round((totalAscent  / count) * scale);
+                    descent = -Math.round((totalDescent / count) * scale);
+                    
+                    capHeight = Math.round(ascent * 0.7);
+                    xHeight   = Math.round(ascent * 0.5);
                 } else {
-                    // Нет расширенных метрик, используем расчетные
-                    resolve({
-                        ascent: 800,
-                        descent: -200,
-                        unitsPerEm: 1000,
-                        capHeight: 700,
-                        xHeight: 500
-                    });
+                    ascent  = 800;
+                    descent = -200;
                 }
+                
+                // === НОРМАЛИЗАЦИЯ ===
+                if (!isFinite(ascent)  || ascent  <= 0) ascent  = 800;
+                if (!isFinite(descent))                  descent = -200;
+                if (descent > 0)                         descent = -descent;
+                if (descent >= 0)                        descent = -200;
+                
+                // Защита от абсурдных пропорций
+                if (ascent - descent > 2000) {
+                    const k = 1000 / (ascent - descent);
+                    ascent  = Math.round(ascent  * k);
+                    descent = Math.round(descent * k);
+                }
+                
+                resolve({
+                    ascent,
+                    descent,
+                    unitsPerEm: 1000,
+                    capHeight,
+                    xHeight
+                });
             };
             
-            // Начинаем измерения
             attemptMeasurement();
             
         }).catch(() => {
-            // document.fonts.ready недоступен
-            reject(new Error('API шрифтов не доступен'));
+            resolve({ ascent: 800, descent: -200, unitsPerEm: 1000, capHeight: 700, xHeight: 500 });
         });
     });
 }
 
 			// Загрузка шрифта из файла для подложки
 loadUnderlayFromFile() {
-    // ПРОВЕРКА: если мы в режиме создания шаблона, не делаем ничего
     if (this.state && this.state.isCreatingTemplate) {
-        return; // Выходим, файл будет обработан в showFontTemplateSelection()
+        return; 
     }
     
     // Обычная загрузка подложки
@@ -4595,11 +4629,6 @@ async readFontMetrics(fontFile) {
                     }
                 }
                 
-                console.log('Raw values (unitsPerEm=' + unitsPerEm + '):', {
-                    typoAscent, typoDescent, 
-                    winAscent, winDescent,
-                    ascent, descent
-                });
                 
                 // МАСШТАБИРУЕМ к 1000 units per em!
                 const scale = 1000 / unitsPerEm;
@@ -4609,15 +4638,28 @@ async readFontMetrics(fontFile) {
                 if (typoAscent !== null && typoDescent !== null) {
                     finalAscent = Math.round(typoAscent * scale);
                     finalDescent = Math.round(typoDescent * scale);
-                    console.log('Using Typo metrics, scaled:', { finalAscent, finalDescent });
+ 
                 } else if (winAscent !== null && winDescent !== null) {
                     finalAscent = Math.round(winAscent * scale);
                     finalDescent = Math.round(-winDescent * scale);
-                    console.log('Using Win metrics, scaled:', { finalAscent, finalDescent });
+
                 } else {
                     finalAscent = Math.round(ascent * scale);
                     finalDescent = Math.round(descent * scale);
-                    console.log('Using hhea metrics, scaled:', { finalAscent, finalDescent });
+
+                }
+                
+                // === НОРМАЛИЗАЦИЯ ПЕРЕД ВОЗВРАТОМ ===
+                if (!isFinite(finalAscent)  || finalAscent  <= 0) finalAscent  = 800;
+                if (!isFinite(finalDescent))                       finalDescent = -200;
+                if (finalDescent > 0)                              finalDescent = -finalDescent;
+                if (finalDescent >= 0)                             finalDescent = -200;
+                
+                // Защита от абсурдных значений
+                if (finalAscent - finalDescent > 2000) {
+                    const k = 1000 / (finalAscent - finalDescent);
+                    finalAscent  = Math.round(finalAscent  * k);
+                    finalDescent = Math.round(finalDescent * k);
                 }
                 
                 // Проверяем расчет
@@ -4630,8 +4672,8 @@ async readFontMetrics(fontFile) {
                 resolve({ 
                     ascent: finalAscent, 
                     descent: finalDescent,
-                    unitsPerEm: 1000, // Всегда возвращаем 1000 для редактора
-                    originalUnitsPerEm: unitsPerEm, // Сохраняем оригинальное значение
+                    unitsPerEm: 1000,
+                    originalUnitsPerEm: unitsPerEm,
                     allMetrics: {
                         typo: { ascent: typoAscent, descent: typoDescent, lineGap },
                         win: { ascent: winAscent, descent: winDescent },
@@ -4750,11 +4792,16 @@ createNewFont() {
     });
     
     // На основе существующего
+	
     modal.querySelector('#create-from-template').addEventListener('click', () => {
+
         closeModal();
-        setTimeout(() => this.showFontTemplateSelection(), 100);
+        setTimeout(() => {
+
+            this.showFontTemplateSelection();
+        }, 100);
     });
-    
+	
     // Импорт SVG (существующая функция)
     modal.querySelector('#create-from-svg').addEventListener('click', () => {
         closeModal();
@@ -4778,10 +4825,14 @@ createNewFont() {
 
 showFontTemplateSelection() {
     const fontModal = document.getElementById('font-modal');
-    if (!fontModal) return;
+    if (!fontModal) {
+        console.error('=== [ОШИБКА] #font-modal не найден! ===');
+        return;
+    }
     
     // Устанавливаем флаг, что мы в режиме создания шаблона
     this.state.isCreatingTemplate = true;
+
     
     // Сохраняем оригинальное состояние
     const originalTitle = fontModal.querySelector('.modal-header h3').innerHTML;
@@ -4805,29 +4856,32 @@ showFontTemplateSelection() {
     
     // Временные обработчики
 const tempLoadHandler = () => {
+    
     const fontInput = document.getElementById('custom-font');
     const activeFont = document.querySelector('.font-item.active');
     const fontName = fontInput.value.trim() || (activeFont ? activeFont.textContent : '');
-    
+
     if (!fontName) {
         this.showNotification('Выберите шрифт', 'warning');
         return;
     }
     
-    // Проверка шрифта
-    const testSpan = document.createElement('span');
-    testSpan.style.cssText = 'position:absolute;left:-9999px;font-size:100px;font-family:sans-serif;';
-    testSpan.textContent = 'A';
-    document.body.appendChild(testSpan);
-    
-    const defaultWidth = testSpan.offsetWidth;
-    testSpan.style.fontFamily = `"${fontName}", sans-serif`;
-    
-    setTimeout(async () => {
-        const newWidth = testSpan.offsetWidth;
-        document.body.removeChild(testSpan);
+    // Проверка шрифта через document.fonts.check
+    (async () => {
+
+        try {
+            await document.fonts.ready;
+        } catch (e) {}
         
-        if (Math.abs(newWidth - defaultWidth) < 5) {
+        let isAvailable = false;
+        try {
+            isAvailable = document.fonts.check(`16px "${fontName}"`) ||
+                          document.fonts.check(`16px ${fontName}`);
+        } catch (err) {
+            console.warn('document.fonts.check error:', err);
+        }
+        
+        if (!isAvailable) {
             this.showNotification(`Шрифт "${fontName}" не найден в системе`, 'error');
             return;
         }
@@ -4835,39 +4889,34 @@ const tempLoadHandler = () => {
         // Сбрасываем флаг
         this.state.isCreatingTemplate = false;
         
-        // Восстанавливаем оригинальное состояние
+        // Восстанавливаем оригинальное состояние модалки
         fontModal.querySelector('.modal-header h3').innerHTML = originalTitle;
         fontModal.querySelector('p').textContent = originalDescription;
         loadBtn.innerHTML = originalLoadHtml;
         fileBtn.innerHTML = originalFileHtml;
-        
         loadBtn.onclick = null;
         fileBtn.onclick = null;
-        
         fontModal.style.display = 'none';
         
-        // ПОЛУЧАЕМ МЕТРИКИ для создания шаблона
+        // Получаем метрики
         try {
             const metrics = await this.getSystemFontMetrics(fontName);
             this.showGroupSelectionWithMetrics(fontName, metrics);
         } catch (error) {
-            console.error('Ошибка получения метрик:', error);
-            // Используем метрики по умолчанию
+            console.error('=== [ОШИБКА] получения метрик:', error);
             this.showGroupSelectionWithMetrics(fontName, {
                 ascent: 800,
                 descent: -200,
                 unitsPerEm: 1000
             });
         }
-        
-    }, 100);
+    })();
 };
    
     const tempFileHandler = (e) => {
         e.preventDefault();
         e.stopPropagation();
         
-        // Обработчик для загрузки файла в режиме создания шаблона
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.ttf,.otf,.woff,.woff2,.ttc';
@@ -4877,44 +4926,67 @@ const tempLoadHandler = () => {
             if (!file) return;
             
             const fontName = file.name.replace(/\.[^/.]+$/, "");
+
+            // === 1. ЧИТАЕМ МЕТРИКИ ИЗ ФАЙЛА ===
+            let metrics = null;
+            try {
+                metrics = await this.readFontMetrics(file);
+
+            } catch (err) {
+                console.warn('=== [T2-ERR] Не удалось прочитать метрики:', err);
+            }
             
-            // Читаем файл
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const fontDataUrl = e.target.result;
-                const fontFace = new FontFace(fontName, `url(${fontDataUrl})`);
-                
-                fontFace.load().then(loadedFont => {
-                    document.fonts.add(loadedFont);
-                    
-                    // Сбрасываем флаг
-                    this.state.isCreatingTemplate = false;
-                    
-                    // Восстанавливаем оригинальное состояние
-                    fontModal.querySelector('.modal-header h3').innerHTML = originalTitle;
-                    fontModal.querySelector('p').textContent = originalDescription;
-                    loadBtn.innerHTML = originalLoadHtml;
-                    fileBtn.innerHTML = originalFileHtml;
-                    
-                    loadBtn.onclick = null;
-                    fileBtn.onclick = null;
-                    
-                    fontModal.style.display = 'none';
-                    this.showGroupSelection(fontName);
-                    
-                    this.showNotification(
-                        `Шрифт "${fontName}" загружен из файла. Выберите группы символов.`,
-                        'success'
-                    );
-                });
-            };
+            // === 2. ЧИТАЕМ КАК ARRAYBUFFER ===
+            let buffer;
+            try {
+                buffer = await file.arrayBuffer();
+            } catch (err) {
+                this.showNotification('Не удалось прочитать файл: ' + err.message, 'error');
+                return;
+            }
             
-            reader.readAsDataURL(file);
+            // === 3. ЗАГРУЖАЕМ ЧЕРЕЗ FontFace ===
+            try {
+                const fontFace = new FontFace(fontName, buffer);
+                const loadedFont = await fontFace.load();
+                document.fonts.add(loadedFont);
+            } catch (err) {
+                console.error('=== [T3-ERR] FontFace.load failed:', err);
+                this.showNotification(
+                    `Не удалось загрузить "${fontName}". Формат не поддерживается.`,
+                    'error'
+                );
+                return;
+            }
+            
+            // === 4. СБРАСЫВАЕМ ФЛАГ И ВОССТАНАВЛИВАЕМ МОДАЛКУ ===
+            this.state.isCreatingTemplate = false;
+            
+            fontModal.querySelector('.modal-header h3').innerHTML = originalTitle;
+            fontModal.querySelector('p').textContent = originalDescription;
+            loadBtn.innerHTML = originalLoadHtml;
+            fileBtn.innerHTML = originalFileHtml;
+            loadBtn.onclick = null;
+            fileBtn.onclick = null;
+            fontModal.style.display = 'none';
+            
+            this.showNotification(
+                `Шрифт "${fontName}" загружен из файла.`,
+                'success'
+            );
+            
+            // === 5. ПЕРЕХОДИМ ЧЕРЕЗ showGroupSelectionWithMetrics (С МЕТРИКАМИ!) ===
+
+            this.showGroupSelectionWithMetrics(fontName, metrics || {
+                ascent: 800,
+                descent: -200,
+                unitsPerEm: 1000
+            });
         };
         
         input.click();
     };
-    
+  
     // Устанавливаем временные обработчики
     loadBtn.onclick = tempLoadHandler;
     fileBtn.onclick = tempFileHandler;
@@ -6396,8 +6468,7 @@ removeControlPointsForSegment(contourIndex, segmentIndex) {
 
 			// Исправленная функция продолжения контура от выделенной точки
 continueContourFromSelectedPoint(x, y, controlGroup) {
-    console.log("continueContourFromSelectedPoint called");
-    
+
     const selected = this.state.selectedPoint;
     if (!selected || !selected.element) return;
     
@@ -6704,7 +6775,7 @@ addPointAtPosition(x, y) {
             return;
         }
     } catch (e) {
-        console.log("Ошибка при проверке сегментов:", e);
+        //console.log("Ошибка при проверке сегментов:", e);
     }
     
     // 3. Создаем новую изолированную точку
@@ -6746,7 +6817,7 @@ saveToHistoryWithPreviousState(action, description, previousState) {
     // Обновляем индекс
     this.history.currentIndex = this.history.actions.length - 1;
     
-    console.log(`Сохранено в историю: ${description}`);
+    //console.log(`Сохранено в историю: ${description}`);
 }
 
 			// Исправленная функция разделения сегмента
@@ -7487,36 +7558,55 @@ setupViewport() {
     const svgCanvas = document.getElementById('svg-canvas');
     if (!this.currentGlyph) return;
     
-    // Добавляем дополнительные отступы для подложки
+    // === НОРМАЛИЗАЦИЯ НАПРАВЛЯЮЩИХ ===
+    // Защита от положительного descent и других кривых метрик
+    let top = Number(this.guidelines.top);
+    let bottom = Number(this.guidelines.bottom);
+    
+    if (!isFinite(top)) top = 200;
+    if (!isFinite(bottom)) bottom = 1200;
+    
+    // Если bottom оказался выше top (положительный descent) — меняем местами
+    if (bottom <= top) {
+        const tmp = top;
+        top = bottom;
+        bottom = tmp + 400;
+    }
+    
+    // Сохраняем исправленные значения обратно
+    this.guidelines.top = top;
+    this.guidelines.bottom = bottom;
+    
     const paddingX = 1500;
     const paddingY = 250;
     const minX = this.guidelines.left - paddingX;
     const maxX = this.guidelines.right + paddingX;
-    const minY = this.guidelines.top - paddingY;
-    const maxY = this.guidelines.bottom + paddingY;
+    const minY = top - paddingY;
+    const maxY = bottom + paddingY;
     
-    const width = maxX - minX;
-    const height = maxY - minY;
+    let width = maxX - minX;
+    let height = maxY - minY;
+    
+    // === ЖЁСТКАЯ ЗАЩИТА VIEWBOX ===
+    if (!isFinite(width) || width <= 0) width = 2000;
+    if (!isFinite(height) || height <= 0) height = 1500;
     
     svgCanvas.setAttribute('viewBox', `${minX} ${minY} ${width} ${height}`);
     
-    // Автомасштабирование для холста - НЕЗАВИСИМОЕ по X и Y
     const container = document.querySelector('.canvas-container');
     if (container) {
         const containerWidth = container.clientWidth;
         const containerHeight = container.clientHeight;
         
-        const zoomScale = parseInt(document.getElementById('zoom-scale').value) / 100;
+        let zoomScale = parseInt(document.getElementById('zoom-scale').value) / 100;
+        if (!isFinite(zoomScale) || zoomScale <= 0) zoomScale = 1;
         
-        // РАЗДЕЛЬНОЕ масштабирование:
         const scaleX = (containerWidth / width) * zoomScale;
         const scaleY = (containerHeight / height) * zoomScale;
         
-        // Применяем РАЗНЫЕ масштабы для сохранения пропорций viewBox
         svgCanvas.style.width = `${width * scaleX}px`;
         svgCanvas.style.height = `${height * scaleY}px`;
         
-        // Центрируем
         svgCanvas.style.position = 'absolute';
         svgCanvas.style.left = '50%';
         svgCanvas.style.top = '50%';
@@ -7545,7 +7635,21 @@ setupViewport() {
 
 // Новый метод - диалог выбора метрик
 showMetricsDialog(metrics, fontName, callback = null) {
-    const isTemplateCreation = !!callback; // Если есть callback - это создание шаблона
+    const isTemplateCreation = !!callback;
+    
+    // === НОРМАЛИЗАЦИЯ МЕТРИК ===
+    let ascent  = Number(metrics && metrics.ascent);
+    let descent = Number(metrics && metrics.descent);
+    if (!isFinite(ascent)  || ascent  <= 0) ascent  = 800;
+    if (!isFinite(descent))                  descent = -200;
+    if (descent > 0)                         descent = -descent;
+    if (descent >= 0)                        descent = -200;
+    metrics = { ...(metrics || {}), ascent, descent };
+    
+    // === УДАЛЯЕМ ВСЕ СТАРЫЕ МОДАЛКИ МЕТРИК (защита от дублей id) ===
+    document.querySelectorAll('#metrics-modal').forEach(m => {
+        m.remove();
+    });
     
     const modalHtml = `
         <div id="metrics-modal" class="modal" style="display:flex;">
@@ -7556,21 +7660,21 @@ showMetricsDialog(metrics, fontName, callback = null) {
                 <div style="padding:20px;">
                     <p>Шрифт "<strong>${fontName}</strong>" имеет свои метрики:</p>
                     
-<div style="background:#313244;padding:15px;border-radius:8px;margin:15px 0;">
-    <div style="font-size:12px;color:#a6adc8;margin-bottom:5px;">Метрики шрифта:</div>
-    ${metrics.allMetrics ? `
-        <div style="font-size:11px;line-height:1.4;">
-            <div>Typo: ${metrics.allMetrics.typo.ascent !== null ? `${metrics.allMetrics.typo.ascent}/${metrics.allMetrics.typo.descent}` : 'N/A'}</div>
-            <div>Win: ${metrics.allMetrics.win.ascent !== null ? `${metrics.allMetrics.win.ascent}/${metrics.allMetrics.win.descent}` : 'N/A'}</div>
-            <div>HHEA: ${metrics.allMetrics.hhea.ascent !== null ? `${metrics.allMetrics.hhea.ascent}/${metrics.allMetrics.hhea.descent}` : 'N/A'}</div>
-        </div>
-        <div style="margin-top:10px;font-size:11px;color:#a6e3a1;">
-            Будут использованы: <strong>${metrics.ascent}/${metrics.descent}</strong>
-        </div>
-    ` : `
-        <div>Ascent: ${metrics.ascent}, Descent: ${metrics.descent}</div>
-    `}
-</div>
+                    <div style="background:#313244;padding:15px;border-radius:8px;margin:15px 0;">
+                        <div style="font-size:12px;color:#a6adc8;margin-bottom:5px;">Метрики шрифта:</div>
+                        ${metrics.allMetrics ? `
+                            <div style="font-size:11px;line-height:1.4;">
+                                <div>Typo: ${metrics.allMetrics.typo && metrics.allMetrics.typo.ascent !== null ? `${metrics.allMetrics.typo.ascent}/${metrics.allMetrics.typo.descent}` : 'N/A'}</div>
+                                <div>Win: ${metrics.allMetrics.win && metrics.allMetrics.win.ascent !== null ? `${metrics.allMetrics.win.ascent}/${metrics.allMetrics.win.descent}` : 'N/A'}</div>
+                                <div>HHEA: ${metrics.allMetrics.hhea && metrics.allMetrics.hhea.ascent !== null ? `${metrics.allMetrics.hhea.ascent}/${metrics.allMetrics.hhea.descent}` : 'N/A'}</div>
+                            </div>
+                            <div style="margin-top:10px;font-size:11px;color:#a6e3a1;">
+                                Будут использованы: <strong>${ascent}/${descent}</strong>
+                            </div>
+                        ` : `
+                            <div>Ascent: ${ascent}, Descent: ${descent}</div>
+                        `}
+                    </div>
                     
                     <div style="margin:20px 0;">
                         <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
@@ -7578,10 +7682,9 @@ showMetricsDialog(metrics, fontName, callback = null) {
                             <span>${isTemplateCreation ? 'Использовать метрики шрифта для нового шрифта' : 'Использовать метрики подложки для направляющих'}</span>
                         </label>
                         <div style="font-size:12px;color:#a6adc8;margin-top:5px;margin-left:30px;">
-                            ${isTemplateCreation ? 
-                                'Новый шрифт будет создан с этими метриками' : 
-                                'Направляющие будут установлены на ' + metrics.ascent + '/' + metrics.descent
-                            }
+                            ${isTemplateCreation 
+                                ? 'Новый шрифт будет создан с этими метриками' 
+                                : 'Направляющие будут установлены на ' + ascent + '/' + descent}
                         </div>
                     </div>
                     
@@ -7599,50 +7702,92 @@ showMetricsDialog(metrics, fontName, callback = null) {
     `;
     
     document.body.insertAdjacentHTML('beforeend', modalHtml);
-    const modal = document.getElementById('metrics-modal');
     
-    // Обработчики
-    document.getElementById('apply-metrics').addEventListener('click', () => {
-        const useMetrics = document.getElementById('use-metrics-checkbox').checked;
+    // === БЕРЁМ ИМЕННО НОВУЮ МОДАЛКУ (последнюю) ===
+    const modals = document.querySelectorAll('#metrics-modal');
+    const modal = modals[modals.length - 1];
+    
+    if (!modal) {
+        console.error('=== [ОШИБКА] Модалка не найдена после вставки ===');
+        return;
+    }
+    
+    // === КНОПКИ ИЩЕМ ВНУТРИ ЭТОЙ МОДАЛКИ, А НЕ ПО ВСЕМУ ДОКУМЕНТУ ===
+    const applyBtn = modal.querySelector('#apply-metrics');
+    const skipBtn  = modal.querySelector('#skip-metrics');
+    const checkbox = modal.querySelector('#use-metrics-checkbox');
+    
+    if (!applyBtn || !skipBtn) {
+        console.error('=== [ОШИБКА] Кнопки не найдены внутри модалки ===');
+        return;
+    }
+    
+    // === «ПРОДОЛЖИТЬ» / «ПРИМЕНИТЬ» ===
+    applyBtn.addEventListener('click', () => {
         
-        if (callback) {
-            // Это создание шаблона - вызываем callback
-            modal.remove();
-            callback(useMetrics);
+        const useMetrics = checkbox.checked;
+
+        modal.remove();
+        
+        if (typeof callback === 'function') {
+
+            try {
+                callback(useMetrics);
+
+            } catch (err) {
+                console.error('=== [ОШИБКА] в callback:', err);
+            }
         } else {
-            // Это обычная загрузка подложки
-            if (useMetrics && metrics) {
-                this.fontData.ascent = metrics.ascent;
-                this.fontData.descent = metrics.descent;
-                this.guidelines.top = this.fontData.unitsPerEm - this.fontData.ascent;
-                this.guidelines.bottom = this.fontData.unitsPerEm - this.fontData.descent;
+
+            if (useMetrics) {
+                this.fontData.ascent  = ascent;
+                this.fontData.descent = descent;
+                this.guidelines.top    = this.fontData.unitsPerEm - ascent;
+                this.guidelines.bottom = this.fontData.unitsPerEm - descent;
+                
+                if (this.guidelines.bottom <= this.guidelines.top) {
+                    this.guidelines.bottom = this.guidelines.top + 400;
+                }
+                
                 this.updateGuidelineControls();
                 this.renderGuidelines();
             }
-            modal.remove();
-            document.getElementById('font-modal').style.display = 'none';
+            
+            const fontModal = document.getElementById('font-modal');
+            if (fontModal) fontModal.style.display = 'none';
+            
             this.updateUnderlay();
         }
     });
     
-    document.getElementById('skip-metrics').addEventListener('click', () => {
-        if (callback) {
-            modal.remove();
-            callback(false);
+    // === «ОСТАВИТЬ СТАНДАРТНЫЕ/ТЕКУЩИЕ» ===
+    skipBtn.addEventListener('click', () => {
+     
+        modal.remove();
+        
+        if (typeof callback === 'function') {
+            try {
+                callback(false);
+            } catch (err) {
+                console.error('=== [ОШИБКА] в callback (skip):', err);
+            }
         } else {
-            modal.remove();
-            document.getElementById('font-modal').style.display = 'none';
+            const fontModal = document.getElementById('font-modal');
+            if (fontModal) fontModal.style.display = 'none';
             this.updateUnderlay();
         }
     });
     
-    // Закрытие по клику вне окна
+    // === КЛИК ПО ФОНУ ===
     modal.addEventListener('click', (e) => {
         if (e.target === modal) {
             modal.remove();
-            if (callback) callback(false);
+            if (typeof callback === 'function') {
+                callback(false);
+            }
         }
     });
+    
 }
 
 renameFont() {
