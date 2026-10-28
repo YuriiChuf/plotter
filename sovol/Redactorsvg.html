@@ -3609,6 +3609,21 @@ deletePoint(pointElement) {
 					default:
 						svgCanvas.style.cursor = 'default';
 				}
+				
+				// === НАПРАВЛЯЮЩИЕ АКТИВНЫ ТОЛЬКО В РЕЖИМЕ «ИЗМЕНИТЬ» И «НАПРАВЛЯЮЩИЕ» ===
+				const guidelinesActive = (tool === TOOLS.SELECT || tool === TOOLS.GUIDELINE);
+				
+				document.querySelectorAll('.guideline.draggable').forEach(line => {
+					if (guidelinesActive) {
+						line.style.pointerEvents = 'all';
+						line.style.cursor = line.classList.contains('horizontal') 
+							? 'ns-resize' 
+							: 'ew-resize';
+					} else {
+						line.style.pointerEvents = 'none';
+						line.style.cursor = 'default';
+					}
+				});
 			}
 						
             // ==========================
@@ -7369,8 +7384,19 @@ drawGuideline(type, position, id, bbox, container, isCustom = false) {
     // Правая направляющая И пользовательские должны быть draggable
     if (id === 'right' || isCustom) {
         classes.push('draggable');
-        line.style.cursor = type === 'horizontal' ? 'ns-resize' : 'ew-resize';
-        line.style.pointerEvents = 'all';  // Явно включаем события
+        
+        // Активны только в режиме «Изменить» или «Направляющие»
+        const guidelinesActive = 
+            this.state.currentTool === TOOLS.SELECT || 
+            this.state.currentTool === TOOLS.GUIDELINE;
+        
+        if (guidelinesActive) {
+            line.style.cursor = type === 'horizontal' ? 'ns-resize' : 'ew-resize';
+            line.style.pointerEvents = 'all';
+        } else {
+            line.style.cursor = 'default';
+            line.style.pointerEvents = 'none';
+        }
     } else {
         line.style.pointerEvents = 'none';
     }
