@@ -2583,8 +2583,24 @@ handlePointDoubleClick(pointElement) {
     const isEndPoint = pointType === 'end' || pointType === 'isolated';
     
     // ЕСЛИ КРАЙНЯЯ ТОЧКА - ПОЛНАЯ ОТМЕНА ДЕЙСТВИЯ
+    // ЕСЛИ КРАЙНЯЯ ТОЧКА — ПЕРЕКЛЮЧАЕМ ОТОБРАЖЕНИЕ КОНТРОЛЬНЫХ ТОЧЕК БЕЗЬЕ
     if (isEndPoint) {
-        //console.log('Двойной клик на крайней точке - отмена всех действий');
+        const checkbox = document.getElementById('show-controls');
+        if (checkbox) {
+            checkbox.checked = !checkbox.checked;
+            
+            // Вызываем существующий обработчик (он скрывает/показывает control-point/control-line)
+            const evt = new Event('change');
+            checkbox.dispatchEvent(evt);
+            
+            this.showNotification(
+                checkbox.checked 
+                    ? 'Контрольные точки Безье: показаны' 
+                    : 'Контрольные точки Безье: скрыты',
+                'info',
+                1500
+            );
+        }
         return;
     }
     
@@ -3613,7 +3629,30 @@ deletePoint(pointElement) {
                 const target = e.target;
                 const svgCanvas = document.getElementById('svg-canvas');
                 const cursorPt = this.getSVGCoordinates(e, svgCanvas);
-                
+                // ==========================================================
+                // «ПОТЯНУТЬ ЗА СЕГМЕНТ» В РЕЖИМЕ SELECT
+                // Сегмент идёт за мышкой, контрольные точки Безье пересчитываются
+                // ==========================================================
+                if (this.state.currentTool === TOOLS.SELECT && target.classList.contains('path')) {
+                    const closest = this.findClosestSegment(cursorPt.x, cursorPt.y);
+                    
+                    if (closest && closest.distance < 12) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        
+                        // Сохраняем состояние ДО изменения
+                        const previousState = {
+                            fontData: JSON.parse(JSON.stringify(this.fontData)),
+                            pathTopology: JSON.parse(JSON.stringify(this.pathTopology)),
+                            currentGlyphUnicode: this.currentGlyph ? this.currentGlyph.unicode : null
+                        };
+                        
+                        // Запускаем перетаскивание сегмента
+                        this.startSegmentDrag(closest, cursorPt.x, cursorPt.y, previousState);
+                        
+                        return;
+                    }
+                }
                 // Режим удаления
                 if (this.state.currentTool === TOOLS.DELETE && target === svgCanvas) {
                     e.preventDefault();
@@ -3780,6 +3819,27 @@ deletePoint(pointElement) {
 						return;
 					}
 				}
+				if (isDoubleClick && this.state.currentTool === TOOLS.ADD_POINT && 
+					(target.classList.contains('point') || target.classList.contains('control-point'))) {
+					
+					e.preventDefault();
+					e.stopPropagation();
+					
+					const checkbox = document.getElementById('show-controls');
+					if (checkbox) {
+						checkbox.checked = !checkbox.checked;
+						checkbox.dispatchEvent(new Event('change'));
+						
+						this.showNotification(
+							checkbox.checked 
+								? 'Контрольные точки Безье: показаны' 
+								: 'Контрольные точки Безье: скрыты',
+							'info',
+							1500
+						);
+					}
+					return;
+				}
 				// 1. Alt+клик для соединения точек (ПЕРВЫМ делом!)
 				if (target.classList.contains('point') && e.altKey) {
 					
@@ -3820,7 +3880,36 @@ deletePoint(pointElement) {
 					}
 				}
 				
-				// Клик по сегменту (вектору)
+				if (this.state.currentTool === TOOLS.ADD_POINT &&
+					this.state.selectedPoint &&
+					this.state.selectedPoint.element) {
+					
+					const ptType = this.state.selectedPoint.pointType ||
+								   this.state.selectedPoint.element.getAttribute('data-point-type');
+					
+					// Если выделена крайняя или одиночная точка — продолжаем путь,
+					// НЕ вставляем точку в середину вектора
+					if (ptType === 'end' || ptType === 'isolated') {
+						e.preventDefault();
+						e.stopPropagation();
+						
+						// Если кликнули по другой точке — просто меняем выделение
+						if (target.classList.contains('point')) {
+							this.clearAllSelections();
+							this.togglePointSelection(target);
+							return;
+						}
+						
+						// Во всех остальных случаях (по вектору или пустому месту)
+						// продолжаем контур от выделенной крайней точки
+const controlGroup = document.getElementById('control-group');
+this.continueContourFromSelectedPoint(cursorPt.x, cursorPt.y, controlGroup);
+						return;
+					}
+				}
+				
+				// Клик по сегменту (вектору) — сюда попадаем ТОЛЬКО если
+				// нет выделенной крайней точки (или инструмент не ADD_POINT)
 				if (this.state.currentTool === TOOLS.SELECT && target.classList.contains('path')) {
 					// Получаем координаты клика
 					const cursorPt = this.getSVGCoordinates(e, svgCanvas);
@@ -3870,19 +3959,178 @@ deletePoint(pointElement) {
 							this.togglePointSelection(target);
 						}
 						return;
+					
 					case TOOLS.ADD_POINT:
 						if (target.classList.contains('point')) {
+							// Клик по точке — переключаем выделение
 							this.togglePointSelection(target);
 						} else if (target.classList.contains('path')) {
+							// Клик по вектору:
+							// - если выделена крайняя точка — сюда уже не попадём (обработано выше)
+							// - если ничего не выделено или выделена средняя — вставляем точку в середину
 							this.addPointToPathAtClick(cursorPt.x, cursorPt.y);
 						} else {
-							this.addPointAtPosition(cursorPt.x, cursorPt.y);
+							// Клик по пустому месту
+							if (this.state.selectedPoint && this.state.selectedPoint.element) {
+								// Есть выделение → продолжаем от него (сюда попадём,
+								// только если выделена средняя точка — крайние обработаны выше)
+const controlGroup = document.getElementById('control-group');
+this.continueContourFromSelectedPoint(cursorPt.x, cursorPt.y, controlGroup);
+							} else {
+								// Ничего не выделено → создаём новую изолированную точку
+								this.addPointAtPosition(cursorPt.x, cursorPt.y);
+							}
 						}
 						return;
 				}
 
 			}
-
+            // Перетаскивание сегмента: кривая идёт за мышкой, ручки пересчитываются
+            startSegmentDrag(closest, startX, startY, previousState) {
+                const contour = this.pathTopology.contours[closest.contourIndex];
+                if (!contour) return;
+                
+                const segment = contour.segments[closest.segmentIndex];
+                if (!segment) return;
+                
+                const startPoint = contour.points[segment.startIndex];
+                const endPoint = contour.points[segment.endIndex];
+                
+                if (!startPoint || !endPoint) return;
+                
+                // Запоминаем t (где на сегменте схватили)
+                const t0 = closest.t;
+                
+                // Если это прямой сегмент — сначала преобразуем в Безье,
+                // чтобы можно было изгибать (иначе контрольных точек нет)
+                let wasLine = false;
+                if (segment.type === 'line') {
+                    wasLine = true;
+                    
+                    // Преобразуем в Безье: контрольные точки на 1/3 и 2/3 от начала
+                    const dx = endPoint.x - startPoint.x;
+                    const dy = endPoint.y - startPoint.y;
+                    
+                    segment.type = 'bezier';
+                    segment.control1 = {
+                        x: startPoint.x + dx / 3,
+                        y: startPoint.y + dy / 3
+                    };
+                    segment.control2 = {
+                        x: startPoint.x + dx * 2 / 3,
+                        y: startPoint.y + dy * 2 / 3
+                    };
+                    
+                    // Обновляем визуальные контрольные точки
+                    this.renderAllControlElements();
+                }
+                
+                // Запоминаем исходные контрольные точки
+                const initialC1 = { ...segment.control1 };
+                const initialC2 = { ...segment.control2 };
+                const initialPoint = this.getPointOnBezier(
+                    t0,
+                    startPoint.x, startPoint.y,
+                    segment.control1.x, segment.control1.y,
+                    segment.control2.x, segment.control2.y,
+                    endPoint.x, endPoint.y
+                );
+                
+                // Веса при P1 и P2 для данного t
+                const mt = 1 - t0;
+                const w1 = 3 * mt * mt * t0;   // при control1
+                const w2 = 3 * mt * t0 * t0;   // при control2
+                const wSum = w1 + w2;
+                
+                // Защита от деления на 0 при t=0 или t=1
+                if (wSum < 0.0001) return;
+                
+                // Сохраняем в историю
+                this.saveToHistoryWithPreviousState(
+                    'drag_segment',
+                    'Перетаскивание сегмента',
+                    previousState
+                );
+                
+                const mouseMoveHandler = (e) => {
+                    const svgCanvas = document.getElementById('svg-canvas');
+                    const cursorPt = this.getSVGCoordinates(e, svgCanvas);
+                    
+                    // Насколько курсор сдвинулся от исходной точки на кривой
+                    const deltaX = cursorPt.x - initialPoint.x;
+                    const deltaY = cursorPt.y - initialPoint.y;
+                    
+                    // Сдвиг каждой ручки = delta * (вес ручки / сумма весов)
+                    // Тогда B(t) сместится ровно на delta
+                    const wSumSq = w1 * w1 + w2 * w2;
+                    const d1x = deltaX * (w1 / wSumSq);
+                    const d1y = deltaY * (w1 / wSumSq);
+                    const d2x = deltaX * (w2 / wSumSq);
+                    const d2y = deltaY * (w2 / wSumSq);
+                    
+                    segment.control1.x = initialC1.x + d1x;
+                    segment.control1.y = initialC1.y + d1y;
+                    segment.control2.x = initialC2.x + d2x;
+                    segment.control2.y = initialC2.y + d2y;
+                    
+                    // Перерисовываем путь и контрольные точки
+                    this.updatePathFromTopology();
+                    
+                    // Обновляем позиции визуальных control-point
+                    if (document.getElementById('show-controls').checked) {
+                        this.updateSegmentControlPointsVisual(closest.contourIndex, closest.segmentIndex);
+                    }
+                };
+                
+                const mouseUpHandler = () => {
+                    // Финальная перерисовка
+                    this.updatePathFromTopology();
+                    this.renderAllControlElements();
+                    
+                    if (this.state.showDirection) {
+                        this.showContourDirections();
+                    }
+                    
+                    document.removeEventListener('mousemove', mouseMoveHandler);
+                    document.removeEventListener('mouseup', mouseUpHandler);
+                };
+                
+                document.addEventListener('mousemove', mouseMoveHandler);
+                document.addEventListener('mouseup', mouseUpHandler);
+            }
+            
+            // Обновление позиций визуальных control-point после drag сегмента
+            updateSegmentControlPointsVisual(contourIndex, segmentIndex) {
+                const contour = this.pathTopology.contours[contourIndex];
+                if (!contour) return;
+                
+                const segment = contour.segments[segmentIndex];
+                if (!segment || segment.type !== 'bezier') return;
+                
+                const controlGroup = document.getElementById('control-group');
+                if (!controlGroup) return;
+                
+                // Обновляем позиции control-point для этого сегмента
+                const cps = controlGroup.querySelectorAll('.control-point');
+                cps.forEach(cp => {
+                    const cpContour = parseInt(cp.getAttribute('data-contour-index'));
+                    const cpSegment = parseInt(cp.getAttribute('data-segment-index'));
+                    const isC1 = cp.getAttribute('data-is-control1') === 'true';
+                    
+                    if (cpContour === contourIndex && cpSegment === segmentIndex) {
+                        if (isC1 && segment.control1) {
+                            cp.setAttribute('cx', segment.control1.x);
+                            cp.setAttribute('cy', segment.control1.y);
+                        } else if (!isC1 && segment.control2) {
+                            cp.setAttribute('cx', segment.control2.x);
+                            cp.setAttribute('cy', segment.control2.y);
+                        }
+                    }
+                });
+                
+                // Обновляем линии
+                this.updateControlLinesForSegment(contour, segmentIndex);
+            }
 			createSegmentBetweenPoints(point1Element, point2Element) {
 				
 				const contourIndex1 = parseInt(point1Element.getAttribute('data-contour-index') || '-1');
