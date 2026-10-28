@@ -1266,6 +1266,14 @@ input[type="range"] {
         </div>
         
         <!-- ДЛЯ ТЕКСТА -->
+        <!-- Макс. ширина - только для текста -->
+        <div id="maxWidthContainer">
+            <label for="elementMaxWidth">Макс. ширина:Высота:</label>
+			<div style="display: flex;">
+            <input type="number" id="elementMaxWidth" min="0" value="0" step="1"><input type="number" id="elementSheetHeight" min="10" max="1000" step="1" value="297">
+        </div>
+		</div>		
+<div id="textSheetContainer" style="display: none;">
         <label for="elementFont">Шрифт:</label>
         <select id="elementFont">
             <option value="">-- Выберите шрифт --</option>
@@ -1276,21 +1284,20 @@ input[type="range"] {
     <option value="right">По правому краю</option>
     <option value="justify">По ширине</option>
 </select>
-        
-        <div style="display: flex;">
-        <label for="elementFontSize">Размер (мм):</label><small id="elementFontSizePt" style="color: #aaa; font-size: 11px;"></small></div>
-        <input type="number" id="elementFontSize" min="1" step="0.1">
-        
-        <!-- Макс. ширина - только для текста -->
-        <div id="maxWidthContainer">
-            <label for="elementMaxWidth">Макс. ширина:Высота:</label>
-			<div style="display: flex;">
-            <input type="number" id="elementMaxWidth" min="0" value="0" step="1"><input type="number" id="elementSheetHeight" min="10" max="1000" step="1" value="297">
-        </div>
-		<label for="elementLineSpacing">Высота строки (мм):</label>
-		<input type="number" id="elementLineSpacing" min="0.1" max="100" step="0.1" value="12">
-		</div>
-<div id="textSheetContainer" style="display: none;">
+<div style="display: flex;">
+<label for="elementFontSize">Размер (мм):</label><small id="elementFontSizePt" style="color: #aaa; font-size: 11px;"></small></div>
+<input type="number" id="elementFontSize" min="1" step="0.1">
+
+
+<label for="elementLineSpacing">Высота строки (мм):</label>
+<div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px;">
+    <input type="number" id="elementLineSpacing" min="0.1" max="100" step="0.1" value="12" style="flex: 1; margin: 0;">
+    <label style="display: flex; align-items: center; gap: 4px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
+        <input type="checkbox" id="elementLineSpacingAuto" checked style="width: auto; margin: 0;">
+        Авто
+    </label>
+</div>
+
     <label for="elementPage">Страница:</label>
     <input type="number" id="elementPage" min="1" step="1" value="1">
     <div style="font-size: 11px; color: #aaa; margin-top: -5px; margin-bottom: 8px;" id="elementPageInfo"></div>
@@ -16477,7 +16484,7 @@ class GOSTSVGFont {
 
         // Класс для текстового элемента
 class TextElement {
-constructor(id, text, font, fontSize, x, y, maxWidth = null, sheetHeight = 297, page = 0, lineSpacing = null, align = 'left') {
+constructor(id, text, font, fontSize, x, y, maxWidth = null, sheetHeight = 297, page = 0, lineSpacing = null, align = 'left', lineSpacingAuto = true) {
     this.id = id;
     this.originalText = text;
     this.text = text;
@@ -16491,9 +16498,10 @@ constructor(id, text, font, fontSize, x, y, maxWidth = null, sheetHeight = 297, 
     this.sheetHeight = sheetHeight;
     this.page = page;
 	this.align = align;
-    this.lineSpacing = (lineSpacing !== null && lineSpacing > 0)
-        ? lineSpacing
-        : fontSize * 1.2;
+    this.lineSpacingAuto = lineSpacingAuto;   // true = авто (1.2 × fontSize)
+    this.lineSpacing = lineSpacingAuto
+        ? fontSize * 1.2
+        : (lineSpacing !== null && lineSpacing > 0 ? lineSpacing : fontSize * 1.2);
     this.generatePathsForPage();
 }
 
@@ -16586,7 +16594,7 @@ async generatePathsForPage() {
     async generatePaths() {
         this.paths = [];
         const scale = this.fontSize / 1000;
-        const lineHeight = this.fontSize * 1.2;
+        const lineHeight = this.lineSpacing;
         
         // Если задана максимальная ширина - переносим текст
         let lines;
@@ -16826,10 +16834,13 @@ getDisplayPaths() {
         return gcodePaths;
     }
 
-    async updateFontSize(newSize) {
-        this.fontSize = newSize;
-        await this.generatePathsForPage();
+async updateFontSize(newSize) {
+    this.fontSize = newSize;
+    if (this.lineSpacingAuto) {
+        this.lineSpacing = newSize * 1.2;
     }
+    await this.generatePathsForPage();
+}
 }
 
 function switchMode(mode) {
@@ -17506,11 +17517,7 @@ function syncInputsFromHTML() {
     
     // QR в свойствах
     const qrHatchInput = document.getElementById('elementQRHatch');
-    // (читается в updateSelectedElement напрямую)
-    
-    // Режим заливки
-    // (читается в fillShapeWithSnake напрямую)
-    
+ 
     console.log('[SYNC] Готово:', {
         sheetWidth, sheetHeight, strokeColor, strokeWidth,
         backgroundOpacity, backgroundBrightness, backgroundContrast
@@ -17777,7 +17784,9 @@ const newElement = new TextElement(
     maxWidth,
     sheetHeight,
     0,
-    null
+    null,
+    'left',
+    true
 );
         
         await newElement.generatePathsForPage();
@@ -18841,6 +18850,27 @@ if (textInput) {
             updateElementProperties();
             immediateCalculateEstimatedTime();
         }, 80);
+    });
+}
+// Галочка "Авто" для высоты строки
+const lsAutoInput = document.getElementById('elementLineSpacingAuto');
+const lsInput = document.getElementById('elementLineSpacing');
+
+if (lsAutoInput) {
+    lsAutoInput.addEventListener('change', (e) => {
+        if (lsInput) {
+            lsInput.disabled = e.target.checked;
+            lsInput.style.opacity = e.target.checked ? '0.5' : '1';
+            
+            // Если включили авто — сразу пересчитать по текущему fontSize
+            if (e.target.checked && selectedElementIndex !== -1) {
+                const el = textElements[selectedElementIndex];
+                if (el) {
+                    const auto = el.fontSize * 1.2;
+                    lsInput.value = auto.toFixed(1);
+                }
+            }
+        }
     });
 }
 	}
@@ -20348,9 +20378,16 @@ function updateElementProperties() {
         if (maxWidthInput) {
             maxWidthInput.value = element.maxWidth ? element.maxWidth.toFixed(0) : '';
         }
-const lineSpacingInput = document.getElementById('elementLineSpacing');
-if (lineSpacingInput) {
-    lineSpacingInput.value = element.lineSpacing.toFixed(1);
+const lsInput = document.getElementById('elementLineSpacing');
+const lsAutoInput = document.getElementById('elementLineSpacingAuto');
+
+if (lsInput) {
+    lsInput.value = element.lineSpacing.toFixed(1);
+    lsInput.disabled = element.lineSpacingAuto;   // блокируем при авто
+    lsInput.style.opacity = element.lineSpacingAuto ? '0.5' : '1';
+}
+if (lsAutoInput) {
+    lsAutoInput.checked = element.lineSpacingAuto;
 }
 const textSheetContainer = document.getElementById('textSheetContainer');
 if (textSheetContainer) textSheetContainer.style.display = 'block';
@@ -20694,8 +20731,11 @@ else if (selectedElementIndex !== -1) {
     const newSheetHeight = parseFloat(document.getElementById('elementSheetHeight')?.value) || 297;
 const newPageInput = parseInt(document.getElementById('elementPage')?.value) || 1;
 const newPage = Math.max(0, newPageInput - 1);
-    const newLineSpacing = parseFloat(document.getElementById('elementLineSpacing')?.value) || element.lineSpacing;
+const newLineSpacingAuto = document.getElementById('elementLineSpacingAuto')?.checked ?? element.lineSpacingAuto;
+const newLineSpacing = parseFloat(document.getElementById('elementLineSpacing')?.value) || element.lineSpacing;
 const newAlign = document.getElementById('elementAlign')?.value || element.align || 'left';    
+
+
     // ─── Проверка изменений ───
     const selectedFont = newFontPath ? fonts.find(f => f.path === newFontPath) : null;
     const fontChanged = (selectedFont && selectedFont.instance !== element.font);
@@ -20705,7 +20745,7 @@ const newAlign = document.getElementById('elementAlign')?.value || element.align
     const sheetChanged = (newSheetHeight !== element.sheetHeight);
     const lineSpacingChanged = (newLineSpacing !== element.lineSpacing);
 	const alignChanged = (newAlign !== element.align);
-    
+	
     // ─── Применение ───
     if (fontChanged) element.font = selectedFont.instance;
     element.fontSize = newFontSize;
@@ -20717,7 +20757,13 @@ const newAlign = document.getElementById('elementAlign')?.value || element.align
     element.y = newY;
     element.rotation = newRotation;
 	element.align = newAlign;
-    
+element.lineSpacingAuto = newLineSpacingAuto;
+if (newLineSpacingAuto) {
+    element.lineSpacing = newFontSize * 1.2;
+} else {
+    element.lineSpacing = newLineSpacing;
+}
+
     // ─── Перегенерация (если что-то изменилось) ───
 if (fontChanged || sizeChanged || widthChanged || pageChanged || sheetChanged || lineSpacingChanged || alignChanged) {
     await element.generatePathsForPage();
@@ -20729,10 +20775,14 @@ if (fontChanged || sizeChanged || widthChanged || pageChanged || sheetChanged ||
         const pt = (element.fontSize / 0.3528).toFixed(1);
         ptLabel.textContent = `≈ ${pt} pt`;
     }
-    
+const lsInput = document.getElementById('elementLineSpacing');
+if (lsInput) {
+    lsInput.value = element.lineSpacing.toFixed(1);
+}
     drawScene();
     updateStatus('Свойства элемента обновлены', 'success');
 }
+
     } catch (error) {
         console.error('Ошибка обновления элемента:', error);
         updateStatus('Ошибка обновления элемента', 'error');
