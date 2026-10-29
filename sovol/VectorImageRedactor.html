@@ -1121,12 +1121,16 @@ input[type="range"] {
     
     <div class="control-group" id="bezierSettings" style="display: none;">
         <div class="content">
-<label class="toggle-label">
-    <input type="checkbox" id="bezierSmoothToggle" checked>
+<label class="toggle-label" title= "Кликни для изменения логики">
+    <input type="checkbox" id="bezierSmoothToggle"  checked>
     <span class="label-on">✓ Создавать гладкие точки Безье</span>
     <span class="label-off">✗ Не Создавать гладкие точки Безье</span>
 </label>		
-		
+<label class="toggle-label" style="margin-top: 8px;" title= "Кликни для изменения логики">
+    <input type="checkbox" id="bezierHideHandlesToggle">
+    <span class="label-on">Ручки скрыты (перетаскивание)</span>
+    <span class="label-off">Ручки видны (добавление точек)</span>
+</label>
         </div>
     </div>
     
@@ -3970,6 +3974,8 @@ setTool(tool) {
         this.state.lastBezierLength = null;
         this.showBezierHelpers();
         this.toggleBezierPoints(true);
+		const hideHandles = document.getElementById('bezierHideHandlesToggle')?.checked ?? false;
+		this.setHandlesVisible(!hideHandles);
     } else if (this.state.currentTool === 'bezier-points' && tool !== 'bezier-points') {
         this.deselectAllPoints();
         this.state.lastBezierDirection = null;
@@ -7585,50 +7591,49 @@ if (this.state.currentTool === 'fill-shape') {
 
     // Режим Безье точек
 if (this.state.currentTool === 'bezier-points') {
-    if (e.button === 2) {
-        return; 
-    }
+    if (e.button === 2) return;
     e.preventDefault();
     e.stopPropagation();
     
-    // Клик по точке Безье — начало перетаскивания (обрабатывается в createBezierPointElement)
-    if (target.classList.contains('bezier-point')) {
-	
+    // Клик по точке Безье — обрабатывается в createBezierPointElement
+    if (target.classList.contains('bezier-point')) return;
+    
+    // Клик по control-точке — return
+    if (target.classList.contains('bezier-control-point')) return;
+    
+    // ─── Ищем ближайший сегмент по расстоянию (независимо от target) ───
+    const closest = this.findClosestBezierSegment(coords.x, coords.y);
+    const searchRadius = 20 / this.getScreenScale();
+    const nearVector = closest && closest.distance < searchRadius;
+    
+    // 1. Есть выделенная точка — продолжаем вектор
+    if (this.state.bezierSelectedPoint !== null) {
+        this.createNewBezierVector(coords.x, coords.y);
         return;
     }
     
-    if (target.classList.contains('bezier-control-point')) {
-        return;
-    }
+    // 2. Нет выделенной — смотрим галочку
+    const hideHandles = document.getElementById('bezierHideHandlesToggle')?.checked ?? false;
     
-    // Клик по пустому месту
-    if (target === this.svg || target.id === 'worksheet-background' || 
-        target.id === 'photo-overlay' || target === this.vectorLayer ||
-        target === this.helperLayer) {
-        
-        if (this.state.bezierSelectedPoint !== null) {
-
-            this.createNewBezierVector(coords.x, coords.y);
+    if (hideHandles) {
+        if (nearVector) {
+            // Попали в вектор — перетаскивание
+            this.startBezierSegmentDrag(closest, coords.x, coords.y);
         } else {
-            // Нет выделенной точки — просто создаём новую точку
+            // Не попали — создать новую точку (начать новый вектор)
             this.createSingleBezierPoint(coords.x, coords.y);
         }
         return;
     }
     
-    // Клик по пути Безье — добавляем точку на путь
-	if (target.classList && target.classList.contains('bezier-vector')) {
-		// ✅ ЕСЛИ ЕСТЬ ВЫДЕЛЕННАЯ ТОЧКА → ПРОДОЛЖАЕМ ПУТЬ
-		if (this.state.bezierSelectedPoint !== null) {
-			this.createNewBezierVector(coords.x, coords.y);
-			return;
-		}
-		
-		// Иначе — вставляем точку в путь
-		this.addPointToBezierPath(target, coords.x, coords.y);
-		return;
-	}
+    // 3. Ручки видны — добавляем точку, если попали близко к вектору
+    if (nearVector && closest.vector.path) {
+        this.addPointToBezierPath(closest.vector.path, coords.x, coords.y);
+        return;
+    }
     
+    // Не попали в вектор — создать новую точку
+    this.createSingleBezierPoint(coords.x, coords.y);
     return;
 }
 
@@ -8092,6 +8097,97 @@ onMouseLeave() {
         this.hideEraserIndicator();
     }
     document.body.style.cursor = 'default';
+}
+
+startBezierSegmentDrag(closest, startX, startY) {
+    const vector = closest.vector;
+    const from = this.state.bezierPoints[vector.from];
+    const to = this.state.bezierPoints[vector.to];
+    if (!from || !to) return;
+    
+    const t0 = Math.max(0.01, Math.min(0.99, closest.t));
+    
+    // Начальные control
+    const initialC1 = { x: vector.control1.x, y: vector.control1.y };
+    const initialC2 = { x: vector.control2.x, y: vector.control2.y };
+    
+    // Точка на кривой в t0
+    const initialPoint = this.evaluateCubicBezier(
+        from.x, from.y,
+        initialC1.x, initialC1.y,
+        initialC2.x, initialC2.y,
+        to.x, to.y,
+        t0
+    );
+    
+    // Веса при P1 и P2 для данного t0
+    const mt = 1 - t0;
+    const w1 = 3 * mt * mt * t0;
+    const w2 = 3 * mt * t0 * t0;
+    const wSumSq = w1 * w1 + w2 * w2;
+    if (wSumSq < 0.0001) return;
+    
+    const mouseMoveHandler = (e) => {
+        const coords = this.getSVGCoordinates(e);
+        const deltaX = coords.x - initialPoint.x;
+        const deltaY = coords.y - initialPoint.y;
+        
+        vector.control1.x = initialC1.x + deltaX * (w1 / wSumSq);
+        vector.control1.y = initialC1.y + deltaY * (w1 / wSumSq);
+        vector.control2.x = initialC2.x + deltaX * (w2 / wSumSq);
+        vector.control2.y = initialC2.y + deltaY * (w2 / wSumSq);
+        
+        this.updateBezierVectorPath(vector);
+        
+        // Обновить невидимые control (на случай, если потом покажут)
+        this.updateVectorGuides(vector);
+    };
+    
+    const mouseUpHandler = () => {
+        document.removeEventListener('mousemove', mouseMoveHandler);
+        document.removeEventListener('mouseup', mouseUpHandler);
+        this.saveSnapshot();
+    };
+    
+    document.addEventListener('mousemove', mouseMoveHandler);
+    document.addEventListener('mouseup', mouseUpHandler);
+}
+
+
+findClosestBezierSegment(x, y) {
+    let best = null;
+    let bestDist = Infinity;
+    
+    for (const vector of this.state.bezierVectors) {
+        const from = this.state.bezierPoints[vector.from];
+        const to = this.state.bezierPoints[vector.to];
+        if (!from || !to) continue;
+        
+        // Грубый поиск: сэмплируем кривую
+        const SAMPLES = 40;
+        let prevP = { x: from.x, y: from.y };
+        
+        for (let i = 1; i <= SAMPLES; i++) {
+            const t = i / SAMPLES;
+            const p = this.evaluateCubicBezier(
+                from.x, from.y,
+                vector.control1.x, vector.control1.y,
+                vector.control2.x, vector.control2.y,
+                to.x, to.y,
+                t
+            );
+            
+            const d = this.distanceToSegment(x, y, prevP.x, prevP.y, p.x, p.y);
+            if (d < bestDist) {
+                bestDist = d;
+                best = { vector, distance: d, t: t - 0.5 / SAMPLES };
+            }
+            
+            prevP = p;
+        }
+    }
+    
+    return best;
 }
 
 // Находит параметр t (0..1) на кубической безье, при котором точка кривой
@@ -8936,6 +9032,13 @@ if (!vector || !vector.path) return;
     this.vectorLayer.appendChild(vector.guideElements.control1);
     this.vectorLayer.appendChild(vector.guideElements.line2);
     this.vectorLayer.appendChild(vector.guideElements.control2);
+	const hideHandles = document.getElementById('bezierHideHandlesToggle')?.checked ?? false;
+	if (hideHandles) {
+		if (vector.guideElements.line1) vector.guideElements.line1.style.display = 'none';
+		if (vector.guideElements.control1) vector.guideElements.control1.style.display = 'none';
+		if (vector.guideElements.line2) vector.guideElements.line2.style.display = 'none';
+		if (vector.guideElements.control2) vector.guideElements.control2.style.display = 'none';
+	}
 }
   
 calculateBezierControlPoints(pointA, pointB, previousVector = null) {
@@ -13082,6 +13185,17 @@ snapToNonWhiteLine(x, y) {
 					coordDiv.textContent = `X: ${coords.x.toFixed(1)}, Y: ${coords.y.toFixed(1)}`;
 				}
 			}
+			
+// Показать/скрыть ручки (control-точки и направляющие) для всех векторов
+setHandlesVisible(visible) {
+    for (const v of this.state.bezierVectors) {
+        const ge = v.guideElements || {};
+        if (ge.line1) ge.line1.style.display = visible ? '' : 'none';
+        if (ge.control1) ge.control1.style.display = visible ? '' : 'none';
+        if (ge.line2) ge.line2.style.display = visible ? '' : 'none';
+        if (ge.control2) ge.control2.style.display = visible ? '' : 'none';
+    }
+}
 // СКРЫТЬ ВСЕ ВСПОМОГАТЕЛЬНЫЕ ЭЛЕМЕНТЫ БЕЗЬЕ
 hideBezierHelpers() {
     // Скрываем все вспомогательные линии
@@ -18871,6 +18985,13 @@ if (lsAutoInput) {
                 }
             }
         }
+    });
+}
+const hideHandlesToggle = document.getElementById('bezierHideHandlesToggle');
+if (hideHandlesToggle) {
+    hideHandlesToggle.addEventListener('change', (e) => {
+        const hidden = e.target.checked;
+        window.vectorEditor.setHandlesVisible(!hidden);
     });
 }
 	}
