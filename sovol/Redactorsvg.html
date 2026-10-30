@@ -13,18 +13,22 @@
             box-sizing: border-box;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-
-        body {
-            background-color: #1e1e2e;
-            color: #cdd6f4;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
+		html, body {
+			height: 100%;
+			overflow: hidden;
+		}
+		body {
+			background-color: #1e1e2e;
+			color: #cdd6f4;
+			height: 100%;
+			display: flex;
+			flex-direction: column;
+			overflow: hidden;
+		}
 
         header {
             background: linear-gradient(135deg, #585b70 0%, #313244 100%);
-            padding: 20px;
+            padding: 5px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -85,20 +89,26 @@
             color: #1e1e2e;
         }
 
-        .container {
-            display: flex;
-            flex: 1;
-            overflow: hidden;
-        }
+		.container {
+			display: flex;
+			flex: 1;
+			overflow: hidden;
+			min-height: 0;
+		}
 
-        .sidebar {
-            width: 320px;
-            background-color: #181825;
-            border-right: 1px solid #45475a;
-            display: flex;
-            flex-direction: column;
-            overflow-y: auto;
-        }
+		.sidebar {
+			width: 320px;
+			min-width: 320px;
+			max-width: 320px;
+			background-color: #181825;
+			border-right: 1px solid #45475a;
+			display: flex;
+			flex-direction: column;
+			overflow-y: auto;
+			overflow-x: hidden;
+			min-height: 0;
+			height: 100%;
+		}
 
         .panel {
             padding: 20px;
@@ -122,54 +132,54 @@
             max-height: 300px;
             overflow-y: auto;
         }
-/* Стиль для пустых глифов (без векторов) */
-.glyph-item.empty-glyph {
-    opacity: 0.6;
-    background-color: #2a2a3a; /* Более темный фон */
-    border-left: 4px solid #585b70; /* Серый бордер вместо синего */
-}
+		/* Стиль для пустых глифов (без векторов) */
+		.glyph-item.empty-glyph {
+			opacity: 0.6;
+			background-color: #2a2a3a; /* Более темный фон */
+			border-left: 4px solid #585b70; /* Серый бордер вместо синего */
+		}
 
-.glyph-item.empty-glyph:hover {
-    background-color: #353547;
-}
+		.glyph-item.empty-glyph:hover {
+			background-color: #353547;
+		}
 
-.glyph-item.empty-glyph.active {
-    background-color: #3a3a4d;
-    border-left: 4px solid #9C9C2C;
-}
+		.glyph-item.empty-glyph.active {
+			background-color: #3a3a4d;
+			border-left: 4px solid #9C9C2C;
+		}
 
-/* Индикатор статуса глифа */
-.glyph-status {
-    font-size: 10px;
-    color: #a6adc8;
-    font-style: italic;
-    margin-top: 2px;
-}
+		/* Индикатор статуса глифа */
+		.glyph-status {
+			font-size: 10px;
+			color: #a6adc8;
+			font-style: italic;
+			margin-top: 2px;
+		}
 
-/* Делаем символ пустого глифа бледнее */
-.glyph-item.empty-glyph .glyph-char {
-    opacity: 0.7;
-}
+		/* Делаем символ пустого глифа бледнее */
+		.glyph-item.empty-glyph .glyph-char {
+			opacity: 0.7;
+		}
 
-.glyph-item.empty-glyph .glyph-name {
-    color: #8a8fa3;
-}
+		.glyph-item.empty-glyph .glyph-name {
+			color: #8a8fa3;
+		}
 
-.glyph-item:not(.empty-glyph) .glyph-char {
-    color: #89b4fa; /* Синий для глифов с векторами */
-}
+		.glyph-item:not(.empty-glyph) .glyph-char {
+			color: #89b4fa; /* Синий для глифов с векторами */
+		}
 
-.glyph-item.empty-glyph .glyph-char {
-    color: #a6adc8; /* Серый для пустых глифов */
-}
+		.glyph-item.empty-glyph .glyph-char {
+			color: #a6adc8; /* Серый для пустых глифов */
+		}
 
-.glyph-item.active:not(.empty-glyph) .glyph-char {
-    color: #cba6f7; /* Фиолетовый для активного глифа с векторами */
-}
+		.glyph-item.active:not(.empty-glyph) .glyph-char {
+			color: #cba6f7; /* Фиолетовый для активного глифа с векторами */
+		}
 
-.glyph-item.active.empty-glyph .glyph-char {
-    color: #f9e2af; /* Желтый для активного пустого глифа */
-}
+		.glyph-item.active.empty-glyph .glyph-char {
+			color: #f9e2af; /* Желтый для активного пустого глифа */
+		}
         .glyph-item {
             padding: 12px;
             background-color: #313244;
@@ -264,15 +274,16 @@
             height: 18px;
         }
 
-        .main-area {
-			height: 2000px;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            padding: 20px;
-            gap: 20px;
-            overflow: hidden;
-        }
+		.main-area {
+			flex: 1;
+			display: flex;
+			flex-direction: column;
+			gap: 20px;
+			overflow: hidden;
+			min-width: 0;
+			min-height: 0;
+			height: auto;
+		}
 
         .editor-container {
             flex: 1;
@@ -282,10 +293,11 @@
             display: flex;
             flex-direction: column;
             border: 1px solid #45475a;
+			min-height: 0;
         }
 
         .editor-header {
-            padding: 15px 20px;
+            padding: 4px 20px;
             background-color: #313244;
             display: flex;
             justify-content: space-between;
@@ -308,23 +320,19 @@
             font-size: 12px;
         }
 
-        .canvas-container {
-            flex: 1;
-            position: relative;
-            overflow: auto;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-            height: 90vh;
-        }
-
-        #svg-canvas {
-            background-color: #1e1e2e;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-            min-height: 1600px;
-            min-width: 1000px;
-        }
+		.canvas-container {
+			flex: 1;
+			position: relative;
+			overflow: auto;
+			padding: 20px;
+			min-height: 0;
+		}
+		#svg-canvas {
+			display: block;
+			margin: auto;
+			background-color: #1e1e2e;
+			box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+		}
 
         .underlay-svg {
             fill: rgba(136, 136, 136, 0.15);
@@ -544,11 +552,6 @@
             stroke-width: 1;
         }
 
-        .guideline.horizontal {
-            stroke: #a6e3a1;
-            stroke-dasharray: 10,5;
-        }
-
         .guideline.vertical {
             stroke: #f9e2af;
             stroke-dasharray: 10,5;
@@ -710,39 +713,39 @@
 			r: 4;
 		}
 
-@keyframes slideIn {
-    from { transform: translateX(100%); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
-}
+		@keyframes slideIn {
+			from { transform: translateX(100%); opacity: 0; }
+			to { transform: translateX(0); opacity: 1; }
+		}
 
-@keyframes slideOut {
-    from { transform: translateX(0); opacity: 1; }
-    to { transform: translateX(100%); opacity: 0; }
-}
+		@keyframes slideOut {
+			from { transform: translateX(0); opacity: 1; }
+			to { transform: translateX(100%); opacity: 0; }
+		}
 
-#debug-text {
-    font-family: monospace;
-    letter-spacing: 2px;
-}
+		#debug-text {
+			font-family: monospace;
+			letter-spacing: 2px;
+		}
 
-#svg-font-preview, #underlay-preview {
-    overflow: hidden;
-    position: relative;
-}
+		#svg-font-preview, #underlay-preview {
+			overflow: hidden;
+			position: relative;
+		}
 
-#svg-font-preview::before, #underlay-preview::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: rgba(243, 139, 168, 0.3);
-    transform: translateY(-50%);
-}
+		#svg-font-preview::before, #underlay-preview::before {
+			content: '';
+			position: absolute;
+			top: 50%;
+			left: 0;
+			right: 0;
+			height: 1px;
+			background: rgba(243, 139, 168, 0.3);
+			transform: translateY(-50%);
+		}
 
-#underlay-preview::before {
-    background: rgba(166, 227, 161, 0.3);
+		#underlay-preview::before {
+			background: rgba(166, 227, 161, 0.3);
 }
 
 		
@@ -852,6 +855,10 @@
                     <input type="checkbox" id="show-underlay">
                     <label for="show-underlay">Показать подложку</label>
                 </div>
+				<div class="checkbox-container">
+					<input type="checkbox" id="show-photo-underlay" checked>
+					<label for="show-photo-underlay">Показать фото-подложку</label>
+				</div>
                 <div class="checkbox-container">
                     <input type="checkbox" id="show-controls">
                     <label for="show-controls">Показать контрольные точки</label>
@@ -864,19 +871,38 @@
                     <button id="clear-guidelines" class="secondary"><i class="fas fa-trash"></i> Все</button>
                 </div>
                 
-                <div class="guideline-info">
-					<div>Базовые направляющие:</div>
-					<div>• Верх: 
-						<input type="number" id="top-guide" value="200" style="width: 60px; padding: 3px; font-size: 12px;">
-						
-					</div>
-					<div>• Низ :
-						<input type="number" id="bottom-guide" value="1200" style="width: 60px; padding: 3px; font-size: 12px;">
-						
-					</div>
-					<div>• Лево: <input type="number" id="left-guide" value="0" style="width: 60px; padding: 3px; font-size: 12px;"></div>
-					<div>• Право: <input type="number" id="right-guide" value="500" style="width: 60px; padding: 3px; font-size: 12px;"></div>
-				</div>
+<div class="guideline-info">
+    <div style="margin-bottom:8px;color:#a6adc8;">Вертикальные метрики (от baseline):</div>
+
+    <div>• Ascent:
+        <input type="number" id="ascent-input" value="800" style="width:70px;padding:3px;font-size:12px;">
+    </div>
+    <div>• Descent:
+        <input type="number" id="descent-input" value="-200" style="width:70px;padding:3px;font-size:12px;">
+    </div>
+    <div>• Cap Height:
+        <input type="number" id="cap-height-input" value="700" style="width:70px;padding:3px;font-size:12px;">
+    </div>
+    <div>• x Height:
+        <input type="number" id="x-height-input" value="500" style="width:70px;padding:3px;font-size:12px;">
+    </div>
+
+    <div style="margin-top:10px;color:#a6adc8;">Горизонтальные:</div>
+    <div>• Left:
+        <input type="number" id="left-guide" value="0" style="width:70px;padding:3px;font-size:12px;">
+    </div>
+    <div>• Right (advance):
+        <input type="number" id="right-guide" value="500" style="width:70px;padding:3px;font-size:12px;">
+    </div>
+
+    <div style="margin-top:10px;font-size:11px;color:#6c7086;">
+        baseline = unitsPerEm = <span id="baseline-readout">1000</span><br>
+        top = <span id="top-readout">200</span>,
+        bottom = <span id="bottom-readout">1200</span><br>
+        cap line = <span id="cap-line-readout">300</span>,
+        x line = <span id="x-line-readout">500</span>
+    </div>
+</div>
                 
                 <div class="guideline-list" id="custom-guidelines">
                     <!-- Пользовательские направляющие -->
@@ -1088,7 +1114,20 @@
                 this.pathTopology = {
                     contours: [] // Массив контуров
                 };
-                
+				this.ticks = [];
+				this.cells = [];
+				this.contourUids = {}; 
+				this.uidCounter = 0;
+				this.selectedContourUids = new Set();
+				this.markerOverlay = null;
+				this.imageUnderlay = null;
+				this.overlayDragState = null;
+				this.mode = 'glyphs';        // 'glyphs' | 'photo'
+				this.sheet = null;           // текущий лист
+				this.photoOverlay = null;    // <g> в photo-svg
+				this.rowMode = null;         // 'add-row' | null
+				this.pendingRowBaseline = null;
+				this.selectedRowId = null;
                 // Направляющие
                 this.guidelines = {
                     top: 200,       // unitsPerEm - ascent
@@ -1109,12 +1148,34 @@
             init() {
                 this.loadExampleFont();
                 this.initSVGCanvas();
+document.getElementById('no-glyph').style.display = 'none';
+const cv = document.getElementById('svg-canvas');
+cv.style.display = 'block';
+this._ensureBaseViewBox();
                 this.initEventListeners();
                 this.populateSystemFonts();
                 this.updateFontInfo();
                 this.updateGuidelineControls();
+				this._initModeButtons();
+				this._setMode('glyphs');
             }
-            
+_initModeButtons() {
+    if (document.getElementById('mode-switch')) return;
+    const header = document.querySelector('header .controls');
+    if (!header) return;
+
+    const wrap = document.createElement('div');
+    wrap.id = 'mode-switch';
+    wrap.style.cssText = 'display:flex;gap:6px;margin-right:10px;';
+    wrap.innerHTML = `
+        <button id="mode-glyphs" class="active" style="padding:8px 14px;">Глифы</button>
+        <button id="mode-photo" class="secondary" style="padding:8px 14px;">Фото</button>`;
+    header.insertBefore(wrap, header.firstChild);
+
+    document.getElementById('mode-glyphs').onclick = () => this._setMode('glyphs');
+    document.getElementById('mode-photo').onclick = () => this._setMode('photo');
+}
+
             // Загрузка примера шрифта
             loadExampleFont() {
                 this.fontData = {
@@ -1150,10 +1211,7 @@
                 this.guidelines.custom = [];
                 
                 // Обновляем UI
-                document.getElementById('top-guide').textContent = this.guidelines.top;
-                document.getElementById('bottom-guide').textContent = this.guidelines.bottom;
-                document.getElementById('left-guide').value = this.guidelines.left;
-                document.getElementById('right-guide').value = this.guidelines.right;
+				this.updateGuidelineControls();
                 
                 this.updateFontInfo();
                 this.updateGlyphList();
@@ -1229,13 +1287,13 @@
                 svgCanvas.innerHTML = '';
                 
                 // Группы для разных элементов
-                const groups = ['guideline-group', 'path-group', 'control-group'];
+                const groups = ['guideline-group', 'path-group', 'control-group', 'marker-overlay'];
                 groups.forEach(groupId => {
                     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
                     group.id = groupId;
                     svgCanvas.appendChild(group);
                 });
-                
+                this.markerOverlay = document.getElementById('marker-overlay');
                 // Обработчики событий
                 svgCanvas.addEventListener('mousedown', (e) => this.handleCanvasMouseDown(e));
                 svgCanvas.addEventListener('mousemove', (e) => this.handleCanvasMouseMove(e));
@@ -1315,32 +1373,58 @@
                 document.getElementById('add-v-guideline').addEventListener('click', () => this.addVerticalGuideline());
                 document.getElementById('clear-guidelines').addEventListener('click', () => this.clearCustomGuidelines());
                 
-				// Обработчики для верхней направляющей
-				document.getElementById('top-guide').addEventListener('change', (e) => {
-					const topValue = parseFloat(e.target.value) || 200;
-
-					this.guidelines.top = topValue;
-					this.renderGuidelines();
-				});
-
-				// Обработчики для нижней направляющей
-				document.getElementById('bottom-guide').addEventListener('change', (e) => {
-					const bottomValue = parseFloat(e.target.value) || 1200;
-					this.guidelines.bottom = bottomValue;
-					this.renderGuidelines();
-				});
+document.getElementById('ascent-input').addEventListener('change', (e) => {
+    const v = parseFloat(e.target.value);
+    if (!isFinite(v)) return;
+    this.fontData.ascent = v;
+    this.updateGuidelineControls();
+    this.renderGuidelines();
+	if (this.sheet && this.mode === 'photo') this._renderPhotoSheet();
+});
 
 				
-                // Базовые направляющие
-                document.getElementById('left-guide').addEventListener('change', (e) => {
-                    this.guidelines.left = parseFloat(e.target.value) || 0;
-                    this.renderGuidelines();
-                });
-                
-                document.getElementById('right-guide').addEventListener('change', (e) => {
-                    this.guidelines.right = parseFloat(e.target.value) || 500;
-                    this.renderGuidelines();
-                });
+// Descent (обычно отрицательный, но вводить можно как угодно — нормализуем)
+document.getElementById('descent-input').addEventListener('change', (e) => {
+    let v = parseFloat(e.target.value);
+    if (!isFinite(v)) return;
+    // descent всегда отрицательный по конвенции
+    if (v > 0) v = -v;
+    this.fontData.descent = v;
+    this.updateGuidelineControls();
+    this.renderGuidelines();
+	if (this.sheet && this.mode === 'photo') this._renderPhotoSheet();
+});
+
+// Cap Height
+document.getElementById('cap-height-input').addEventListener('change', (e) => {
+    const v = parseFloat(e.target.value);
+    if (!isFinite(v) || v <= 0) return;
+    this.fontData.capHeight = v;
+    this.updateGuidelineControls();
+    this.renderGuidelines();
+    // подложка в фото-режиме зависит от capHeight — перерисуем если она есть
+    if (this.currentGlyph) this._renderPhotoUnderlayForGlyph();
+	if (this.sheet && this.mode === 'photo') this._renderPhotoSheet();
+});
+
+// x Height
+document.getElementById('x-height-input').addEventListener('change', (e) => {
+    const v = parseFloat(e.target.value);
+    if (!isFinite(v) || v <= 0) return;
+    this.fontData.xHeight = v;
+    this.updateGuidelineControls();
+    this.renderGuidelines();
+});
+
+// left/right — как было
+document.getElementById('left-guide').addEventListener('change', (e) => {
+    this.guidelines.left = parseFloat(e.target.value) || 0;
+    this.renderGuidelines();
+});
+document.getElementById('right-guide').addEventListener('change', (e) => {
+    this.guidelines.right = parseFloat(e.target.value) || 500;
+    this.renderGuidelines();
+});
                 
                 // Модальное окно
                 document.querySelectorAll('.close-modal').forEach(btn => {
@@ -1447,7 +1531,143 @@ document.getElementById('underlay-font-input').addEventListener('change', async 
 						e.preventDefault();
 					}
 				});
+// === Кнопки разметки ===
+this._injectMarkerToolbar();
+
+// Горячие клавиши разметки
+document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === 'Escape') {
+        this.selectedContourUids.clear();
+        this._renderMarkerOverlay();
+    }
+    if (e.key === 'Delete') {
+        // Удалить выделенные засечки/ячейки
+        if (this.overlayDragState === null) this._deleteSelectedMarkers();
+    }
+});
+
+document.getElementById('show-photo-underlay').addEventListener('change', () => {
+    this._renderPhotoUnderlayForGlyph();
+});
            }
+_setMode(mode) {
+    this.mode = mode;
+    const mg = document.getElementById('mode-glyphs');
+    const mp = document.getElementById('mode-photo');
+    if (mg) mg.classList.toggle('active', mode === 'glyphs');
+    if (mp) mp.classList.toggle('active', mode === 'photo');
+
+    const tb = document.getElementById('marker-toolbar');
+    const photoSvg = document.getElementById('photo-canvas');
+    const glyphSvg = document.getElementById('svg-canvas');
+    const noGlyph = document.getElementById('no-glyph');
+
+    if (mode === 'photo') {
+        if (tb) tb.style.display = 'flex';
+        if (glyphSvg) glyphSvg.style.display = 'none';
+        if (noGlyph) noGlyph.style.display = 'none';
+        this._ensurePhotoCanvas();
+        if (photoSvg) photoSvg.style.display = 'block';
+        this._renderPhotoSheet();
+    } else {
+        if (tb) tb.style.display = 'none';
+        if (photoSvg) photoSvg.style.display = 'none';
+        if (this.currentGlyph) {
+            if (glyphSvg) glyphSvg.style.display = 'block';
+            if (noGlyph) noGlyph.style.display = 'none';
+        } else {
+            if (glyphSvg) glyphSvg.style.display = 'none';
+            if (noGlyph) noGlyph.style.display = 'block';
+        }
+    }
+}
+
+_injectMarkerToolbar() {
+    if (document.getElementById('marker-toolbar')) return;
+    const bar = document.createElement('div');
+    bar.id = 'marker-toolbar';
+    bar.style.cssText = 'position:fixed;right:20px;bottom:20px;display:none;flex-direction:column;gap:6px;z-index:1000;background:rgba(24,24,37,.95);border:1px solid #45475a;border-radius:10px;padding:10px;';
+    bar.innerHTML = `
+        <button id="mk-load-image" style="padding:8px 12px;">Загрузить фото</button>
+        <div style="display:flex;gap:6px;align-items:center;">
+            <label style="font-size:11px;color:#a6adc8;white-space:nowrap;">Высота заглавной (px):</label>
+            <input id="mk-sheet-cap" type="number" min="1" step="1" value="100"
+                   style="width:80px;padding:4px 6px;font-size:12px;">
+        </div>
+		<div style="display:flex;gap:6px;align-items:center;">
+			<label style="font-size:11px;color:#a6adc8;white-space:nowrap;">Zoom (%):</label>
+			<input id="mk-photo-zoom" type="number" min="10" max="400" step="10" value="100"
+				   style="width:70px;padding:4px 6px;font-size:12px;">
+			<button id="mk-photo-reset" class="secondary" style="padding:4px 8px;font-size:11px;">Сброс</button>
+		</div>
+        <button id="mk-add-row" class="secondary" style="padding:8px 12px;">+Строка</button>
+        <button id="mk-apply" style="padding:8px 12px;">Применить лист → глифы</button>
+        <button id="mk-conflicts" class="secondary" style="padding:8px 12px;">Конфликты</button>
+        <button id="mk-clear" class="secondary" style="padding:8px 12px;">Очистить лист</button>
+        <div style="font-size:11px;color:#a6adc8;max-width:240px;line-height:1.4;">
+            +Строка → клик по фото = baseline.<br>
+            Shift+клик = засечка на строке.<br>
+            Ctrl+клик по засечке = удаление.<br>
+            Клик по строке/линии/ячейке = паспорт.
+        </div>`;
+    document.body.appendChild(bar);
+
+    document.getElementById('mk-load-image').onclick = () => this._loadPhotoSheet();
+    document.getElementById('mk-add-row').onclick = () => {
+        this.rowMode = 'add-row';
+        this.showNotification('Клик по фото — baseline строки', 'info', 2000);
+    };
+    document.getElementById('mk-apply').onclick = () => this._applySheet();
+    document.getElementById('mk-conflicts').onclick = () => this._showConflicts();
+    document.getElementById('mk-clear').onclick = async () => {
+        if (await this.showConfirmDialog('Очистить лист (строки, засечки, ячейки, контуры)?', 'Очистка листа')) {
+            if (this.sheet) {
+                this.sheet.rows = [];
+                this.sheet.ticks = [];
+                this.sheet.cells = [];
+                this.sheet.contours = [];
+                this.sheet.capPixels = this.sheet.defaultCapPixels;
+                const capInput = document.getElementById('mk-sheet-cap');
+                if (capInput) capInput.value = Math.round(this.sheet.capPixels);
+            }
+            this._renderPhotoSheet();
+        }
+    };
+
+    // Глобальная высота листа
+    const capInput = document.getElementById('mk-sheet-cap');
+    capInput.addEventListener('change', () => {
+        const v = parseFloat(capInput.value);
+        if (!this.sheet || !isFinite(v) || v <= 0) return;
+
+        this.sheet.capPixels = v;
+
+        // Пересчитываем ВСЕ строки
+        this.sheet.rows.forEach(row => {
+            row.capPixels = v;
+            row.capTopY = row.baselineY - v;
+            row.scale = this.fontData.capHeight / v;
+        });
+
+        this._renderPhotoSheet();
+        this.showNotification(`Высота заглавной: ${Math.round(v)} px (применено ко всем строкам)`, 'info', 1000);
+    });
+	const zoomInput = document.getElementById('mk-photo-zoom');
+zoomInput.addEventListener('change', () => {
+    if (!this.sheet) return;
+    const z = parseFloat(zoomInput.value);
+    if (!isFinite(z) || z <= 0) return;
+    this._photoZoom = z / 100;
+    this._fitPhotoViewBox();
+});
+document.getElementById('mk-photo-reset').onclick = () => {
+    this._photoZoom = 1;
+    zoomInput.value = 100;
+    this._fitPhotoViewBox();
+};
+}
 
 toggleBezierMode() {
     this.state.useBezierMode = !this.state.useBezierMode;
@@ -1595,7 +1815,28 @@ undo() {
                 document.getElementById('glyph-count').textContent = this.fontData.glyphs.length;
                 document.getElementById('units-per-em').textContent = this.fontData.unitsPerEm;
             }
-            
+			
+_scrollToActiveGlyph() {
+    const list = document.getElementById('glyph-list');
+    if (!list) return;
+    const active = list.querySelector('.glyph-item.active');
+    if (!active) return;
+
+    const listRect = list.getBoundingClientRect();
+    const activeRect = active.getBoundingClientRect();
+
+    const activeTop = activeRect.top - listRect.top + list.scrollTop;
+    const activeBottom = activeTop + active.offsetHeight;
+
+    const viewTop = list.scrollTop;
+    const viewBottom = viewTop + list.clientHeight;
+
+    if (activeTop < viewTop) {
+        list.scrollTop = activeTop - 8;
+    } else if (activeBottom > viewBottom) {
+        list.scrollTop = activeBottom - list.clientHeight + 8;
+    }
+}
 updateGlyphList() {
     const glyphList = document.getElementById('glyph-list');
     glyphList.innerHTML = '';
@@ -1637,6 +1878,7 @@ updateGlyphList() {
         
         glyphItem.addEventListener('click', (e) => {
             if (!e.target.closest('button')) {
+				this._setMode('glyphs');
                 this.selectGlyph(glyph);
             }
         });
@@ -1683,12 +1925,50 @@ findInsertIndex(unicodeChar) {
                 document.getElementById('unicode').value = unicode;
             }
             
-			updateGuidelineControls() {
-				document.getElementById('top-guide').value = Math.round(this.guidelines.top);
-				document.getElementById('bottom-guide').value = Math.round(this.guidelines.bottom);
-				document.getElementById('left-guide').value = Math.round(this.guidelines.left);
-				document.getElementById('right-guide').value = Math.round(this.guidelines.right);
-			}
+updateGuidelineControls() {
+    const upm = this.fontData.unitsPerEm;
+    const a   = this.fontData.ascent;
+    const d   = this.fontData.descent;
+    const ch  = this.fontData.capHeight;
+    const xh  = this.fontData.xHeight;
+
+    // первичные
+    const aEl = document.getElementById('ascent-input');
+    const dEl = document.getElementById('descent-input');
+    const chEl = document.getElementById('cap-height-input');
+    const xhEl = document.getElementById('x-height-input');
+    if (aEl) aEl.value = Math.round(a);
+    if (dEl) dEl.value = Math.round(d);
+    if (chEl) chEl.value = Math.round(ch);
+    if (xhEl) xhEl.value = Math.round(xh);
+
+    // горизонтальные
+    const lEl = document.getElementById('left-guide');
+    const rEl = document.getElementById('right-guide');
+    if (lEl) lEl.value = Math.round(this.guidelines.left);
+    if (rEl) rEl.value = Math.round(this.guidelines.right);
+
+    // производные readout
+    const baseline = upm;
+    const top    = upm - a;
+    const bottom = upm - d;
+    const capLine = baseline - ch;
+    const xLine   = baseline - xh;
+
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = Math.round(v); };
+    set('baseline-readout', baseline);
+    set('top-readout', top);
+    set('bottom-readout', bottom);
+    set('cap-line-readout', capLine);
+    set('x-line-readout', xLine);
+
+    // синхронизация с этой же моделью в this.guidelines
+    this.guidelines.top = top;
+    this.guidelines.bottom = bottom;
+    this.guidelines.baseline = baseline;
+    this.guidelines.capLine = capLine;
+    this.guidelines.xLine = xLine;
+}
             
             // ========================
             // РАБОТА С ГЛИФАМИ
@@ -1737,6 +2017,7 @@ findInsertIndex(unicodeChar) {
                 
                 // Обновляем интерфейс
                 this.updateGlyphList();
+				this._scrollToActiveGlyph();
                 this.updatePropertiesPanel();
                 
                 document.getElementById('current-glyph-name').textContent = glyph.name || glyph.unicode || 'Unnamed';
@@ -1946,7 +2227,1223 @@ async deleteGlyph(index) {
                 }
             }
             
-            // ===================
+// ==================== РАЗМЕТКА ====================
+_ensureBaseViewBox() {
+    const svg = document.getElementById('svg-canvas');
+    if (!svg) return;
+    if (svg.getAttribute('viewBox')) return;
+    const pad = 200;
+    const minX = this.guidelines.left - pad;
+    const minY = this.guidelines.top - pad;
+    const maxX = this.guidelines.right + pad;
+    const maxY = this.guidelines.bottom + pad;
+    const w = Math.max(maxX - minX, 100);
+    const h = Math.max(maxY - minY, 100);
+    svg.setAttribute('viewBox', `${minX} ${minY} ${w} ${h}`);
+    svg.style.width = '100%';
+    svg.style.height = '100%';
+}
+
+_nextUid() { return 'u' + (++this.uidCounter); }
+
+_ensureContourUids() {
+    this.pathTopology.contours.forEach((c, i) => {
+        if (!this.contourUids[i]) this.contourUids[i] = this._nextUid();
+    });
+}
+
+_getContourIndexByUid(uid) {
+    for (const k in this.contourUids) if (this.contourUids[k] === uid) return parseInt(k);
+    return -1;
+}
+
+_unbindContour(uid) {
+    this.cells.forEach(c => {
+        const i = c.contourUids.indexOf(uid);
+        if (i !== -1) c.contourUids.splice(i, 1);
+    });
+    this._renderMarkerOverlay();
+}
+
+// ===== Отрисовка оверлея =====
+_renderMarkerOverlay() {
+    if (!this.markerOverlay) return;
+    this.markerOverlay.innerHTML = '';
+
+    const NS = 'http://www.w3.org/2000/svg';
+    const baseline = this.guidelines.baseline;
+
+    // засечки
+    this.ticks.forEach(t => {
+        const line = document.createElementNS(NS, 'line');
+        const h = 30;
+        line.setAttribute('x1', t.x); line.setAttribute('y1', baseline - h);
+        line.setAttribute('x2', t.x); line.setAttribute('y2', baseline + h);
+        line.setAttribute('stroke', '#f9e2af'); line.setAttribute('stroke-width', '2');
+        line.setAttribute('class', 'mk-tick');
+        line.setAttribute('data-tick-id', t.id);
+        this.markerOverlay.appendChild(line);
+    });
+
+    // ячейки
+    const sorted = [...this.ticks].sort((a, b) => a.x - b.x);
+    const top = this.guidelines.top, bot = this.guidelines.bottom;
+    for (let i = 0; i < sorted.length - 1; i++) {
+        const l = sorted[i], r = sorted[i + 1];
+        const cell = this.cells.find(c => c.leftTickId === l.id && c.rightTickId === r.id);
+        const hasChar = cell && cell.char;
+        const rect = document.createElementNS(NS, 'rect');
+        rect.setAttribute('x', l.x); rect.setAttribute('y', top);
+        rect.setAttribute('width', r.x - l.x); rect.setAttribute('height', bot - top);
+        rect.setAttribute('fill', hasChar ? 'rgba(137,180,250,0.08)' : 'rgba(166,173,200,0.04)');
+        rect.setAttribute('stroke', hasChar ? 'rgba(137,180,250,0.4)' : 'rgba(166,173,200,0.2)');
+        rect.setAttribute('stroke-dasharray', hasChar ? '' : '4,4');
+        rect.setAttribute('pointer-events', 'none');
+        this.markerOverlay.appendChild(rect);
+    }
+
+    // подсветка выделенных контуров
+    this.selectedContourUids.forEach(uid => {
+        const idx = this._getContourIndexByUid(uid);
+        if (idx < 0) return;
+        const contour = this.pathTopology.contours[idx];
+        if (!contour || !contour.segments) return;
+        let d = '';
+        contour.segments.forEach(seg => {
+            const sp = contour.points[seg.startIndex], ep = contour.points[seg.endIndex];
+            if (!sp || !ep) return;
+            d += `M ${sp.x} ${sp.y} `;
+            if (seg.type === 'line') d += `L ${ep.x} ${ep.y} `;
+            else if (seg.type === 'bezier' && seg.control1 && seg.control2)
+                d += `C ${seg.control1.x} ${seg.control1.y} ${seg.control2.x} ${seg.control2.y} ${ep.x} ${ep.y} `;
+        });
+        const p = document.createElementNS(NS, 'path');
+        p.setAttribute('d', d);
+        p.setAttribute('fill', 'none');
+        p.setAttribute('stroke', '#f9e2af');
+        p.setAttribute('stroke-width', '2');
+        p.setAttribute('stroke-dasharray', '3,3');
+        p.setAttribute('pointer-events', 'none');
+        this.markerOverlay.appendChild(p);
+    });
+}
+
+// ===== Применение разметки =====
+async _applySheet() {
+    if (!this.sheet) { this.showNotification('Нет листа', 'warning'); return; }
+    const items = this.sheet.cells.filter(c => c.char);
+    if (!items.length) { this.showNotification('Нет ячеек с буквами', 'warning'); return; }
+
+    this._ensureContourUids();
+
+    // 1. Группируем по букве
+    const byChar = {};
+    items.forEach(c => (byChar[c.char] = byChar[c.char] || []).push(c));
+
+    // 2. Ищем конфликты: какие буквы уже есть в шрифте
+    const existingMap = {};
+    this.fontData.glyphs.forEach(g => {
+        if (g.unicode) existingMap[g.unicode] = g;
+    });
+
+    const conflicts = Object.keys(byChar).filter(ch => existingMap[ch]);
+
+    if (conflicts.length > 0) {
+        // Спрашиваем, что делать
+        const action = await this._showConflictDialog(conflicts);
+        if (action === 'cancel') return;
+        // action = 'skip' | 'alt'
+        // 'skip' — не трогать существующие, пропустить
+        // 'alt'  — создать альтернативные глифы с уникальными именами
+    }
+
+    // 3. Применяем
+    for (const ch in byChar) {
+        const cells = byChar[ch];
+        const existing = existingMap[ch];
+        let skipExisting = conflicts.includes(ch);
+
+        cells.forEach((cell, i) => {
+            const row = this.sheet.rows.find(r => r.id === cell.rowId);
+            const l = this.sheet.ticks.find(t => t.id === cell.leftTickId);
+            const r = this.sheet.ticks.find(t => t.id === cell.rightTickId);
+            if (!row || !l || !r) return;
+
+            const scale = this.fontData.capHeight / row.capPixels;
+            const adv = Math.round((r.x - l.x) * scale);
+            const isAlt = i > 0;
+
+            // Собираем d
+            let d = '';
+            cell.contourUids.forEach(uid => {
+                const ci = this._getContourIndexByUid(uid);
+                if (ci < 0) return;
+                const c = this.pathTopology.contours[ci];
+                if (!c || !c.segments) return;
+                c.segments.forEach(seg => {
+                    const sp = c.points[seg.startIndex], ep = c.points[seg.endIndex];
+                    if (!sp || !ep) return;
+                    const sx = (x) => ((x - l.x) * scale).toFixed(2);
+                    const sy = (y) => ((row.baselineY - y) * scale).toFixed(2);
+                    d += `M ${sx(sp.x)} ${sy(sp.y)} `;
+                    if (seg.type === 'line') d += `L ${sx(ep.x)} ${sy(ep.y)} `;
+                    else if (seg.type === 'bezier' && seg.control1 && seg.control2)
+                        d += `C ${sx(seg.control1.x)} ${sy(seg.control1.y)} ${sx(seg.control2.x)} ${sy(seg.control2.y)} ${sx(ep.x)} ${sy(ep.y)} `;
+                });
+            });
+
+            // ==== ЗАЩИТА ОТ ПЕРЕЗАПИСИ ====
+            if (!isAlt && existing && skipExisting) {
+                if (window.__conflictAction === 'skip') {
+                    // просто не трогаем существующий
+                    return;
+                }
+                // иначе — создаём alt, даже если i === 0
+                if (window.__conflictAction === 'alt') {
+                    // дальше пойдёт как isAlt = true
+                }
+            }
+
+            // Определяем, создавать ли новый глиф
+            const shouldCreateAlt = (isAlt || (skipExisting && window.__conflictAction === 'alt'));
+            const unicode = shouldCreateAlt ? '' : ch;
+            const altIndex = shouldCreateAlt
+                ? (this.fontData.glyphs.filter(g => g.name && g.name.startsWith(
+                    (ch === ' ' ? 'space' : (ch.length > 1 ? `liga_${ch}` : this.getGlyphName(ch)))
+                  )).length + 1)
+                : 0;
+            const baseName = ch === ' ' ? 'space'
+                : (ch.length > 1 ? `liga_${ch}` : this.getGlyphName(ch));
+            const name = shouldCreateAlt ? `${baseName}.alt${altIndex}` : baseName;
+
+            let glyph;
+            if (shouldCreateAlt) {
+                glyph = { unicode: '', name, d: '', horizAdvX: adv };
+                this.fontData.glyphs.push(glyph);
+            } else {
+                glyph = this.fontData.glyphs.find(g => g.unicode === ch);
+                if (!glyph) {
+                    glyph = { unicode, name, d: '', horizAdvX: adv };
+                    this.fontData.glyphs.push(glyph);
+                } else {
+                    glyph.horizAdvX = adv;
+                }
+            }
+            if (d) glyph.d = d;
+			if (!glyph.photoRef) {
+				glyph.photoRef = {
+					sheetId: this.sheet.id,
+					rowId: row.id,
+					leftTickId: l.id,
+					rightTickId: r.id
+				};
+			}
+        });
+    }
+
+    this.updateFontInfo();
+    this.updateGlyphList();
+    this.showNotification('Глифы созданы/обновлены', 'success');
+}
+_showConflictDialog(conflicts) {
+    return new Promise((resolve) => {
+        const modalId = 'conflict-dialog-' + Date.now();
+        const list = conflicts.map(ch =>
+            `<li style="margin:3px 0;">${ch === ' ' ? '(пробел)' : ch.length > 1 ? `лигатура «${ch}»` : `«${ch}»`}</li>`
+        ).join('');
+
+        const modalHtml = `
+            <div id="${modalId}" class="modal" style="display:flex;z-index:9999;">
+                <div class="modal-content" style="max-width:520px;">
+                    <div class="modal-header">
+                        <h3><i class="fas fa-exclamation-triangle"></i> Уже есть в шрифте</h3>
+                        <button class="close-conflict">&times;</button>
+                    </div>
+                    <div style="padding:20px;">
+                        <p>Следующие буквы/лигатуры уже есть в шрифте:</p>
+                        <ul style="max-height:150px;overflow:auto;padding-left:20px;color:#f9e2af;">${list}</ul>
+                        <p style="margin-top:12px;">Что делать?</p>
+                        <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;">
+                            <button id="conf-skip" class="secondary">
+                                <i class="fas fa-forward"></i> Пропустить существующие (не трогать)
+                            </button>
+                            <button id="conf-alt">
+                                <i class="fas fa-clone"></i> Создать как альтернативы (.alt)
+                            </button>
+                            <button id="conf-cancel" class="secondary">
+                                <i class="fas fa-times"></i> Отменить всё
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = document.getElementById(modalId);
+
+        const close = (action) => {
+            if (action === 'skip') window.__conflictAction = 'skip';
+            if (action === 'alt') window.__conflictAction = 'alt';
+            modal.remove();
+            resolve(action);
+        };
+
+        modal.querySelector('#conf-skip').onclick   = () => close('skip');
+        modal.querySelector('#conf-alt').onclick    = () => close('alt');
+        modal.querySelector('#conf-cancel').onclick = () => close('cancel');
+        modal.querySelector('.close-conflict').onclick = () => close('cancel');
+        modal.onclick = (e) => { if (e.target === modal) close('cancel'); };
+    });
+}
+
+_renderPhotoUnderlayForGlyph() {
+    const svg = document.getElementById('svg-canvas');
+    if (!svg) return;
+
+    // удаляем старую
+    const old = document.getElementById('photo-underlay');
+    if (old) old.remove();
+
+    // проверки
+    const cb = document.getElementById('show-photo-underlay');
+    if (cb && !cb.checked) return;
+    if (!this.currentGlyph || !this.currentGlyph.photoRef) return;
+    if (!this.sheet) return;
+    if (this.currentGlyph.photoRef.sheetId !== this.sheet.id) return;
+
+    const ref = this.currentGlyph.photoRef;
+    const row = this.sheet.rows.find(r => r.id === ref.rowId);
+    const l = this.sheet.ticks.find(t => t.id === ref.leftTickId);
+    const r = this.sheet.ticks.find(t => t.id === ref.rightTickId);
+    if (!row || !l || !r) return;
+
+    const scale = this.fontData.capHeight / this.sheet.capPixels;
+    const imgX = this.guidelines.left - l.x * scale;
+    const imgY = this.guidelines.baseline - row.baselineY * scale;
+    const imgW = this.sheet.imgW * scale;
+    const imgH = this.sheet.imgH * scale;
+
+    const NS = 'http://www.w3.org/2000/svg';
+    const img = document.createElementNS(NS, 'image');
+    img.id = 'photo-underlay';
+    img.setAttribute('href', this.sheet.imageSrc);
+    img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', this.sheet.imageSrc);
+    img.setAttribute('x', imgX);
+    img.setAttribute('y', imgY);
+    img.setAttribute('width', imgW);
+    img.setAttribute('height', imgH);
+    img.setAttribute('opacity', '0.35');
+    img.setAttribute('preserveAspectRatio', 'none');
+    img.setAttribute('pointer-events', 'none');
+
+    // вставляем ДО path-group, чтобы векторы были сверху
+    const pathGroup = document.getElementById('path-group');
+    if (pathGroup) svg.insertBefore(img, pathGroup);
+    else svg.insertBefore(img, svg.firstChild);
+}
+
+
+// ==================== ФОТО-ПОДЛОЖКА ====================
+
+_loadPhotoSheet() {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'image/*';
+    input.onchange = (e) => {
+        const f = e.target.files[0]; if (!f) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const img = new Image();
+            img.onload = () => {
+                const defaultCapPixels = Math.round(img.height / 10) || 400;
+                this.sheet = {
+                    id: 'sheet' + Date.now(),
+                    name: f.name,
+                    imageSrc: ev.target.result,
+                    imgW: img.width,
+                    imgH: img.height,
+                    defaultCapPixels,
+                    capPixels: defaultCapPixels,
+                    rows: [], ticks: [], cells: [], contours: [],
+                    uidCounter: 0
+                };
+				this._setMode('photo');
+                // 2. Подгоняем viewBox
+                this._fitPhotoViewBox();
+
+                // 4. Синхронизируем инпут высоты
+                const capInput = document.getElementById('mk-sheet-cap');
+                if (capInput) capInput.value = Math.round(this.sheet.capPixels);
+
+                this.showNotification(
+                    `Фото ${img.width}×${img.height} загружено (cap height: ${Math.round(defaultCapPixels)} px)`,
+                    'success'
+                );
+            };
+            img.src = ev.target.result;
+        };
+        reader.readAsDataURL(f);
+    };
+    input.click();
+}
+
+_ensurePhotoCanvas() {
+    if (document.getElementById('photo-canvas')) return;
+    const container = document.querySelector('.canvas-container');
+    if (!container) return;
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.id = 'photo-canvas';
+    svg.style.cssText = 'display:none;background:#1e1e2e;';
+
+    ['photo-image-layer','photo-overlay-layer'].forEach(id => {
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.id = id;
+        svg.appendChild(g);
+    });
+
+    const glyphSvg = document.getElementById('svg-canvas');
+    if (glyphSvg && glyphSvg.parentNode) {
+        glyphSvg.parentNode.insertBefore(svg, glyphSvg.nextSibling);
+    } else {
+        container.appendChild(svg);
+    }
+    this.photoOverlay = document.getElementById('photo-overlay-layer');
+
+    svg.addEventListener('mousedown', (e) => this._handlePhotoMouseDown(e));
+    svg.addEventListener('click', (e) => this._handlePhotoClick(e));
+}
+
+_fitPhotoViewBox() {
+    const svg = document.getElementById('photo-canvas');
+    if (!svg || !this.sheet) return;
+    const s = this.sheet;
+    const pad = 20;
+
+    // viewBox = весь лист + отступы (без зума)
+    const vbW = s.imgW + pad * 2;
+    const vbH = s.imgH + pad * 2;
+    svg.setAttribute('viewBox', `${-pad} ${-pad} ${vbW} ${vbH}`);
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
+    // CSS-размер = viewBox × zoom
+    const zoom = this._photoZoom || 1;
+    svg.style.width  = `${vbW * zoom}px`;
+    svg.style.height = `${vbH * zoom}px`;
+    svg.style.display = 'block';
+    svg.style.margin = 'auto';
+
+    // Убедимся, что контейнер скроллится
+    const container = document.querySelector('.canvas-container');
+    if (container) container.style.overflow = 'auto';
+}
+_renderGlyphOverlayForCell(cell, ovLayer, NS) {
+    if (!cell.char) return;
+    const glyph = this.fontData.glyphs.find(g => g.unicode === cell.char);
+    if (!glyph || !glyph.d) return;
+
+    const row = this.sheet.rows.find(r => r.id === cell.rowId);
+    const l = this.sheet.ticks.find(t => t.id === cell.leftTickId);
+    if (!row || !l) return;
+
+    const scale = this.fontData.capHeight / row.capPixels;
+    if (!isFinite(scale) || scale <= 0) return;
+
+    const baselineGlyph = this.guidelines.baseline;  // = unitsPerEm (1000)
+
+    const toPhotoX = (x) => l.x + x / scale;
+    const toPhotoY = (y) => row.baselineY + (y - baselineGlyph) / scale;
+
+    const contours = this.extractContoursFromPath(glyph.d);
+    let pathD = '';
+    contours.forEach(contour => {
+        contour.segments.forEach(seg => {
+            const sp = contour.points[seg.startIndex];
+            const ep = contour.points[seg.endIndex];
+            if (!sp || !ep) return;
+            pathD += `M ${toPhotoX(sp.x)} ${toPhotoY(sp.y)} `;
+            if (seg.type === 'line') {
+                pathD += `L ${toPhotoX(ep.x)} ${toPhotoY(ep.y)} `;
+            } else if (seg.type === 'bezier' && seg.control1 && seg.control2) {
+                pathD += `C ${toPhotoX(seg.control1.x)} ${toPhotoY(seg.control1.y)} `
+                       + `${toPhotoX(seg.control2.x)} ${toPhotoY(seg.control2.y)} `
+                       + `${toPhotoX(ep.x)} ${toPhotoY(ep.y)} `;
+            }
+        });
+        if (contour.isClosed) pathD += 'Z ';
+    });
+
+    if (!pathD) return;
+
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', pathD);
+    p.setAttribute('fill', 'none');
+    p.setAttribute('stroke', '#f9e2af');
+    p.setAttribute('stroke-width', '2');
+    p.setAttribute('stroke-dasharray', '6,4');
+    p.setAttribute('pointer-events', 'none');
+    p.setAttribute('class', 'ph-glyph-overlay');
+    ovLayer.appendChild(p);
+}
+
+_renderPhotoSheet() {
+    const svg = document.getElementById('photo-canvas');
+    if (!svg || !this.sheet) return;
+    const NS = 'http://www.w3.org/2000/svg';
+
+    const imgLayer = document.getElementById('photo-image-layer');
+    const ovLayer = document.getElementById('photo-overlay-layer');
+    imgLayer.innerHTML = '';
+    ovLayer.innerHTML = '';
+
+    // фото
+    const img = document.createElementNS(NS, 'image');
+    img.setAttribute('href', this.sheet.imageSrc);
+    img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', this.sheet.imageSrc);
+    img.setAttribute('x', 0); img.setAttribute('y', 0);
+    img.setAttribute('width', this.sheet.imgW);
+    img.setAttribute('height', this.sheet.imgH);
+    img.setAttribute('opacity', '0.75');
+    img.setAttribute('pointer-events', 'none');
+    imgLayer.appendChild(img);
+
+    // глобальная высота листа
+    const capH = this.sheet.capPixels;
+
+    // масштаб: px фото → units шрифта
+    const scale = this.fontData.capHeight / this.sheet.capPixels;
+	// hit-зоны для засечек
+	this.sheet.ticks.forEach(t => {
+		const row = this.sheet.rows.find(r => r.id === t.rowId);
+		if (!row) return;
+		const h = Math.max(20, (row.capPixels || 100) * 0.15);
+		const hit = document.createElementNS(NS, 'line');
+		hit.setAttribute('x1', t.x); hit.setAttribute('x2', t.x);
+		hit.setAttribute('y1', row.baselineY - h); hit.setAttribute('y2', row.baselineY + h);
+		hit.setAttribute('stroke', 'transparent');
+		hit.setAttribute('stroke-width', '20');
+		hit.setAttribute('class', 'ph-tick-hit');
+		hit.setAttribute('data-tick-id', t.id);
+		hit.setAttribute('data-row-id', t.rowId);
+		hit.setAttribute('pointer-events', 'stroke');
+		hit.style.cursor = 'ew-resize';
+		ovLayer.appendChild(hit);
+	});
+    // засечки
+    this.sheet.ticks.forEach(t => {
+        const row = this.sheet.rows.find(r => r.id === t.rowId);
+        if (!row) return;
+        const h = Math.max(20, capH * 0.15);
+        const ln = document.createElementNS(NS, 'line');
+        ln.setAttribute('x1', t.x); ln.setAttribute('x2', t.x);
+        ln.setAttribute('y1', row.baselineY - h); ln.setAttribute('y2', row.baselineY + h);
+        ln.setAttribute('stroke', '#f9e2af'); ln.setAttribute('stroke-width', '2');
+        ln.setAttribute('class', 'ph-tick');
+        ln.setAttribute('data-tick-id', t.id);
+        ln.setAttribute('data-row-id', t.rowId);
+        ln.setAttribute('pointer-events', 'stroke');
+        ln.style.cursor = 'ew-resize';
+        ovLayer.appendChild(ln);
+    });
+
+    // ячейки
+    this.sheet.rows.forEach(row => {
+        const rowTicks = this.sheet.ticks.filter(t => t.rowId === row.id).sort((a,b)=>a.x-b.x);
+        const capTopY = row.baselineY - capH;
+        for (let i = 0; i < rowTicks.length - 1; i++) {
+            const l = rowTicks[i], r = rowTicks[i+1];
+            const cell = this.sheet.cells.find(c => c.leftTickId === l.id && c.rightTickId === r.id);
+            const hasChar = cell && cell.char;
+			if (hasChar) {
+				this._renderGlyphOverlayForCell(cell, ovLayer, NS);
+			}
+            const rect = document.createElementNS(NS, 'rect');
+            rect.setAttribute('x', l.x); rect.setAttribute('width', r.x - l.x);
+            rect.setAttribute('y', capTopY); rect.setAttribute('height', capH);
+            rect.setAttribute('fill', hasChar ? 'rgba(137,180,250,0.10)' : 'rgba(166,173,200,0.05)');
+            rect.setAttribute('stroke', hasChar ? 'rgba(137,180,250,0.5)' : 'rgba(166,173,200,0.25)');
+            rect.setAttribute('stroke-dasharray', hasChar ? '' : '4,4');
+            rect.setAttribute('pointer-events', 'all');
+            rect.style.cursor = 'pointer';
+            rect.setAttribute('class', 'ph-cell');
+            rect.setAttribute('data-left-tick', l.id);
+            rect.setAttribute('data-right-tick', r.id);
+            rect.setAttribute('data-row-id', row.id);
+            ovLayer.appendChild(rect);
+        }
+    });
+    // строки
+	
+this.sheet.rows.forEach(row => {
+const hitWidth = Math.max(8, this.sheet.capPixels * 0.05);
+    // baseline-hit
+    const hb = document.createElementNS(NS, 'line');
+    hb.setAttribute('x1', 0); hb.setAttribute('x2', this.sheet.imgW);
+    hb.setAttribute('y1', row.baselineY); hb.setAttribute('y2', row.baselineY);
+    hb.setAttribute('stroke', 'transparent');
+    hb.setAttribute('stroke-width', hitWidth);
+    hb.setAttribute('class', 'ph-row-baseline-hit');
+    hb.setAttribute('data-row-id', row.id);
+    hb.setAttribute('pointer-events', 'stroke');
+    hb.style.cursor = 'ns-resize';
+    ovLayer.appendChild(hb);
+
+    // cap-hit
+    const hc = document.createElementNS(NS, 'line');
+    const capY = row.baselineY - this.sheet.capPixels;
+    hc.setAttribute('x1', 0); hc.setAttribute('x2', this.sheet.imgW);
+    hc.setAttribute('y1', capY); hc.setAttribute('y2', capY);
+    hc.setAttribute('stroke', 'transparent');
+    hc.setAttribute('stroke-width', hitWidth);
+    hc.setAttribute('class', 'ph-row-cap-hit');
+    hc.setAttribute('data-row-id', row.id);
+    hc.setAttribute('pointer-events', 'stroke');
+    hc.style.cursor = 'ns-resize';
+    ovLayer.appendChild(hc);
+});
+    this.sheet.rows.forEach((row) => {
+		// baseline
+        const bl = document.createElementNS(NS, 'line');
+        bl.setAttribute('x1', 0); bl.setAttribute('x2', this.sheet.imgW);
+        bl.setAttribute('y1', row.baselineY); bl.setAttribute('y2', row.baselineY);
+        bl.setAttribute('stroke', '#ff6b6b'); bl.setAttribute('stroke-width', '1.5');
+        bl.setAttribute('class', 'ph-row-baseline');
+        bl.setAttribute('data-row-id', row.id);
+        bl.setAttribute('pointer-events', 'stroke');
+        bl.style.cursor = 'pointer';
+        ovLayer.appendChild(bl);
+
+        // cap-line 
+        const capY = row.baselineY - capH;
+        const cl = document.createElementNS(NS, 'line');
+        cl.setAttribute('x1', 0); cl.setAttribute('x2', this.sheet.imgW);
+        cl.setAttribute('y1', capY); cl.setAttribute('y2', capY);
+        cl.setAttribute('stroke', '#89b4fa'); cl.setAttribute('stroke-width', '1.5');
+        cl.setAttribute('stroke-dasharray', '6,4');
+        cl.setAttribute('class', 'ph-row-cap');
+        cl.setAttribute('data-row-id', row.id);
+        cl.setAttribute('pointer-events', 'stroke');
+        cl.style.cursor = 'ns-resize';
+        ovLayer.appendChild(cl);
+
+        // ===== новые метрические линии (по fontData) =====
+        const addMetricLine = (y, color, dash, metricId) => {
+            const l = document.createElementNS(NS, 'line');
+            l.setAttribute('x1', 0); l.setAttribute('x2', this.sheet.imgW);
+            l.setAttribute('y1', y); l.setAttribute('y2', y);
+            l.setAttribute('stroke', color);
+            l.setAttribute('stroke-width', '1.5');
+            l.setAttribute('stroke-dasharray', dash);
+            l.setAttribute('class', 'ph-row-metric');
+            l.setAttribute('data-row-id', row.id);
+            l.setAttribute('data-metric', metricId);
+            l.setAttribute('pointer-events', 'none');
+            ovLayer.appendChild(l);
+        };
+
+        // ascent-line (потолок строки)
+        if (isFinite(this.fontData.ascent) && this.fontData.ascent > 0 && scale > 0) {
+            addMetricLine(row.baselineY - this.fontData.ascent / scale, '#a6e3a1', '8,4', 'ascent');
+        }
+        // x-height line
+        if (isFinite(this.fontData.xHeight) && this.fontData.xHeight > 0 && scale > 0) {
+            addMetricLine(row.baselineY - this.fontData.xHeight / scale, '#74c7ec', '3,3', 'xheight');
+        }
+        // descent-line (пол для хвостов)
+        if (isFinite(this.fontData.descent) && scale > 0) {
+            addMetricLine(row.baselineY + Math.abs(this.fontData.descent) / scale, '#fab387', '8,4', 'descent');
+        }
+        // ===== конец новых линий =====
+    });
+
+    // контуры
+    this.sheet.contours.forEach(c => {
+        let d = '';
+        c.segments.forEach(seg => {
+            const sp = c.points[seg.startIndex], ep = c.points[seg.endIndex];
+            if (!sp || !ep) return;
+            d += `M ${sp.x} ${sp.y} `;
+            if (seg.type === 'line') d += `L ${ep.x} ${ep.y} `;
+            else if (seg.type === 'bezier' && seg.control1 && seg.control2)
+                d += `C ${seg.control1.x} ${seg.control1.y} ${seg.control2.x} ${seg.control2.y} ${ep.x} ${ep.y} `;
+        });
+        if (!d) return;
+        const p = document.createElementNS(NS, 'path');
+        p.setAttribute('d', d);
+        p.setAttribute('fill', 'none');
+        p.setAttribute('stroke', '#cba6f7');
+        p.setAttribute('stroke-width', '3');
+        p.setAttribute('class', 'ph-contour');
+        p.setAttribute('data-uid', c.uid);
+        p.setAttribute('pointer-events', 'stroke');
+        p.style.cursor = 'pointer';
+        ovLayer.appendChild(p);
+    });
+}
+_photoPt(e) {
+    const svg = document.getElementById('photo-canvas');
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+_startRowDrag(row, startEvent, mode = 'baseline') {
+    const svg = document.getElementById('photo-canvas');
+    if (!svg) return;
+
+    const startPt = this._photoPt(startEvent);
+    const startClientX = startEvent.clientX;
+    const startClientY = startEvent.clientY;
+
+    // для baseline: запоминаем, где именно схватили относительно baseline
+    const startBaselineY = row.baselineY;
+    const baselineDragOffset = startPt.y - startBaselineY;
+
+    let moved = false;
+    svg.style.cursor = 'ns-resize';
+
+    const moveHandler = (ev) => {
+        const dx = ev.clientX - startClientX;
+        const dy = ev.clientY - startClientY;
+        if (!moved && Math.sqrt(dx*dx + dy*dy) < 3) return;
+        moved = true;
+
+        const p = this._photoPt(ev);
+
+        if (mode === 'baseline') {
+            // двигаем ВСЮ строку (baseline + cap-line вместе)
+            row.baselineY = p.y - baselineDragOffset;
+            row.capTopY = row.baselineY - row.capPixels;
+            this._renderPhotoSheet();
+			} else {
+				// mode === 'cap'
+				let newCap = row.baselineY - p.y;
+				if (newCap < 4) newCap = 4;
+
+				// 1. сначала обновить данные
+				this.sheet.capPixels = newCap;
+				row.capPixels = newCap;
+				row.capTopY = row.baselineY - newCap;
+				row.scale = this.fontData.capHeight / newCap;
+
+				// 2. потом инпут (чтобы визуально совпадало)
+				const capInput = document.getElementById('mk-sheet-cap');
+				if (capInput) capInput.value = Math.round(newCap);
+
+				// 3. и ТОЛЬКО ПОТОМ перерисовать
+				this._renderPhotoSheet();
+			}
+    };
+
+    const upHandler = () => {
+        svg.style.cursor = '';
+        document.removeEventListener('mousemove', moveHandler);
+        document.removeEventListener('mouseup', upHandler);
+
+        if (!moved) {
+            this._showRowPassport(row);
+        } else if (mode === 'baseline') {
+            this.showNotification(`Baseline: Y=${Math.round(row.baselineY)}`, 'info', 1200);
+        } else {
+            this.showNotification(`Cap height строки: ${Math.round(row.capPixels)} px`, 'info', 1200);
+        }
+    };
+
+    document.addEventListener('mousemove', moveHandler);
+    document.addEventListener('mouseup', upHandler);
+}
+
+_handlePhotoMouseDown(e) {
+    if (e.button !== 0 || !this.sheet) return;
+
+    // создание строки
+    if (this.rowMode === 'add-row') {
+        const p = this._photoPt(e);
+        const cap = this.sheet.capPixels;
+
+        const row = {
+            id: 'r' + Date.now(),
+            baselineY: p.y,
+            capTopY: p.y - cap,
+            capPixels: cap,
+            scale: this.fontData.capHeight / cap
+        };
+        this.sheet.rows.push(row);
+        this.rowMode = null;
+        this._renderPhotoSheet();
+        this.showNotification(`Строка добавлена (высота листа: ${Math.round(cap)} px)`, 'success', 1500);
+        return;
+    }
+
+    // Shift+клик — засечка на ближайшей строке
+    if (e.shiftKey) {
+        const p = this._photoPt(e);
+        const row = this._findRowByY(p.y);
+        if (!row) { this.showNotification('Нет строки рядом', 'warning'); return; }
+        this._addTick(row.id, p.x);
+        return;
+    }
+	    // клик по существующей baseline — начинаем перетаскивание
+const lineEl = e.target.closest(
+    '.ph-row-baseline, .ph-row-baseline-hit, .ph-row-cap, .ph-row-cap-hit'
+);
+
+if (lineEl) {
+    e.preventDefault();
+    e.stopPropagation();
+    const rowId = lineEl.getAttribute('data-row-id');
+    const row = this.sheet.rows.find(r => r.id === rowId);
+    if (!row) return;
+
+    const isCap = lineEl.classList.contains('ph-row-cap') ||
+                  lineEl.classList.contains('ph-row-cap-hit');
+
+    this._startRowDrag(row, e, isCap ? 'cap' : 'baseline');
+    return;
+}
+	const tickEl = e.target.closest('.ph-tick, .ph-tick-hit');
+	if (tickEl) {
+		e.preventDefault();
+		e.stopPropagation();
+		if (e.ctrlKey || e.metaKey) {
+			this._removeTick(tickEl.getAttribute('data-tick-id'));
+			return;
+		}
+		this._startTickDrag(tickEl.getAttribute('data-tick-id'), e);
+		return;
+	}
+}
+
+_handlePhotoClick(e) {
+    if (!this.sheet) return;
+
+    // клик по ячейке
+    const cellEl = e.target.closest('.ph-cell');
+    if (cellEl) {
+        e.stopPropagation();
+        const cell = this._getOrCreateCell(
+            cellEl.getAttribute('data-left-tick'),
+            cellEl.getAttribute('data-right-tick'),
+            cellEl.getAttribute('data-row-id')
+        );
+        this._showSheetCellPassport(cell);
+        return;
+    }
+
+    // клик по засечке — удаление по Ctrl+клик (drag и обычный клик ловит mousedown)
+    const tickEl = e.target.closest('.ph-tick, .ph-tick-hit');
+    if (tickEl) {
+        e.stopPropagation();
+        if (e.ctrlKey || e.metaKey) {
+            this._removeTick(tickEl.getAttribute('data-tick-id'));
+        }
+        return;
+    }
+}
+
+_startTickDrag(tickId, startEvent) {
+    const svg = document.getElementById('photo-canvas');
+    if (!svg || !this.sheet) return;
+
+    const tick = this.sheet.ticks.find(t => t.id === tickId);
+    if (!tick) return;
+
+    const startPt = this._photoPt(startEvent);
+    const dragOffsetX = startPt.x - tick.x;
+    const startClientX = startEvent.clientX;
+    const startClientY = startEvent.clientY;
+
+    let moved = false;
+    svg.style.cursor = 'ew-resize';
+
+    const moveHandler = (ev) => {
+        const dx = ev.clientX - startClientX;
+        const dy = ev.clientY - startClientY;
+        if (!moved && Math.sqrt(dx*dx + dy*dy) < 3) return;
+        moved = true;
+
+        const p = this._photoPt(ev);
+        tick.x = p.x - dragOffsetX;
+        this._renderPhotoSheet();
+    };
+
+    const upHandler = () => {
+        svg.style.cursor = '';
+        document.removeEventListener('mousemove', moveHandler);
+        document.removeEventListener('mouseup', upHandler);
+
+        if (!moved) {
+            // это был клик — показать уведомление (опционально)
+            this.showNotification(`Засечка X=${Math.round(tick.x)}. Ctrl+клик — удалить`, 'info', 1500);
+        }
+    };
+
+    document.addEventListener('mousemove', moveHandler);
+    document.addEventListener('mouseup', upHandler);
+}
+
+_findRowByY(y) {
+    let best = null, bestD = 80;
+    this.sheet.rows.forEach(r => {
+        const d = Math.abs(r.baselineY - y);
+        if (d < bestD) { bestD = d; best = r; }
+    });
+    return best;
+}
+_addTick(rowId, x) {
+    const id = 't' + Date.now() + Math.random().toString(36).slice(2, 6);
+    this.sheet.ticks.push({ id, rowId, x });
+    this._renderPhotoSheet();
+}
+
+_removeTick(id) {
+    this.sheet.ticks = this.sheet.ticks.filter(t => t.id !== id);
+    this.sheet.cells = this.sheet.cells.filter(c => c.leftTickId !== id && c.rightTickId !== id);
+    this._renderPhotoSheet();
+}
+
+_getOrCreateCell(leftTickId, rightTickId, rowId) {
+    let cell = this.sheet.cells.find(c => c.leftTickId === leftTickId && c.rightTickId === rightTickId);
+    if (!cell) {
+        cell = {
+            id: 'c' + Date.now() + Math.random().toString(36).slice(2, 6),
+            rowId, leftTickId, rightTickId,
+            char: '', name: '', contourUids: []
+        };
+        this.sheet.cells.push(cell);
+    }
+    return cell;
+}
+
+_showRowPassport(row) {
+    const m = document.createElement('div');
+    m.className = 'modal'; m.style.display = 'flex';
+    m.innerHTML = `
+        <div class="modal-content" style="max-width:380px;">
+            <div class="modal-header"><h3>Паспорт строки</h3>
+                <button class="close-modal">&times;</button></div>
+            <div style="padding:20px;">
+                <div class="property"><label>Baseline Y</label>
+                    <input id="row-bl" type="number" value="${Math.round(row.baselineY)}"></div>
+                <div style="font-size:12px;color:#a6adc8;margin-top:10px;">
+                    Высота заглавной буквы берётся из общей настройки листа:
+                    <b>${Math.round(this.sheet.capPixels)} px</b>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:14px;">
+                    <button id="row-apply" style="flex:1;">Применить</button>
+                    <button id="row-del" class="secondary" style="flex:1;">Удалить строку</button>
+                </div>
+                <button class="secondary close-modal" style="width:100%;margin-top:8px;">Закрыть</button>
+            </div>
+        </div>`;
+    document.body.appendChild(m);
+    const close = () => m.remove();
+    m.querySelectorAll('.close-modal').forEach(b => b.onclick = close);
+    m.querySelector('#row-apply').onclick = () => {
+        const bl = parseFloat(m.querySelector('#row-bl').value);
+        if (isFinite(bl)) row.baselineY = bl;
+        // высота — глобальная, применяется ко всем строкам
+        row.capPixels = this.sheet.capPixels;
+        row.capTopY = row.baselineY - this.sheet.capPixels;
+        row.scale = this.fontData.capHeight / this.sheet.capPixels;
+        this._renderPhotoSheet(); close();
+    };
+    m.querySelector('#row-del').onclick = () => {
+        this.sheet.rows = this.sheet.rows.filter(r => r.id !== row.id);
+        this.sheet.ticks = this.sheet.ticks.filter(t => t.rowId !== row.id);
+        this.sheet.cells = this.sheet.cells.filter(c => c.rowId !== row.id);
+        this._renderPhotoSheet(); close();
+    };
+    m.onclick = e => { if (e.target === m) close(); };
+}
+async _applySingleCell(cell) {
+    if (!this.sheet || !cell) return;
+    if (!cell.char) { this.showNotification('У ячейки нет буквы', 'warning'); return; }
+
+    this._ensureContourUids();
+
+    const row = this.sheet.rows.find(r => r.id === cell.rowId);
+    const l = this.sheet.ticks.find(t => t.id === cell.leftTickId);
+    const r = this.sheet.ticks.find(t => t.id === cell.rightTickId);
+    if (!row || !l || !r) {
+        this.showNotification('Не найдены строка или засечки', 'error');
+        return;
+    }
+
+    const ch = cell.char;
+    const scale = this.fontData.capHeight / row.capPixels;
+    const adv = Math.round((r.x - l.x) * scale);
+
+    // Собираем d
+    let d = '';
+    cell.contourUids.forEach(uid => {
+        const ci = this._getContourIndexByUid(uid);
+        if (ci < 0) return;
+        const c = this.pathTopology.contours[ci];
+        if (!c || !c.segments) return;
+        c.segments.forEach(seg => {
+            const sp = c.points[seg.startIndex], ep = c.points[seg.endIndex];
+            if (!sp || !ep) return;
+            const sx = (x) => ((x - l.x) * scale).toFixed(2);
+            const sy = (y) => ((row.baselineY - y) * scale).toFixed(2);
+            d += `M ${sx(sp.x)} ${sy(sp.y)} `;
+            if (seg.type === 'line') d += `L ${sx(ep.x)} ${sy(ep.y)} `;
+            else if (seg.type === 'bezier' && seg.control1 && seg.control2)
+                d += `C ${sx(seg.control1.x)} ${sy(seg.control1.y)} ${sx(seg.control2.x)} ${sy(seg.control2.y)} ${sx(ep.x)} ${sy(ep.y)} `;
+        });
+    });
+
+    // ==== Защита от перезаписи ====
+    const existing = this.fontData.glyphs.find(g => g.unicode === ch);
+    if (existing) {
+        // Спрашиваем
+        const action = await this._showSingleConflictDialog(ch);
+        if (action === 'cancel') return;
+
+        if (action === 'skip') {
+            // не трогаем — выходим
+            this.showNotification(`Глиф «${ch}» оставлен без изменений`, 'info');
+            return;
+        }
+
+        if (action === 'alt') {
+            // создаём как альтернативу
+            const baseName = ch === ' ' ? 'space'
+                : (ch.length > 1 ? `liga_${ch}` : this.getGlyphName(ch));
+            let idx = 1;
+            let name = `${baseName}.alt${idx}`;
+            while (this.fontData.glyphs.some(g => g.name === name)) { idx++; name = `${baseName}.alt${idx}`; }
+            const altGlyph = { unicode: '', name, d: d || '', horizAdvX: adv };
+            this.fontData.glyphs.push(altGlyph);
+            this.updateFontInfo();
+            this.updateGlyphList();
+            this.showNotification(`Создан «${name}» (альтернатива)`, 'success');
+            return;
+        }
+
+        if (action === 'overwrite') {
+            existing.horizAdvX = adv;
+            if (d) existing.d = d;
+            if (!existing.photoRef) {
+                existing.photoRef = {
+                    sheetId: this.sheet.id,
+                    rowId: row.id,
+                    leftTickId: l.id,
+                    rightTickId: r.id
+                };
+            }
+            this.updateFontInfo();
+            this.updateGlyphList();
+            this.showNotification(`Глиф «${ch}» перезаписан`, 'success');
+            return;
+        }
+    }
+
+    // Нет конфликта — создаём
+    const name = ch === ' ' ? 'space'
+        : (ch.length > 1 ? `liga_${ch}` : this.getGlyphName(ch));
+    const glyph = {
+        unicode: ch,
+        name,
+        d: d || '',
+        horizAdvX: adv,
+        photoRef: {
+            sheetId: this.sheet.id,
+            rowId: row.id,
+            leftTickId: l.id,
+            rightTickId: r.id
+        }
+    };
+    this.fontData.glyphs.push(glyph);
+    this.updateFontInfo();
+    this.updateGlyphList();
+    this.showNotification(`Глиф «${ch}» создан`, 'success');
+}
+
+_showSingleConflictDialog(ch) {
+    return new Promise((resolve) => {
+        const modalId = 'single-conflict-' + Date.now();
+        const display = ch === ' ' ? '(пробел)' : (ch.length > 1 ? `лигатура «${ch}»` : `«${ch}»`);
+        const modalHtml = `
+            <div id="${modalId}" class="modal" style="display:flex;z-index:9999;">
+                <div class="modal-content" style="max-width:480px;">
+                    <div class="modal-header">
+                        <h3><i class="fas fa-exclamation-triangle"></i> Уже есть в шрифте</h3>
+                        <button class="close-conflict">&times;</button>
+                    </div>
+                    <div style="padding:20px;">
+                        <p>Глиф ${display} уже существует. Что делать?</p>
+                        <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;">
+                            <button id="sc-overwrite">
+                                <i class="fas fa-sync"></i> Перезаписать существующий
+                            </button>
+                            <button id="sc-alt" class="secondary">
+                                <i class="fas fa-clone"></i> Создать как альтернативу (.alt)
+                            </button>
+                            <button id="sc-skip" class="secondary">
+                                <i class="fas fa-forward"></i> Пропустить (не трогать)
+                            </button>
+                            <button id="sc-cancel" class="secondary">
+                                <i class="fas fa-times"></i> Отменить
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = document.getElementById(modalId);
+        const close = (r) => { modal.remove(); resolve(r); };
+        modal.querySelector('#sc-overwrite').onclick = () => close('overwrite');
+        modal.querySelector('#sc-alt').onclick = () => close('alt');
+        modal.querySelector('#sc-skip').onclick = () => close('skip');
+        modal.querySelector('#sc-cancel').onclick = () => close('cancel');
+        modal.querySelector('.close-conflict').onclick = () => close('cancel');
+        modal.onclick = e => { if (e.target === modal) close('cancel'); };
+    });
+}
+
+_showSheetCellPassport(cell) {
+    const m = document.createElement('div');
+    m.className = 'modal'; m.style.display = 'flex';
+    m.innerHTML = `
+        <div class="modal-content" style="max-width:420px;">
+            <div class="modal-header"><h3>Паспорт ячейки</h3>
+                <button class="close-modal">&times;</button></div>
+            <div style="padding:20px;">
+                <label>Буква (1 символ или лигатура 2+; пробел — кнопкой)</label>
+                <input id="cell-char" type="text" style="width:100%;margin:6px 0 8px;" value="${cell.char || ''}">
+                <div style="display:flex;gap:8px;margin-bottom:14px;">
+                    <button id="cell-save" style="flex:1;">Сохранить</button>
+                    <button id="cell-space" class="secondary" style="flex:1;">␣ Пробел</button>
+                </div>
+                <button id="cell-create-glyph" style="width:100%;margin-bottom:10px;">
+                    <i class="fas fa-plus"></i> Создать/обновить глиф для этой ячейки
+                </button>
+                <button class="secondary close-modal" style="width:100%;">Закрыть</button>
+            </div>
+        </div>`;
+    document.body.appendChild(m);
+    const close = () => m.remove();
+    m.querySelectorAll('.close-modal').forEach(b => b.onclick = close);
+
+    const inp = m.querySelector('#cell-char');
+    m.querySelector('#cell-space').onclick = () => { inp.value = ' '; };
+
+    m.querySelector('#cell-save').onclick = () => {
+        const v = inp.value;
+        if (!v) { this.showNotification('Введите букву', 'warning'); return; }
+        cell.char = v;
+        cell.name = v === ' ' ? 'space' : (v.length > 1 ? `liga_${v}` : this.getGlyphName(v));
+        this._renderPhotoSheet();
+        close();
+    };
+
+    m.querySelector('#cell-create-glyph').onclick = async () => {
+        // 1. Перед применением синхронизируем букву (если её только что ввели)
+        const v = inp.value;
+        if (!v) { this.showNotification('Введите букву', 'warning'); return; }
+        cell.char = v;
+        cell.name = v === ' ' ? 'space' : (v.length > 1 ? `liga_${v}` : this.getGlyphName(v));
+
+        // 2. Применяем ОДНУ ячейку
+        await this._applySingleCell(cell);
+
+        // 3. Перерисовать
+        this._renderPhotoSheet();
+        close();
+    };
+
+    m.onclick = e => { if (e.target === m) close(); };
+}
+
+_renderImageUnderlay() {
+    const svg = document.getElementById('svg-canvas');
+    if (!svg) return;
+
+    const old = document.getElementById('image-underlay');
+    if (old) old.remove();
+
+    if (!this.imageUnderlay || !this.imageUnderlay.visible) return;
+
+    const NS = 'http://www.w3.org/2000/svg';
+    const img = document.createElementNS(NS, 'image');
+    img.id = 'image-underlay';
+    img.setAttribute('href', this.imageUnderlay.src);
+    img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', this.imageUnderlay.src);
+    img.setAttribute('x', this.imageUnderlay.x);
+    img.setAttribute('y', this.imageUnderlay.y);
+    img.setAttribute('width', this.imageUnderlay.width);
+    img.setAttribute('height', this.imageUnderlay.height);
+    img.setAttribute('opacity', this.imageUnderlay.opacity);
+    img.setAttribute('preserveAspectRatio', 'none');
+    img.setAttribute('pointer-events', 'none');
+
+    svg.insertBefore(img, svg.firstChild);
+    this._ensureBaseViewBox();
+}
+
+
+// ===== Конфликты =====
+_showConflicts() {
+    const byChar = {};
+    this.cells.filter(c => c.char).forEach(c => (byChar[c.char] = byChar[c.char] || []).push(c));
+    const conflicts = Object.keys(byChar).filter(k => byChar[k].length > 1);
+    if (conflicts.length === 0) { this.showNotification('Конфликтов нет', 'info'); return; }
+
+    const blocks = conflicts.map((ch) => {
+        const label = ch === ' ' ? '(пробел)' : ch;
+        const count = byChar[ch].length;
+
+        const variantsHtml = byChar[ch].map((c, i) => {
+            const tag = i === 0 ? '(основной)' : '(alt)';
+            return `
+                <div style="font-size:13px;padding:3px 0;">
+                    Вариант ${i + 1} ${tag}
+                </div>`;
+        }).join('');
+
+        return `
+            <div style="margin-bottom:12px;padding:10px;background:#313244;border-radius:6px;">
+                <div style="font-weight:bold;margin-bottom:6px;">
+                    ${label} — ${count} вариантов
+                </div>
+                ${variantsHtml}
+            </div>`;
+    }).join('');
+
+    const html = `
+        <div class="modal-content" style="max-width:500px;">
+            <div class="modal-header">
+                <h3>Конфликты букв</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div style="padding:20px;max-height:60vh;overflow:auto;">
+                ${blocks}
+                <div style="font-size:12px;color:#a6adc8;">
+                    По умолчанию первый вариант — основной, остальные — alt.
+                    Переопределение — через паспорт ячейки (переименование).
+                </div>
+                <button class="secondary close-modal" style="width:100%;margin-top:14px;">
+                    Закрыть
+                </button>
+            </div>
+        </div>`;
+
+    const m = document.createElement('div');
+    m.className = 'modal';
+    m.style.display = 'flex';
+    m.innerHTML = html;
+
+    document.body.appendChild(m);
+    const close = () => m.remove();
+    m.querySelectorAll('.close-modal').forEach(b => b.onclick = close);
+    m.onclick = e => { if (e.target === m) close(); };
+}
+
+_deleteSelectedMarkers() {
+    if (this.selectedContourUids.size) {
+        [...this.selectedContourUids].forEach(u => this._unbindContour(u));
+        this.selectedContourUids.clear();
+        this._renderMarkerOverlay();
+    }
+}
             // РЕНДЕРИНГ
 
             renderGlyph() {
@@ -1982,6 +3479,10 @@ async deleteGlyph(index) {
                 
                 // Инициализируем топологию
                 this.initPathTopology();
+				this._ensureContourUids();
+				this._renderMarkerOverlay();
+				this._renderImageUnderlay();
+				this._renderPhotoUnderlayForGlyph();
             }
             
             clearCanvas() {
@@ -1990,6 +3491,8 @@ async deleteGlyph(index) {
                     const group = document.getElementById(groupId);
                     if (group) group.innerHTML = '';
                 });
+				const oldImg = document.getElementById('image-underlay');
+				if (oldImg) oldImg.remove();
             }
             
             initPathTopology() {
@@ -2076,7 +3579,8 @@ async deleteGlyph(index) {
                         el.style.display = 'none';
                     });
                 }
-            }
+            this._ensureContourUids();
+			}
             
             // ======================
             // РАБОТА С ПУТЕМ
@@ -2522,22 +4026,7 @@ updatePathFromTopology() {
 					}
 				});
 				
-				// Обработчик для выделения/снятия выделения
-				/*point.addEventListener('click', (e) => {
-					// ТОЛЬКО для инструмента добавления точек и ТОЛЬКО для основных точек
-					if (this.state.currentTool === TOOLS.ADD_POINT && point.classList.contains('point')) {
-						e.preventDefault();
-						e.stopPropagation();
-						this.togglePointSelection(point);
-					}
-					
-					// Дополнительно: для инструмента выбора тоже можно выделять
-					if (this.state.currentTool === TOOLS.SELECT && point.classList.contains('point')) {
-						e.preventDefault();
-						e.stopPropagation();
-						this.togglePointSelection(point);
-					}
-				});*/
+
 				
 				// Двойной клик - изменение типа сегмента
 				point.addEventListener('dblclick', (e) => {
@@ -3743,7 +5232,7 @@ deletePoint(pointElement) {
                 
                 // Снятие выделения
                 if (this.state.currentTool === TOOLS.SELECT && target === svgCanvas) {
-                    this.clearSelection();
+                    this.clearAllSelections();
                     return;
                 }
                 
@@ -3814,7 +5303,21 @@ deletePoint(pointElement) {
 				const target = e.target;
 				const svgCanvas = document.getElementById('svg-canvas');
 				const cursorPt = this.getSVGCoordinates(e, svgCanvas);
-
+				// Shift+клик по пустому месту — засечка
+				if (e.shiftKey && e.button === 0 && this.currentGlyph) {
+					const svg = document.getElementById('svg-canvas');
+					if (e.target === svg || e.target.closest('#marker-overlay')) {
+						// не мешаем, если попали в существующий маркер — обработается в click
+						const p = this.getSVGCoordinates(e, svg);
+						// ставим только если не попали в уже существующую засечку близко
+						const near = this.ticks.find(t => Math.abs(t.x - p.x) < 5);
+						if (!near) {
+							e.preventDefault();
+							this._addTick(p.x);
+							return;
+						}
+					}
+				}
 				// Проверяем, был ли это двойной клик
 				const isDoubleClick = e.detail === 2;
 				
@@ -3987,10 +5490,18 @@ this.continueContourFromSelectedPoint(cursorPt.x, cursorPt.y, controlGroup);
 						} else {
 							// Клик по пустому месту
 							if (this.state.selectedPoint && this.state.selectedPoint.element) {
-								// Есть выделение → продолжаем от него (сюда попадём,
-								// только если выделена средняя точка — крайние обработаны выше)
-const controlGroup = document.getElementById('control-group');
-this.continueContourFromSelectedPoint(cursorPt.x, cursorPt.y, controlGroup);
+								const sp = this.state.selectedPoint;
+								const ptType = sp.pointType || sp.element.getAttribute('data-point-type');
+
+								if (ptType === 'middle') {
+									// средняя точка — создаём НОВЫЙ контур из 2 точек
+									// первая = копия выделенной, вторая = клик
+									this.createNewContourFromMiddlePoint(sp, cursorPt.x, cursorPt.y);
+								} else {
+									// крайняя / isolated — продолжаем существующий контур
+									const controlGroup = document.getElementById('control-group');
+									this.continueContourFromSelectedPoint(cursorPt.x, cursorPt.y, controlGroup);
+								}
 							} else {
 								// Ничего не выделено → создаём новую изолированную точку
 								this.addPointAtPosition(cursorPt.x, cursorPt.y);
@@ -4146,6 +5657,7 @@ this.continueContourFromSelectedPoint(cursorPt.x, cursorPt.y, controlGroup);
                 // Обновляем линии
                 this.updateControlLinesForSegment(contour, segmentIndex);
             }
+
 			createSegmentBetweenPoints(point1Element, point2Element) {
 				
 				const contourIndex1 = parseInt(point1Element.getAttribute('data-contour-index') || '-1');
@@ -5017,15 +6529,7 @@ createNewFont() {
                                 Использовать метрики и символы из системного шрифта
                             </div>
                         </button>
-                        
-                        <button id="create-from-svg" style="text-align:left;padding:15px;">
-                            <div style="font-size:18px;font-weight:bold;color:#000000;">
-                                <i class="fas fa-file-import"></i> Импорт SVG шрифта
-                            </div>
-                            <div style="font-size:14px;color:#000000;margin-top:5px;">
-                                Загрузить существующий SVG шрифт для редактирования
-                            </div>
-                        </button>
+
                     </div>
                     
                     <div style="display:flex;gap:10px;margin-top:20px;">
@@ -5064,13 +6568,7 @@ createNewFont() {
             this.showFontTemplateSelection();
         }, 100);
     });
-	
-    // Импорт SVG (существующая функция)
-    modal.querySelector('#create-from-svg').addEventListener('click', () => {
-        closeModal();
-        setTimeout(() => this.loadSVGFont(), 100);
-    });
-    
+
     // Закрытие по клику вне окна
     modal.addEventListener('click', (e) => {
         if (e.target === modal) closeModal();
@@ -5507,10 +7005,7 @@ loadSVGFont() {
 				this.guidelines.custom = [];
 				
 				// Обновляем элементы управления
-    document.getElementById('top-guide').value = Math.round(this.guidelines.top);
-    document.getElementById('bottom-guide').value = Math.round(this.guidelines.bottom);
-    document.getElementById('left-guide').value = Math.round(this.guidelines.left);
-    document.getElementById('right-guide').value = Math.round(this.guidelines.right);
+this.updateGuidelineControls();
 				
 				// Парсим глифы
 				this.fontData.glyphs = [];
@@ -6495,33 +7990,35 @@ performContourSplit(originalContourIndex, pointsInGroupA, pointsInGroupB) {
 
 			// Обновление позиции направляющей
 			updateGuidelinePosition(id, position, type) {
-				switch(id) {
+				const upm = this.fontData.unitsPerEm;
+				switch (id) {
 					case 'top':
-						this.guidelines.top = position;
-						document.getElementById('top-guide').textContent = Math.round(position);
+						this.fontData.ascent = upm - position;
 						break;
 					case 'bottom':
-						this.guidelines.bottom = position;
-						document.getElementById('bottom-guide').textContent = Math.round(position);
+						this.fontData.descent = upm - position;
+						break;
+					case 'baseline':
+						// baseline = unitsPerEm, не двигаем
+						break;
+					case 'capline':
+						this.fontData.capHeight = upm - position;
+						break;
+					case 'xline':
+						this.fontData.xHeight = upm - position;
 						break;
 					case 'left':
 						this.guidelines.left = position;
-						document.getElementById('left-guide').value = Math.round(position);
 						break;
 					case 'right':
 						this.guidelines.right = position;
-						document.getElementById('right-guide').value = Math.round(position);
-						break;
-					case 'baseline':
-						this.guidelines.baseline = position;
 						break;
 					default:
-						// Пользовательская направляющая
 						const customGuide = this.guidelines.custom.find(g => g.id === id);
-						if (customGuide) {
-							customGuide.position = position;
-						}
+						if (customGuide) customGuide.position = position;
 				}
+				// пересчитать производные и перерисовать readout
+				this.updateGuidelineControls();
 			}
 
 			// Удаление направляющей
@@ -6946,8 +8443,97 @@ continueContourFromSelectedPoint(x, y, controlGroup) {
     
     this.updateSegmentButtons();
 }
+createNewContourFromMiddlePoint(selectedPointState, x, y) {
+    const controlGroup = document.getElementById('control-group');
+    if (!controlGroup) return;
 
-			// Исправленная функция создания нового контура
+    // исходные координаты средней точки
+    const srcX = selectedPointState.x;
+    const srcY = selectedPointState.y;
+
+    // новый контур
+    const newContourIndex = this.pathTopology.contours.length;
+    const newContour = {
+        points: [],
+        segments: [],
+        isClosed: false
+    };
+
+    // точка 1 — копия исходной (не ссылка на исходный объект!)
+    const p1El = this.createControlPoint(srcX, srcY, 'point', controlGroup);
+    p1El.setAttribute('data-contour-index', newContourIndex);
+    p1El.setAttribute('data-point-index', 0);
+    newContour.points.push({
+        element: p1El,
+        index: 0,
+        contourIndex: newContourIndex,
+        x: srcX,
+        y: srcY,
+        isBezier: false
+    });
+
+    // точка 2 — место клика
+    const p2El = this.createControlPoint(x, y, 'point', controlGroup);
+    p2El.setAttribute('data-contour-index', newContourIndex);
+    p2El.setAttribute('data-point-index', 1);
+    newContour.points.push({
+        element: p2El,
+        index: 1,
+        contourIndex: newContourIndex,
+        x: x,
+        y: y,
+        isBezier: false
+    });
+
+    // сегмент между ними
+    const useBezier = this.state.useBezierMode;
+    const seg = {
+        startIndex: 0,
+        endIndex: 1,
+        type: useBezier ? 'bezier' : 'line',
+        control1: null,
+        control2: null
+    };
+
+    if (useBezier) {
+        const dx = x - srcX;
+        const dy = y - srcY;
+        const len = Math.sqrt(dx*dx + dy*dy);
+        if (len > 0.001) {
+            const nx = dx / len;
+            const ny = dy / len;
+            const k = len * 0.39;
+            seg.control1 = { x: srcX + nx * k, y: srcY + ny * k };
+            seg.control2 = { x: x - nx * k, y: y - ny * k };
+        }
+    }
+
+    newContour.segments.push(seg);
+    this.pathTopology.contours.push(newContour);
+
+    // типы точек
+    this.updatePointTypesInContour(newContour);
+    this.updatePathFromTopology();
+
+    // выделяем новую (конечную) точку
+    if (selectedPointState.element) selectedPointState.element.classList.remove('selected');
+    p2El.classList.add('selected');
+    this.state.selectedPoint = {
+        element: p2El,
+        x: x,
+        y: y,
+        contourIndex: newContourIndex,
+        pointIndex: 1,
+        pointType: 'end'
+    };
+
+    if (document.getElementById('show-controls').checked) {
+        this.renderAllControlElements();
+    }
+    this.updateSegmentButtons();
+}
+
+			// Создания нового контура
 createNewContourFromPoint(x, y, controlGroup) {
     
     const newContourIndex = this.pathTopology.contours.length;
@@ -7322,6 +8908,8 @@ renderAllControlElements() {
 				
 				// Основные направляющие
 				this.drawGuideline('horizontal', this.guidelines.top, 'top', bbox, guidelineGroup);
+				this.drawGuideline('horizontal', this.fontData.unitsPerEm - this.fontData.capHeight, 'capline', bbox, guidelineGroup);
+				this.drawGuideline('horizontal', this.fontData.unitsPerEm - this.fontData.xHeight, 'xline', bbox, guidelineGroup);
 				this.drawGuideline('horizontal', this.guidelines.bottom, 'bottom', bbox, guidelineGroup);
 				this.drawGuideline('vertical', this.guidelines.left, 'left', bbox, guidelineGroup);
 				this.drawGuideline('vertical', this.guidelines.right, 'right', bbox, guidelineGroup);
@@ -7347,15 +8935,23 @@ drawGuideline(type, position, id, bbox, container, isCustom = false) {
     const extendedLength = 500;
     let strokeColor;
     
-    if (id === 'baseline') {
-        strokeColor = '#ff6b6b';
-    } else if (isCustom) {
-        strokeColor = '#cba6f7';
-    } else if (id === 'right') {
-        strokeColor = '#74c7ec';
-    } else {
-        strokeColor = type === 'horizontal' ? '#a6e3a1' : '#f9e2af';
-    }
+if (id === 'baseline') {
+    strokeColor = '#ff6b6b';   // красный — baseline
+} else if (id === 'capline') {
+    strokeColor = '#89b4fa';   // синий — cap line
+} else if (id === 'xline') {
+    strokeColor = '#74c7ec';   // голубой — x line
+} else if (id === 'top') {
+    strokeColor = '#a6e3a1';   // зелёный — ascent
+} else if (id === 'bottom') {
+    strokeColor = '#fab387';   // оранжевый — descent
+} else if (isCustom) {
+    strokeColor = '#cba6f7';   // фиолетовый — пользовательские
+} else if (id === 'right') {
+    strokeColor = '#74c7ec';
+} else {
+    strokeColor = type === 'horizontal' ? '#a6e3a1' : '#f9e2af';
+}
     
     const line = document.createElementNS(svgNS, 'line');
     
@@ -7373,7 +8969,10 @@ drawGuideline(type, position, id, bbox, container, isCustom = false) {
     
     line.setAttribute('stroke', strokeColor);
     line.setAttribute('stroke-width', id === 'baseline' ? '2' : '1');
-    line.setAttribute('stroke-dasharray', id === 'baseline' ? '5,3' : '10,5');
+	line.setAttribute('stroke-dasharray',
+    id === 'baseline' ? '5,3' :
+    (id === 'capline' || id === 'xline') ? '3,3' :
+    '10,5');
     
     // ВАЖНО: Все пользовательские направляющие должны быть draggable
     const classes = ['guideline', type];
@@ -7455,7 +9054,7 @@ updatePointTypesInContour(contour) {
 			// Добавление точки к пути при клике на него
 addPointToPathAtClick(clickX, clickY) {
     if (!this.currentGlyph) return;
-    this.clearSelection();
+    this.clearAllSelections();
     // Ищем ближайший сегмент
     const closestSegment = this.findClosestSegment(clickX, clickY);
     
@@ -7831,86 +9430,70 @@ hideSegmentButtons() {
 setupViewport() {
     const svgCanvas = document.getElementById('svg-canvas');
     if (!this.currentGlyph) return;
-    
-    // === НОРМАЛИЗАЦИЯ НАПРАВЛЯЮЩИХ ===
-    // Защита от положительного descent и других кривых метрик
+
     let top = Number(this.guidelines.top);
     let bottom = Number(this.guidelines.bottom);
-    
     if (!isFinite(top)) top = 200;
     if (!isFinite(bottom)) bottom = 1200;
-    
-    // Если bottom оказался выше top (положительный descent) — меняем местами
-    if (bottom <= top) {
-        const tmp = top;
-        top = bottom;
-        bottom = tmp + 400;
-    }
-    
-    // Сохраняем исправленные значения обратно
+    if (bottom <= top) { const tmp = top; top = bottom; bottom = tmp + 400; }
     this.guidelines.top = top;
     this.guidelines.bottom = bottom;
-    
-    const paddingX = 1500;
-    const paddingY = 250;
+
+    const paddingX = 1500; 
+    const paddingY = 700;
+
     const minX = this.guidelines.left - paddingX;
     const maxX = this.guidelines.right + paddingX;
     const minY = top - paddingY;
-    const maxY = bottom + paddingY;
-    
+    const maxY = bottom + (paddingY * 1.5);
+
     let width = maxX - minX;
     let height = maxY - minY;
-    
-    // === ЖЁСТКАЯ ЗАЩИТА VIEWBOX ===
     if (!isFinite(width) || width <= 0) width = 2000;
     if (!isFinite(height) || height <= 0) height = 1500;
-    
-    svgCanvas.setAttribute('viewBox', `${minX} ${minY} ${width} ${height}`);
-    
+
+    // viewBox — область содержимого
+	svgCanvas.setAttribute('viewBox', `${minX} ${minY} ${width} ${height}`);
+
+    // CSS-размер SVG задаёт «сколько пикселей на канве занимает viewBox»
+    const zoomScale = (parseInt(document.getElementById('zoom-scale').value) / 50) || 1;
+
+    // Размер контейнера
     const container = document.querySelector('.canvas-container');
-    if (container) {
-        const containerWidth = container.clientWidth;
-        const containerHeight = container.clientHeight;
-        
-        let zoomScale = parseInt(document.getElementById('zoom-scale').value) / 100;
-        if (!isFinite(zoomScale) || zoomScale <= 0) zoomScale = 1;
-        
-        const scaleX = (containerWidth / width) * zoomScale;
-        const scaleY = (containerHeight / height) * zoomScale;
-        
-        svgCanvas.style.width = `${width * scaleX}px`;
-        svgCanvas.style.height = `${height * scaleY}px`;
-        
-        svgCanvas.style.position = 'absolute';
-        svgCanvas.style.left = '50%';
-        svgCanvas.style.top = '50%';
-        svgCanvas.style.transform = `translate(-50%, -50%) scale(${zoomScale})`;
-        svgCanvas.style.transformOrigin = 'center';
+    const cw = container ? container.clientWidth  : 1600;
+    const ch = container ? container.clientHeight : 1200;
+
+    // Соотношение сторон viewBox
+    const aspect = width / height;
+    let cssW, cssH;
+    if (aspect > cw / ch) {
+        cssW = cw;
+        cssH = cw / aspect;
+    } else {
+        cssH = ch;
+        cssW = ch * aspect;
     }
+
+    // Применяем zoom: увеличиваем CSS-размер, скролл появится в контейнере
+    svgCanvas.style.width  = `${cssW * zoomScale}px`;
+    svgCanvas.style.height = `${cssH * zoomScale}px`;
+
+    // НЕ позиционируем absolute/transform — пусть flex центрирует
+    svgCanvas.style.position = 'relative';
+    svgCanvas.style.left = '';
+    svgCanvas.style.top = '';
+    svgCanvas.style.transform = '';
+    svgCanvas.style.transformOrigin = '';
 }
 
-			clearSelection() {
-				document.querySelectorAll('.point.selected, .control-point.selected').forEach(point => {
-					point.classList.remove('selected');
-				});
-				
-				this.state.selectedPoint = null;
-				
-				// Скрываем кнопку
-				const toggleCloseBtn = document.getElementById('toggle-close');
-				if (toggleCloseBtn) {
-					toggleCloseBtn.style.display = 'none';
-				}
-			}
 
-			resetView() {
-				this.renderGlyph();
-			}
+resetView() {
+	this.renderGlyph();
+}
 
-// Новый метод - диалог выбора метрик
 showMetricsDialog(metrics, fontName, callback = null) {
     const isTemplateCreation = !!callback;
-    
+
     // === НОРМАЛИЗАЦИЯ МЕТРИК ===
     let ascent  = Number(metrics && metrics.ascent);
     let descent = Number(metrics && metrics.descent);
@@ -7919,149 +9502,145 @@ showMetricsDialog(metrics, fontName, callback = null) {
     if (descent > 0)                         descent = -descent;
     if (descent >= 0)                        descent = -200;
     metrics = { ...(metrics || {}), ascent, descent };
-    
-    // === УДАЛЯЕМ ВСЕ СТАРЫЕ МОДАЛКИ МЕТРИК (защита от дублей id) ===
-    document.querySelectorAll('#metrics-modal').forEach(m => {
-        m.remove();
-    });
-    
+
+    // === УДАЛЯЕМ СТАРЫЕ МОДАЛКИ ===
+    document.querySelectorAll('#metrics-modal').forEach(m => m.remove());
+
+    // === СБОРКА БЛОКА МЕТРИК (без вложенных шаблонов) ===
+    let metricsBlock;
+    if (metrics.allMetrics) {
+        const typo = metrics.allMetrics.typo;
+        const win  = metrics.allMetrics.win;
+        const hhea = metrics.allMetrics.hhea;
+
+        const typoStr = (typo && typo.ascent !== null)
+            ? typo.ascent + '/' + typo.descent
+            : 'N/A';
+        const winStr = (win && win.ascent !== null)
+            ? win.ascent + '/' + win.descent
+            : 'N/A';
+        const hheaStr = (hhea && hhea.ascent !== null)
+            ? hhea.ascent + '/' + hhea.descent
+            : 'N/A';
+
+        metricsBlock =
+            '<div style="font-size:11px;line-height:1.4;">' +
+            '<div>Typo: ' + typoStr + '</div>' +
+            '<div>Win: ' + winStr + '</div>' +
+            '<div>HHEA: ' + hheaStr + '</div>' +
+            '</div>' +
+            '<div style="margin-top:10px;font-size:11px;color:#a6e3a1;">' +
+            'Будут использованы: <strong>' + ascent + '/' + descent + '</strong>' +
+            '</div>';
+    } else {
+        metricsBlock = '<div>Ascent: ' + ascent + ', Descent: ' + descent + '</div>';
+    }
+
+    // === ТЕКСТЫ КНОПОК И ПОДПИСЕЙ ===
+    const titleText = isTemplateCreation
+        ? 'Использовать метрики шрифта?'
+        : 'Использовать метрики подложки?';
+    const checkboxLabel = isTemplateCreation
+        ? 'Использовать метрики шрифта для нового шрифта'
+        : 'Использовать метрики подложки для направляющих';
+    const hintText = isTemplateCreation
+        ? 'Новый шрифт будет создан с этими метриками'
+        : ('Направляющие будут установлены на ' + ascent + '/' + descent);
+    const applyText = isTemplateCreation ? 'Продолжить' : 'Применить';
+    const skipText  = isTemplateCreation ? 'Оставить стандартные' : 'Оставить текущие';
+
+    // === ФИНАЛЬНЫЙ HTML (одна шаблонная строка, без вложенных `) ===
     const modalHtml = `
         <div id="metrics-modal" class="modal" style="display:flex;">
             <div class="modal-content" style="max-width:500px;">
                 <div class="modal-header">
-                    <h3><i class="fas fa-ruler"></i> ${isTemplateCreation ? 'Использовать метрики шрифта?' : 'Использовать метрики подложки?'}</h3>
+                    <h3><i class="fas fa-ruler"></i> ${titleText}</h3>
                 </div>
                 <div style="padding:20px;">
                     <p>Шрифт "<strong>${fontName}</strong>" имеет свои метрики:</p>
-                    
+
                     <div style="background:#313244;padding:15px;border-radius:8px;margin:15px 0;">
                         <div style="font-size:12px;color:#a6adc8;margin-bottom:5px;">Метрики шрифта:</div>
-                        ${metrics.allMetrics ? `
-                            <div style="font-size:11px;line-height:1.4;">
-                                <div>Typo: ${metrics.allMetrics.typo && metrics.allMetrics.typo.ascent !== null ? `${metrics.allMetrics.typo.ascent}/${metrics.allMetrics.typo.descent}` : 'N/A'}</div>
-                                <div>Win: ${metrics.allMetrics.win && metrics.allMetrics.win.ascent !== null ? `${metrics.allMetrics.win.ascent}/${metrics.allMetrics.win.descent}` : 'N/A'}</div>
-                                <div>HHEA: ${metrics.allMetrics.hhea && metrics.allMetrics.hhea.ascent !== null ? `${metrics.allMetrics.hhea.ascent}/${metrics.allMetrics.hhea.descent}` : 'N/A'}</div>
-                            </div>
-                            <div style="margin-top:10px;font-size:11px;color:#a6e3a1;">
-                                Будут использованы: <strong>${ascent}/${descent}</strong>
-                            </div>
-                        ` : `
-                            <div>Ascent: ${ascent}, Descent: ${descent}</div>
-                        `}
+                        ${metricsBlock}
                     </div>
-                    
+
                     <div style="margin:20px 0;">
                         <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
                             <input type="checkbox" id="use-metrics-checkbox" checked>
-                            <span>${isTemplateCreation ? 'Использовать метрики шрифта для нового шрифта' : 'Использовать метрики подложки для направляющих'}</span>
+                            <span>${checkboxLabel}</span>
                         </label>
                         <div style="font-size:12px;color:#a6adc8;margin-top:5px;margin-left:30px;">
-                            ${isTemplateCreation 
-                                ? 'Новый шрифт будет создан с этими метриками' 
-                                : 'Направляющие будут установлены на ' + ascent + '/' + descent}
+                            ${hintText}
                         </div>
                     </div>
-                    
+
                     <div style="display:flex;gap:10px;margin-top:20px;">
                         <button id="apply-metrics" style="flex:1;">
-                            <i class="fas fa-check"></i> ${isTemplateCreation ? 'Продолжить' : 'Применить'}
+                            <i class="fas fa-check"></i> ${applyText}
                         </button>
                         <button id="skip-metrics" class="secondary" style="flex:1;">
-                            <i class="fas fa-times"></i> ${isTemplateCreation ? 'Оставить стандартные' : 'Оставить текущие'}
+                            <i class="fas fa-times"></i> ${skipText}
                         </button>
                     </div>
                 </div>
             </div>
         </div>
     `;
-    
+
     document.body.insertAdjacentHTML('beforeend', modalHtml);
-    
-    // === БЕРЁМ ИМЕННО НОВУЮ МОДАЛКУ (последнюю) ===
+
     const modals = document.querySelectorAll('#metrics-modal');
     const modal = modals[modals.length - 1];
-    
-    if (!modal) {
-        console.error('=== [ОШИБКА] Модалка не найдена после вставки ===');
-        return;
-    }
-    
-    // === КНОПКИ ИЩЕМ ВНУТРИ ЭТОЙ МОДАЛКИ, А НЕ ПО ВСЕМУ ДОКУМЕНТУ ===
+    if (!modal) { console.error('metrics-modal не создана'); return; }
+
     const applyBtn = modal.querySelector('#apply-metrics');
     const skipBtn  = modal.querySelector('#skip-metrics');
     const checkbox = modal.querySelector('#use-metrics-checkbox');
-    
-    if (!applyBtn || !skipBtn) {
-        console.error('=== [ОШИБКА] Кнопки не найдены внутри модалки ===');
-        return;
-    }
-    
-    // === «ПРОДОЛЖИТЬ» / «ПРИМЕНИТЬ» ===
+    if (!applyBtn || !skipBtn) { console.error('кнопки не найдены'); return; }
+
     applyBtn.addEventListener('click', () => {
-        
         const useMetrics = checkbox.checked;
-
         modal.remove();
-        
+
         if (typeof callback === 'function') {
-
-            try {
-                callback(useMetrics);
-
-            } catch (err) {
-                console.error('=== [ОШИБКА] в callback:', err);
-            }
+            try { callback(useMetrics); }
+            catch (err) { console.error('callback error:', err); }
         } else {
-
             if (useMetrics) {
                 this.fontData.ascent  = ascent;
                 this.fontData.descent = descent;
                 this.guidelines.top    = this.fontData.unitsPerEm - ascent;
                 this.guidelines.bottom = this.fontData.unitsPerEm - descent;
-                
                 if (this.guidelines.bottom <= this.guidelines.top) {
                     this.guidelines.bottom = this.guidelines.top + 400;
                 }
-                
                 this.updateGuidelineControls();
                 this.renderGuidelines();
             }
-            
             const fontModal = document.getElementById('font-modal');
             if (fontModal) fontModal.style.display = 'none';
-            
             this.updateUnderlay();
         }
     });
-    
-    // === «ОСТАВИТЬ СТАНДАРТНЫЕ/ТЕКУЩИЕ» ===
+
     skipBtn.addEventListener('click', () => {
-     
         modal.remove();
-        
         if (typeof callback === 'function') {
-            try {
-                callback(false);
-            } catch (err) {
-                console.error('=== [ОШИБКА] в callback (skip):', err);
-            }
+            try { callback(false); }
+            catch (err) { console.error('callback error (skip):', err); }
         } else {
             const fontModal = document.getElementById('font-modal');
             if (fontModal) fontModal.style.display = 'none';
             this.updateUnderlay();
         }
     });
-    
-    // === КЛИК ПО ФОНУ ===
+
     modal.addEventListener('click', (e) => {
         if (e.target === modal) {
             modal.remove();
-            if (typeof callback === 'function') {
-                callback(false);
-            }
+            if (typeof callback === 'function') callback(false);
         }
     });
-    
 }
 
 renameFont() {
@@ -8306,16 +9885,37 @@ showNotification(message, type = 'info', duration = 5000) {
 }
 
 showGroupSelection(fontName) {
-    // Группы символов
     const groups = [
         { id: 'latin', name: 'Английские буквы', symbols: this.getSymbolRange(65, 90).concat(this.getSymbolRange(97, 122)), default: true },
         { id: 'cyrillic', name: 'Русские буквы', symbols: this.getCyrillic(), default: true },
         { id: 'numbers', name: 'Цифры', symbols: this.getSymbolRange(48, 57), default: true },
-        { id: 'basic', name: 'Основные знаки', symbols: '!?.,:;-"\'()[]{}@#$%^&*_+=|\\/~`<>'.split(''), default: true },
+        { id: 'basic', name: 'Основные знаки', symbols: '!?.,:;-"\'()[]{}@#$%^&*_+=|\\/~<>'.split(''), default: true },
         { id: 'extra', name: 'Дополнительно', symbols: ['№','©','®','™','€','£','¥','°','±','×','÷','…','←','→','↑','↓'], default: false }
     ];
-    
-    // Создаем окно выбора групп
+
+    // === СБОРКА HTML ГРУПП через конкатенацию, без вложенных шаблонов ===
+    const groupsHtml = groups.map(function(group) {
+        const checked = group.default ? 'checked' : '';
+        const preview = group.symbols.slice(0, 20).join('');
+        const dots = group.symbols.length > 20 ? '...' : '';
+
+        return (
+            '<div style="margin-bottom:15px;padding:15px;background:#313244;border-radius:8px;">' +
+                '<label style="display:flex;align-items:center;cursor:pointer;">' +
+                    '<input type="checkbox" data-group="' + group.id + '" ' + checked + ' style="margin-right:10px;">' +
+                    '<div>' +
+                        '<div style="font-weight:bold;color:#cdd6f4;">' + group.name + '</div>' +
+                        '<div style="font-size:12px;color:#a6adc8;">' +
+                            group.symbols.length + ' символов: ' +
+                            '<span style="font-family:monospace;">' + preview + dots + '</span>' +
+                        '</div>' +
+                    '</div>' +
+                '</label>' +
+            '</div>'
+        );
+    }).join('');
+
+    // === ФИНАЛЬНЫЙ HTML (одна шаблонная строка, без вложенных) ===
     const modalHtml = `
         <div id="group-modal" class="modal" style="display:flex;">
             <div class="modal-content" style="max-width:500px;">
@@ -8324,24 +9924,8 @@ showGroupSelection(fontName) {
                     <div style="font-size:14px;color:#a6adc8;">Шрифт: ${fontName}</div>
                 </div>
                 <div style="padding:20px;">
-                    ${groups.map(group => `
-                        <div style="margin-bottom:15px;padding:15px;background:#313244;border-radius:8px;">
-                            <label style="display:flex;align-items:center;cursor:pointer;">
-                                <input type="checkbox" 
-                                       data-group="${group.id}" 
-                                       ${group.default ? 'checked' : ''}
-                                       style="margin-right:10px;">
-                                <div>
-                                    <div style="font-weight:bold;color:#cdd6f4;">${group.name}</div>
-                                    <div style="font-size:12px;color:#a6adc8;">
-                                        ${group.symbols.length} символов: 
-                                        <span style="font-family:monospace;">${group.symbols.slice(0, 20).join('')}${group.symbols.length > 20 ? '...' : ''}</span>
-                                    </div>
-                                </div>
-                            </label>
-                        </div>
-                    `).join('')}
-                    
+                    ${groupsHtml}
+
                     <div style="display:flex;gap:10px;margin-top:20px;">
                         <button id="create-font-btn" style="flex:1;">
                             <i class="fas fa-check"></i> Создать
@@ -8354,11 +9938,10 @@ showGroupSelection(fontName) {
             </div>
         </div>
     `;
-    
+
     document.body.insertAdjacentHTML('beforeend', modalHtml);
     const modal = document.getElementById('group-modal');
-    
-    // Обработчики
+
     document.getElementById('create-font-btn').onclick = () => {
         const selectedGroups = [];
         modal.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
@@ -8366,20 +9949,20 @@ showGroupSelection(fontName) {
             const group = groups.find(g => g.id === groupId);
             if (group) selectedGroups.push(group);
         });
-        
+
         if (selectedGroups.length === 0) {
             alert('Выберите хотя бы одну группу');
             return;
         }
-        
+
         modal.remove();
         this.generateFontFromTemplate(fontName, selectedGroups);
     };
-    
+
     document.getElementById('cancel-btn').onclick = () => {
         modal.remove();
     };
-    
+
     modal.onclick = (e) => {
         if (e.target === modal) modal.remove();
     };
