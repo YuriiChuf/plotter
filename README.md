@@ -1,6 +1,6 @@
 1 проект<br>
-https://yuriichuf.github.io/plotter/<br>
-Инструменты для лазерной резки<br>
+https://yuriichuf.github.io/plotter/laser/index.html<br>
+Инструменты для лазерного гравера<br>
 
 Куб-головоломка<br>
 Проектирование развёртки куба-пазла. Синхронизация граней: изменение на одной автоматически отражается на смежных. 3D-предпросмотр.
@@ -14,7 +14,7 @@ https://yuriichuf.github.io/plotter/<br>
 2 проект
 Sovol 3D SO-1
 
-https://yuriichuf.github.io/plotter/
+https://yuriichuf.github.io/plotter/sovol/index.html<br>
 
 Полный набор веб-инструментов для работы с векторной графикой, создания шрифтов и подготовки G-кода для плоттера Sovol SO-1. Все инструменты работают полностью в браузере без необходимости установки дополнительного ПО.
 
