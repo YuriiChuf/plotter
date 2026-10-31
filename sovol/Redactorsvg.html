@@ -3326,6 +3326,10 @@ _showSheetCellPassport(cell) {
     m.querySelectorAll('.close-modal').forEach(b => b.onclick = close);
 
     const inp = m.querySelector('#cell-char');
+	setTimeout(() => {
+        inp.focus();
+        inp.select();   // если хочешь, чтобы старое содержимое выделилось под замену
+    }, 30);
     m.querySelector('#cell-space').onclick = () => { inp.value = ' '; };
 
     m.querySelector('#cell-save').onclick = () => {
@@ -7291,18 +7295,24 @@ this.updateGuidelineControls();
 			// Парсинг Unicode (упрощенная версия)
 			parseUnicode(unicodeAttr) {
 				if (!unicodeAttr) return null;
-				
-				// Если это пробел
+
+				// Пробел
 				if (unicodeAttr.trim() === '') return ' ';
-				
-				// Если это HTML entity
-				const entityMatch = unicodeAttr.match(/&#x([0-9A-Fa-f]+);/);
-				if (entityMatch) {
-					return String.fromCharCode(parseInt(entityMatch[1], 16));
+
+				// Если есть entity — раскодировать все
+				if (unicodeAttr.includes('&#')) {
+					let result = '';
+					const re = /&#x([0-9A-Fa-f]+);|&#([0-9]+);/g;
+					let m;
+					while ((m = re.exec(unicodeAttr)) !== null) {
+						if (m[1]) result += String.fromCharCode(parseInt(m[1], 16));
+						else if (m[2]) result += String.fromCharCode(parseInt(m[2], 10));
+					}
+					if (result) return result;
 				}
-				
-				// Если это обычный символ
-				return unicodeAttr.length > 0 ? unicodeAttr.charAt(0) : null;
+
+				// Обычная строка (UTF-8) — берём все символы
+				return unicodeAttr;
 			}
 
 			// Сохранение шрифта
@@ -7338,11 +7348,24 @@ this.updateGuidelineControls();
 			<font-face font-family="${saveData.name}" units-per-em="${saveData.unitsPerEm}" ascent="${saveData.ascent}" descent="${saveData.descent}" cap-height="${saveData.capHeight}" x-height="${saveData.xHeight}"/>
 			<missing-glyph horiz-adv-x="${saveData.horizAdvX}"/>`;
 				
-				saveData.glyphs.forEach(glyph => {
-					const unicodeAttr = glyph.unicode === ' ' ? ' ' : `&#x${glyph.unicode.charCodeAt(0).toString(16)};`;
-					svg += `
-			<glyph unicode="${unicodeAttr}" glyph-name="${glyph.name}" d="${glyph.d}" horiz-adv-x="${glyph.horizAdvX || saveData.horizAdvX}"/>`;
-				});
+			saveData.glyphs.forEach(glyph => {
+				let unicodeAttr;
+				if (!glyph.unicode) {
+					// альтернативный глиф — без unicode
+					unicodeAttr = '';
+				} else if (glyph.unicode.length === 1) {
+					// одиночный символ — стандартный формат
+					const code = glyph.unicode.charCodeAt(0);
+					unicodeAttr = glyph.unicode === ' ' ? ' ' : `&#x${code.toString(16)};`;
+				} else {
+					// лигатура — каждый символ как entity
+					unicodeAttr = Array.from(glyph.unicode).map(c => `&#x${c.charCodeAt(0).toString(16)};`).join('');
+				}
+
+				const unicodePart = unicodeAttr ? ` unicode="${unicodeAttr}"` : '';
+				svg += `
+			<glyph${unicodePart} glyph-name="${glyph.name}" d="${glyph.d || ''}" horiz-adv-x="${glyph.horizAdvX || saveData.horizAdvX}"/>`;
+			});
 				
 				svg += `
 			</font>

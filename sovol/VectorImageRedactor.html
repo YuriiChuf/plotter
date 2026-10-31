@@ -16389,22 +16389,23 @@ class GOSTSVGFont {
 			glyphElements.forEach(glyph => {
 				const unicode = glyph.getAttribute('unicode');
 				const d = glyph.getAttribute('d');
+							
+			if (unicode) {
+				let char = unicode;
+				if (unicode === '&amp;') char = '&';
+				else if (unicode === '&lt;') char = '<';
+				else if (unicode === '&gt;') char = '>';
+				else if (unicode === '&quot;') char = '"';
+				else if (unicode === '&#39;') char = "'";
 				
-				if (unicode && d && d.trim() !== '') {
-					let char = unicode;
-					if (unicode === '&amp;') char = '&';
-					else if (unicode === '&lt;') char = '<';
-					else if (unicode === '&gt;') char = '>';
-					else if (unicode === '&quot;') char = '"';
-					else if (unicode === '&#39;') char = "'";
-					
-					this.glyphs.set(char, {
-						path: d,
-						horizAdvX: parseFloat(glyph.getAttribute('horiz-adv-x')) || this.horizAdvX
-					});
-					loadedGlyphs++;
-				}
-			});
+				// Сохраняем глиф даже без контура (d = null/'' → пустой path)
+				this.glyphs.set(char, {
+					path: d || '',   // null/undefined → ''
+					horizAdvX: parseFloat(glyph.getAttribute('horiz-adv-x')) || this.horizAdvX,
+					name: glyph.getAttribute('glyph-name') || null   // ← имя глифа (опционально)
+				});
+				loadedGlyphs++;
+			}			});
 
 			
 		} catch (error) {
@@ -16680,26 +16681,61 @@ async generatePathsForPage() {
             if (deficit > 0.001 && spaceCount > 0) extraPerSpace = deficit / spaceCount;
         }
         
-        let currentX = startX;
-        for (let charIndex = 0; charIndex < line.length; charIndex++) {
-            const char = line[charIndex];
-            const glyphPath = this.font.getGlyphPath(char);
-            if (glyphPath) {
-                try {
-                    const coordinates = this.font.parsePathToCoordinates(glyphPath, scale);
-                    if (coordinates.length > 0) {
-                        const charPaths = this.coordinatesToPaths(
-                            coordinates, currentX, baselineY, true
-                        );
-                        this.paths.push(...charPaths);
-                    }
-                } catch (error) {
-                    console.warn(`Ошибка парсинга '${char}':`, error);
-                }
-            }
-            currentX += this.font.getGlyphWidth(char) * scale;
-            if (char === ' ' && extraPerSpace > 0) currentX += extraPerSpace;
+let currentX = startX;
+let charIndex = 0;
+
+while (charIndex < line.length) {
+    // ─── Поиск лигатуры: от длинной к короткой ───
+    let ligatureText = null;
+    let ligaturePath = null;
+    let ligatureWidth = null;
+    
+    const MAX_LIGATURE_LEN = 4;   // максимум 4 символа (можно увеличить)
+    
+    for (let len = MAX_LIGATURE_LEN; len >= 2; len--) {
+        if (charIndex + len > line.length) continue;
+        const sub = line.substring(charIndex, charIndex + len);
+        const p = this.font.getGlyphPath(sub);
+        if (p) {
+            ligatureText = sub;
+            ligaturePath = p;
+            ligatureWidth = this.font.getGlyphWidth(sub);
+            break;
         }
+    }
+    
+    // ─── Если лигатура не найдена — обычный символ ───
+if (!ligaturePath) {
+    const char = line[charIndex];
+    ligatureText = char;
+    ligaturePath = this.font.getGlyphPath(char);   // может быть null (пробел)
+    ligatureWidth = this.font.getGlyphWidth(char); // ← ВСЕГДА присваиваем (500 для пробела)
+}
+    
+    // ─── Рисуем ───
+    if (ligaturePath) {
+        try {
+            const coordinates = this.font.parsePathToCoordinates(ligaturePath, scale);
+            if (coordinates.length > 0) {
+                const charPaths = this.coordinatesToPaths(
+                    coordinates, currentX, baselineY, true
+                );
+                this.paths.push(...charPaths);
+            }
+        } catch (error) {
+            console.warn(`Ошибка парсинга '${ligatureText}':`, error);
+        }
+    }
+    
+    // ─── Сдвиг ───
+    currentX += ligatureWidth * scale;
+    
+    // Доп. сдвиг после пробела (только если это одиночный пробел)
+    if (ligatureText === ' ' && extraPerSpace > 0) currentX += extraPerSpace;
+    
+    // Сдвиг индекса на длину лигатуры
+    charIndex += ligatureText ? ligatureText.length : 1;
+}
     }
     
     this.paths = this.paths.filter(path => path.length > 1);
