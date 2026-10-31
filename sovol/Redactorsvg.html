@@ -1104,7 +1104,9 @@
                     deleteVectorTempLine: null,
                     guidelineCreationStart: null,
                     underlayFont: null,
+					selectedPoints: new Set(),
 					selectedSegment: null,
+					marquee: null,
 					isCreatingTemplate: false, // Флаг создания шаблона
 					fileDialogOpen: false, // Флаг открытого диалога
 					useBezierMode: true
@@ -3444,6 +3446,159 @@ _deleteSelectedMarkers() {
         this._renderMarkerOverlay();
     }
 }
+
+_updateMarqueeRect(rect) {
+    const m = this.state.marquee;
+    if (!m || !rect) return;
+    const x = Math.min(m.startX, m.curX);
+    const y = Math.min(m.startY, m.curY);
+    const w = Math.abs(m.curX - m.startX);
+    const h = Math.abs(m.curY - m.startY);
+    rect.setAttribute('x', x);
+    rect.setAttribute('y', y);
+    rect.setAttribute('width', w);
+    rect.setAttribute('height', h);
+}
+
+_selectPointsInMarquee(marquee, additive) {
+    if (!additive) {
+        this.state.selectedPoints.clear();
+        // снимаем визуальное выделение
+        document.querySelectorAll('.point.selected, .control-point.selected').forEach(el => {
+            el.classList.remove('selected');
+        });
+    }
+
+    const x1 = Math.min(marquee.startX, marquee.curX);
+    const x2 = Math.max(marquee.startX, marquee.curX);
+    const y1 = Math.min(marquee.startY, marquee.curY);
+    const y2 = Math.max(marquee.startY, marquee.curY);
+
+    this.pathTopology.contours.forEach((contour, ci) => {
+        contour.points.forEach((point, pi) => {
+            if (point.x >= x1 && point.x <= x2 && point.y >= y1 && point.y <= y2) {
+                const key = ci + ':' + pi;
+                this.state.selectedPoints.add(key);
+                if (point.element) point.element.classList.add('selected');
+            }
+        });
+    });
+
+    const count = this.state.selectedPoints.size;
+    if (count > 0) this.showNotification(`Выделено точек: ${count}`, 'info', 1200);
+    else this.clearAllSelections();
+}
+
+_startGroupDrag(startX, startY) {
+    const svgCanvas = document.getElementById('svg-canvas');
+    const startPt = this.getSVGCoordinates({clientX: startX, clientY: startY}, svgCanvas);
+    // Но startX/startY — это уже SVG-координаты. Используем напрямую.
+    const originX = startX;
+    const originY = startY;
+
+    // Запоминаем исходные позиции всех выделенных точек
+    const originals = [];
+    this.state.selectedPoints.forEach(key => {
+        const [ci, pi] = key.split(':').map(Number);
+        const contour = this.pathTopology.contours[ci];
+        if (!contour) return;
+        const p = contour.points[pi];
+        if (!p) return;
+        originals.push({ contourIndex: ci, pointIndex: pi, x0: p.x, y0: p.y, point: p });
+    });
+
+    // Запоминаем исходные контрольные точки сегментов, у которых оба конца выделены
+    const segOriginals = [];
+    this.pathTopology.contours.forEach((contour, ci) => {
+        contour.segments.forEach((seg, si) => {
+            const k1 = ci + ':' + seg.startIndex;
+            const k2 = ci + ':' + seg.endIndex;
+            if (this.state.selectedPoints.has(k1) && this.state.selectedPoints.has(k2)) {
+                segOriginals.push({
+                    seg,
+                    c1x0: seg.control1 ? seg.control1.x : null,
+                    c1y0: seg.control1 ? seg.control1.y : null,
+                    c2x0: seg.control2 ? seg.control2.x : null,
+                    c2y0: seg.control2 ? seg.control2.y : null
+                });
+            }
+        });
+    });
+
+    // История — один раз перед drag
+    this.saveToHistory('move_group', 'Перемещение группы точек');
+
+    const moveHandler = (ev) => {
+        const p = this.getSVGCoordinates(ev, svgCanvas);
+        const dx = p.x - originX;
+        const dy = p.y - originY;
+
+        originals.forEach(o => {
+            o.point.x = o.x0 + dx;
+            o.point.y = o.y0 + dy;
+            if (o.point.element) {
+                o.point.element.setAttribute('cx', o.point.x);
+                o.point.element.setAttribute('cy', o.point.y);
+            }
+        });
+
+        segOriginals.forEach(s => {
+            if (s.seg.control1 && s.c1x0 !== null) {
+                s.seg.control1.x = s.c1x0 + dx;
+                s.seg.control1.y = s.c1y0 + dy;
+            }
+            if (s.seg.control2 && s.c2x0 !== null) {
+                s.seg.control2.x = s.c2x0 + dx;
+                s.seg.control2.y = s.c2y0 + dy;
+            }
+        });
+
+        this.updatePathFromTopology();
+    };
+
+    const upHandler = () => {
+        document.removeEventListener('mousemove', moveHandler);
+        document.removeEventListener('mouseup', upHandler);
+        setTimeout(() => this.renderAllControlElements(), 0);
+    };
+
+    document.addEventListener('mousemove', moveHandler);
+    document.addEventListener('mouseup', upHandler);
+}
+
+_moveSelectedPoints(dx, dy) {
+    if (this.state.selectedPoints.size === 0) return;
+    this.saveToHistory('nudge_points', 'Сдвиг выделенных');
+
+    this.state.selectedPoints.forEach(key => {
+        const [ci, pi] = key.split(':').map(Number);
+        const contour = this.pathTopology.contours[ci];
+        if (!contour) return;
+        const p = contour.points[pi];
+        if (!p) return;
+        p.x += dx;
+        p.y += dy;
+        if (p.element) {
+            p.element.setAttribute('cx', p.x);
+            p.element.setAttribute('cy', p.y);
+        }
+    });
+
+    // двигать контрольные точки сегментов, у которых оба конца выделены
+    this.pathTopology.contours.forEach((contour, ci) => {
+        contour.segments.forEach((seg) => {
+            const k1 = ci + ':' + seg.startIndex;
+            const k2 = ci + ':' + seg.endIndex;
+            if (this.state.selectedPoints.has(k1) && this.state.selectedPoints.has(k2)) {
+                if (seg.control1) { seg.control1.x += dx; seg.control1.y += dy; }
+                if (seg.control2) { seg.control2.x += dx; seg.control2.y += dy; }
+            }
+        });
+    });
+
+    this.updatePathFromTopology();
+    this.renderAllControlElements();
+}
             // РЕНДЕРИНГ
 
             renderGlyph() {
@@ -3937,70 +4092,70 @@ createDirectionArrow(x, y, angle, contourIndex, segmentIndex, container) {
                 });
             }
             
-updatePathFromTopology() {
-    if (!this.currentGlyph) return;
-    let pathData = '';
-    
-    this.pathTopology.contours.forEach(contour => {
-        if (!contour.segments || contour.segments.length === 0) return;
+			updatePathFromTopology() {
+				if (!this.currentGlyph) return;
+				let pathData = '';
+				
+				this.pathTopology.contours.forEach(contour => {
+					if (!contour.segments || contour.segments.length === 0) return;
 
-        const sortedSegments = [...contour.segments].sort((a, b) => a.startIndex - b.startIndex);
-        
-        let contourPath = '';
-        let lastEndIndex = -1;
-        
-        sortedSegments.forEach((segment, idx) => {
-            const startPoint = contour.points[segment.startIndex];
-            const endPoint = contour.points[segment.endIndex];
-            
-            if (!startPoint || !endPoint) return;
+					const sortedSegments = [...contour.segments].sort((a, b) => a.startIndex - b.startIndex);
+					
+					let contourPath = '';
+					let lastEndIndex = -1;
+					
+					sortedSegments.forEach((segment, idx) => {
+						const startPoint = contour.points[segment.startIndex];
+						const endPoint = contour.points[segment.endIndex];
+						
+						if (!startPoint || !endPoint) return;
 
-            if (idx === 0 || segment.startIndex !== lastEndIndex) {
-                contourPath += `M ${startPoint.x} ${startPoint.y} `;
-            }
-            
-            if (segment.type === 'line') {
-                contourPath += `L ${endPoint.x} ${endPoint.y} `;
-            } 
-            else if (segment.type === 'bezier' && segment.control1 && segment.control2) {
-                contourPath += `C ${segment.control1.x} ${segment.control1.y} `;
-                contourPath += `${segment.control2.x} ${segment.control2.y} `;
-                contourPath += `${endPoint.x} ${endPoint.y} `;
-            }
-            else {
+						if (idx === 0 || segment.startIndex !== lastEndIndex) {
+							contourPath += `M ${startPoint.x} ${startPoint.y} `;
+						}
+						
+						if (segment.type === 'line') {
+							contourPath += `L ${endPoint.x} ${endPoint.y} `;
+						} 
+						else if (segment.type === 'bezier' && segment.control1 && segment.control2) {
+							contourPath += `C ${segment.control1.x} ${segment.control1.y} `;
+							contourPath += `${segment.control2.x} ${segment.control2.y} `;
+							contourPath += `${endPoint.x} ${endPoint.y} `;
+						}
+						else {
 
-                contourPath += `L ${endPoint.x} ${endPoint.y} `;
-            }
-            
-            lastEndIndex = segment.endIndex;
-        });
-        
-        if (contour.isClosed && contour.points.length > 0) {
-            contourPath += 'Z ';
-        }
-        
-        pathData += contourPath;
-    });
+							contourPath += `L ${endPoint.x} ${endPoint.y} `;
+						}
+						
+						lastEndIndex = segment.endIndex;
+					});
+					
+					if (contour.isClosed && contour.points.length > 0) {
+						contourPath += 'Z ';
+					}
+					
+					pathData += contourPath;
+				});
 
-    this.currentGlyph.d = pathData.trim();
-    
-    const pathGroup = document.getElementById('path-group');
-    let path = pathGroup.querySelector('path');
-    
-    if (path) {
-        path.setAttribute('d', this.currentGlyph.d || '');
-    } else if (this.currentGlyph.d) {
-        path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('d', this.currentGlyph.d);
-        path.setAttribute('class', 'path');
-        pathGroup.appendChild(path);
-    }
-    if (this.state.showDirection) {
-        setTimeout(() => {
-            this.showContourDirections();
-        }, 10);
-    }
-}
+				this.currentGlyph.d = pathData.trim();
+				
+				const pathGroup = document.getElementById('path-group');
+				let path = pathGroup.querySelector('path');
+				
+				if (path) {
+					path.setAttribute('d', this.currentGlyph.d || '');
+				} else if (this.currentGlyph.d) {
+					path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+					path.setAttribute('d', this.currentGlyph.d);
+					path.setAttribute('class', 'path');
+					pathGroup.appendChild(path);
+				}
+				if (this.state.showDirection) {
+					setTimeout(() => {
+						this.showContourDirections();
+					}, 10);
+				}
+			}
 
 			createControlPoint(x, y, type, controlGroup) {
 				const svgNS = "http://www.w3.org/2000/svg";
@@ -4519,8 +4674,19 @@ togglePointSelection(pointElement) {
 }
          
 startPointDrag(point, startX, startY) {
+
     const contourIndex = parseInt(point.getAttribute('data-contour-index'));
     const pointIndex = parseInt(point.getAttribute('data-point-index'));
+	
+    // Если точка входит в выделение и оно не одиночное — групповой drag
+    const pointKey = contourIndex + ':' + pointIndex;
+    const isGroupDrag = this.state.selectedPoints.has(pointKey) && this.state.selectedPoints.size > 1;
+
+    if (isGroupDrag) {
+        this._startGroupDrag(startX, startY);
+        return;
+    }
+	
     const isControlPoint = point.classList.contains('control-point');
     
     this.state.draggingPoint = {
@@ -5231,10 +5397,65 @@ deletePoint(pointElement) {
                 }
                 
                 // Снятие выделения
-                if (this.state.currentTool === TOOLS.SELECT && target === svgCanvas) {
-                    this.clearAllSelections();
-                    return;
-                }
+if (this.state.currentTool === TOOLS.SELECT && target === svgCanvas) {
+    e.preventDefault();
+    e.stopPropagation();
+    const svgCanvas = document.getElementById('svg-canvas');
+    const startPt = this.getSVGCoordinates(e, svgCanvas);
+
+    this.state.marquee = {
+        startX: startPt.x,
+        startY: startPt.y,
+        curX: startPt.x,
+        curY: startPt.y,
+        active: true,
+        additive: e.shiftKey   // Shift — добавить к текущему выделению
+    };
+
+    if (!e.shiftKey) this.clearAllSelections();
+
+    // Создаём прямоугольник рамки
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.id = 'marquee-rect';
+    rect.setAttribute('fill', 'rgba(137,180,250,0.1)');
+    rect.setAttribute('stroke', '#89b4fa');
+    rect.setAttribute('stroke-width', '1');
+    rect.setAttribute('stroke-dasharray', '4,4');
+    rect.setAttribute('pointer-events', 'none');
+    svgCanvas.appendChild(rect);
+
+    const moveHandler = (ev) => {
+        if (!this.state.marquee || !this.state.marquee.active) return;
+        const p = this.getSVGCoordinates(ev, svgCanvas);
+        this.state.marquee.curX = p.x;
+        this.state.marquee.curY = p.y;
+        this._updateMarqueeRect(rect);
+    };
+
+    const upHandler = () => {
+        document.removeEventListener('mousemove', moveHandler);
+        document.removeEventListener('mouseup', upHandler);
+        if (!this.state.marquee) return;
+
+        const m = this.state.marquee;
+        const moved = Math.abs(m.curX - m.startX) > 3 || Math.abs(m.curY - m.startY) > 3;
+
+        if (moved) {
+            this._selectPointsInMarquee(m, m.additive);
+        } else {
+            // клик без движения — просто снять выделение
+            if (!m.additive) this.clearAllSelections();
+        }
+
+        rect.remove();
+        this.state.marquee = null;
+    };
+
+    document.addEventListener('mousemove', moveHandler);
+    document.addEventListener('mouseup', upHandler);
+    return;
+}
+
                 
                 // Создание направляющей
                 if (this.state.currentTool === TOOLS.GUIDELINE && target === svgCanvas) {
@@ -5443,13 +5664,7 @@ this.continueContourFromSelectedPoint(cursorPt.x, cursorPt.y, controlGroup);
 						return;
 					}
 				}
-				
-				// Клик по пустому месту - снимаем все выделения
-				if (this.state.currentTool === TOOLS.SELECT && target === svgCanvas) {
-					this.clearAllSelections();
-					return;
-				}
-				
+
 				// Удаление в режиме delete
 				if (this.state.currentTool === TOOLS.DELETE) {
 					if (target.classList.contains('point') || target.classList.contains('control-point')) {
@@ -5473,6 +5688,15 @@ this.continueContourFromSelectedPoint(cursorPt.x, cursorPt.y, controlGroup);
 				switch(this.state.currentTool) {
 					case TOOLS.SELECT:
 						if (target.classList.contains('point') || target.classList.contains('control-point')) {
+							const ci = parseInt(target.getAttribute('data-contour-index'));
+							const pi = parseInt(target.getAttribute('data-point-index'));
+							const key = ci + ':' + pi;
+
+							// если точка уже в выделении — не снимаем выделение
+							if (this.state.selectedPoints && this.state.selectedPoints.has(key)) {
+								return;
+							}
+
 							this.clearAllSelections();
 							this.togglePointSelection(target);
 						}
@@ -5941,6 +6165,7 @@ this.continueContourFromSelectedPoint(cursorPt.x, cursorPt.y, controlGroup);
 			}
 
 			clearAllSelections() {
+			this.state.selectedPoints.clear();
 				// Снимаем выделение с точек
 				document.querySelectorAll('.point.selected, .control-point.selected').forEach(point => {
 					point.classList.remove('selected');
@@ -5992,7 +6217,19 @@ handleKeyPress(e) {
     if (e.ctrlKey || e.metaKey || e.altKey) {
         return;
     }
-    
+// Сдвиг выделенных стрелками (когда ничего не с клавиатуры не вводится)
+if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)
+    && this.state.selectedPoints.size > 0) {
+    e.preventDefault();
+    const step = e.shiftKey ? 10 : 1;
+    let dx = 0, dy = 0;
+    if (e.key === 'ArrowLeft')  dx = -step;
+    if (e.key === 'ArrowRight') dx =  step;
+    if (e.key === 'ArrowUp')    dy = -step;
+    if (e.key === 'ArrowDown')  dy =  step;
+    this._moveSelectedPoints(dx, dy);
+    return;
+}
     switch(e.key.toLowerCase()) {
         case 'm':
         case 'ь':
