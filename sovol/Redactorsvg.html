@@ -1018,7 +1018,7 @@
             
             <!-- ПРОСТОЙ БЛОК С ТЕКСТОМ -->
             <div style="
-                height:200px; 
+                height:180px; 
                 background:#1e1e2e; 
                 border:1px solid #45475a; 
                 border-radius:8px;
@@ -1026,8 +1026,8 @@
                 position:relative;
                 display:flex;
                 align-items:center;
-                justify-content:center;
-                margin-top:10px;
+				justify-content:flex-start;   <!-- было center -->
+				margin-top:10px;
             ">
                 <div id="text-overlay" style="position:relative;">
                     <!-- Здесь будет наложенный текст -->
@@ -7503,26 +7503,22 @@ showDebugModal() {
 updateDebugPreview() {
     const text = document.getElementById('debug-text').value || 'A';
     const container = document.getElementById('text-overlay');
-    
+
     container.innerHTML = '';
-    
-    // Размеры для масштабирования
+
     const fontSize = 190;
     const scale = fontSize / this.fontData.unitsPerEm;
-    
-    // 1. Создаем контейнер
+    const svgNS = "http://www.w3.org/2000/svg";
+
     const contentDiv = document.createElement('div');
     contentDiv.style.cssText = `
         position: relative;
         width: ${fontSize * text.length * 1.2}px;
         height: ${fontSize * 1.5}px;
-        margin: 0 auto;
+        margin: 0;
     `;
-    
-    // 2. Ждем загрузки шрифта
+
     document.fonts.ready.then(() => {
-        // Создаем SVG для всего
-        const svgNS = "http://www.w3.org/2000/svg";
         const svg = document.createElementNS(svgNS, "svg");
         svg.style.cssText = `
             position: absolute;
@@ -7534,105 +7530,105 @@ updateDebugPreview() {
             pointer-events: none;
             overflow: visible;
         `;
-        
-        // Группа для масштабирования
+
         const g = document.createElementNS(svgNS, "g");
         g.setAttribute("transform", `scale(${scale})`);
-        
-        // 3. ОТРИСОВЫВАЕМ ПОДЛОЖКУ (SVG text) - делаем текст темнее чтобы был виден
-        const underlayText = document.createElementNS(svgNS, "text");
-        underlayText.textContent = text;
-        
-        let underlayY = this.guidelines.baseline; // 1000 - baseline текста
-        
-        underlayText.setAttribute('x', this.guidelines.left);
-        underlayText.setAttribute('y', underlayY);
-        underlayText.setAttribute('font-size', this.fontData.unitsPerEm);
-        underlayText.setAttribute('fill', 'rgba(166, 227, 161, 0.9)'); // БОЛЕЕ ЯРКИЙ
-        
+
+        // === 1. Подложка (только если шрифт загружен) ===
         if (this.state.underlayFont) {
+            const underlayText = document.createElementNS(svgNS, "text");
+            underlayText.textContent = text;
+            underlayText.setAttribute('x', this.guidelines.left);
+            underlayText.setAttribute('y', this.guidelines.baseline);
+            underlayText.setAttribute('font-size', this.fontData.unitsPerEm);
+            underlayText.setAttribute('fill', 'rgba(166, 227, 161, 0.9)');
             underlayText.setAttribute('font-family', `'${this.state.underlayFont}'`);
             underlayText.style.fontFamily = `'${this.state.underlayFont}', Arial`;
+            g.appendChild(underlayText);
         }
-        
-        g.appendChild(underlayText);
-        
-        // 4. ОТРИСОВЫВАЕМ SVG ШРИФТ (ПУТЬ) И СОБИРАЕМ ИНФО О ТОМ, КАКИЕ БУКВЫ ИМЕЮТ ВЕКТОРЫ
+
+        // === 2. Единый проход: и path, и рамки, с учётом лигатур ===
         let currentX = this.guidelines.left;
+        let i = 0;
         let hasAnyGlyphs = false;
-        const lettersWithVectors = new Set(); // Множество букв, у которых есть векторы
-        
-        for (let i = 0; i < text.length; i++) {
-            const char = text.charAt(i);
-            const glyph = this.fontData.glyphs.find(g => g.unicode === char);
-            
-            if (glyph && glyph.d) {
-                const path = document.createElementNS(svgNS, "path");
-                path.setAttribute("d", glyph.d);
-                path.setAttribute("fill", "none");
-                path.setAttribute("stroke", "#0612F0");
-                path.setAttribute("stroke-width", "10");
-                path.setAttribute("stroke-linecap", "round");
-                path.setAttribute("stroke-linejoin", "round");
-                
-                path.setAttribute("transform", `translate(${currentX}, 0)`);
-                
-                g.appendChild(path);
-                hasAnyGlyphs = true;
-                lettersWithVectors.add(i); // Запоминаем, что у этой буквы есть вектор
-                
-                currentX += glyph.horizAdvX || this.fontData.horizAdvX;
-            } else {
-                currentX += this.fontData.horizAdvX * 0.5;
+
+        while (i < text.length) {
+            // ищем самую длинную совпадающую подстроку (лигатуру)
+            let matched = null;
+            for (let len = Math.min(4, text.length - i); len >= 1; len--) {
+                const sub = text.substr(i, len);
+                const candidate = this.fontData.glyphs.find(x => x.unicode === sub);
+                if (candidate) { matched = { glyph: candidate, len }; break; }
             }
-        }
-        
-        svg.appendChild(g);
-        
-        // 5. ЛИНИЯ ДЛЯ ПОДЛОЖКИ на уровне baseline (1000)
-        const underlayLine = document.createElementNS(svgNS, "line");
-        underlayLine.setAttribute("x1", this.guidelines.left);
-        underlayLine.setAttribute("x2", currentX); // до конца текста
-        underlayLine.setAttribute("y1", this.guidelines.baseline); // 1000
-        underlayLine.setAttribute("y2", this.guidelines.baseline); // 1000
-        underlayLine.setAttribute("stroke", "#FFFFFF");
-        underlayLine.setAttribute("stroke-width", "3");
-        underlayLine.setAttribute("stroke-dasharray", "5,5");
-        underlayLine.setAttribute("pointer-events", "none");
-        g.appendChild(underlayLine);
-        
-        // 6. КРАСНЫЕ РАМКИ ТОЛЬКО ДЛЯ БУКВ БЕЗ ВЕКТОРОВ
-        let frameX = this.guidelines.left;
-        
-        for (let i = 0; i < text.length; i++) {
-            const char = text.charAt(i);
-            const glyph = this.fontData.glyphs.find(g => g.unicode === char);
-            const glyphWidth = glyph ? (glyph.horizAdvX || this.fontData.horizAdvX) : this.fontData.horizAdvX * 0.5;
-            
-            // Проверяем, есть ли у этой буквы вектор
-            if (!lettersWithVectors.has(i)) {
-                // Красный прямоугольник - только если НЕТ вектора
+
+			if (matched) {
+				const glyph = matched.glyph;
+				const glyphWidth = glyph.horizAdvX || this.fontData.horizAdvX;
+
+				// path — если есть вектор
+				if (glyph.d) {
+					const path = document.createElementNS(svgNS, "path");
+					path.setAttribute("d", glyph.d);
+					path.setAttribute("fill", "none");
+					path.setAttribute("stroke", "#0612F0");
+					path.setAttribute("stroke-width", "10");
+					path.setAttribute("stroke-linecap", "round");
+					path.setAttribute("stroke-linejoin", "round");
+					path.setAttribute("transform", `translate(${currentX}, 0)`);
+					g.appendChild(path);
+				}
+
+				// рамка — ВСЕГДА, независимо от вектора
+				const frame = document.createElementNS(svgNS, "rect");
+				frame.setAttribute("x", currentX);
+				frame.setAttribute("y", this.guidelines.top);
+				frame.setAttribute("width", glyphWidth);
+				frame.setAttribute("height", this.guidelines.bottom - this.guidelines.top);
+				frame.setAttribute("fill", "none");
+				frame.setAttribute("stroke", "rgba(243, 139, 168, 0.5)");
+				frame.setAttribute("stroke-width", "2");
+				frame.setAttribute("stroke-dasharray", "5,5");
+				frame.setAttribute("pointer-events", "none");
+				g.appendChild(frame);
+
+				currentX += glyphWidth;
+				i += matched.len;
+			} else {
+                // глифа нет вовсе — пустой шаг + рамка (символ не определён)
+                const missWidth = this.fontData.horizAdvX * 0.5;
                 const frame = document.createElementNS(svgNS, "rect");
-                frame.setAttribute("x", frameX);
-                frame.setAttribute("y", this.guidelines.top); // верхняя направляющая
-                frame.setAttribute("width", glyphWidth);
-                frame.setAttribute("height", this.guidelines.bottom - this.guidelines.top); // от верхней до нижней направляющей
+                frame.setAttribute("x", currentX);
+                frame.setAttribute("y", this.guidelines.top);
+                frame.setAttribute("width", missWidth);
+                frame.setAttribute("height", this.guidelines.bottom - this.guidelines.top);
                 frame.setAttribute("fill", "none");
-                frame.setAttribute("stroke", "rgba(243, 139, 168, 0.5)"); // полупрозрачный розовый
-                frame.setAttribute("stroke-width", "2");
-                frame.setAttribute("stroke-dasharray", "5,5");
+                frame.setAttribute("stroke", "rgba(243, 139, 168, 0.3)");
+                frame.setAttribute("stroke-width", "1");
+                frame.setAttribute("stroke-dasharray", "3,3");
                 frame.setAttribute("pointer-events", "none");
-                
                 g.appendChild(frame);
+
+                currentX += missWidth;
+                i += 1;
             }
-            
-            frameX += glyphWidth;
         }
-        
-        // 7. Собираем
+
+        // === 3. Линия baseline ===
+        const baselineLine = document.createElementNS(svgNS, "line");
+        baselineLine.setAttribute("x1", this.guidelines.left);
+        baselineLine.setAttribute("x2", currentX);
+        baselineLine.setAttribute("y1", this.guidelines.baseline);
+        baselineLine.setAttribute("y2", this.guidelines.baseline);
+        baselineLine.setAttribute("stroke", "#FFFFFF");
+        baselineLine.setAttribute("stroke-width", "3");
+        baselineLine.setAttribute("stroke-dasharray", "5,5");
+        baselineLine.setAttribute("pointer-events", "none");
+        g.appendChild(baselineLine);
+
+        svg.appendChild(g);
         contentDiv.appendChild(svg);
         container.appendChild(contentDiv);
-        
+
     }).catch(error => {
         container.innerHTML = '<div style="color: #f38ba8; text-align: center;">Ошибка загрузки шрифта</div>';
     });
