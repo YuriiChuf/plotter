@@ -1130,6 +1130,7 @@
 				this.rowMode = null;         // 'add-row' | null
 				this.pendingRowBaseline = null;
 				this.selectedRowId = null;
+				this._gotoGlyphAfterCreate = true;
                 // Направляющие
                 this.guidelines = {
                     top: 200,       // unitsPerEm - ascent
@@ -1554,7 +1555,18 @@ document.getElementById('show-photo-underlay').addEventListener('change', () => 
     this._renderPhotoUnderlayForGlyph();
 });
            }
+
+
 _setMode(mode) {
+if (this.mode === 'photo' && mode !== 'photo') {
+    const container = document.querySelector('.canvas-container');
+    if (container) {
+        this._savedPhotoScroll = {
+            left: container.scrollLeft,
+            top: container.scrollTop
+        };
+    }
+}
     this.mode = mode;
     const mg = document.getElementById('mode-glyphs');
     const mp = document.getElementById('mode-photo');
@@ -1566,14 +1578,32 @@ _setMode(mode) {
     const glyphSvg = document.getElementById('svg-canvas');
     const noGlyph = document.getElementById('no-glyph');
 
-    if (mode === 'photo') {
-        if (tb) tb.style.display = 'flex';
-        if (glyphSvg) glyphSvg.style.display = 'none';
-        if (noGlyph) noGlyph.style.display = 'none';
-        this._ensurePhotoCanvas();
-        if (photoSvg) photoSvg.style.display = 'block';
+	if (mode === 'photo') {
+		if (tb) tb.style.display = 'flex';
+		if (glyphSvg) glyphSvg.style.display = 'none';
+		if (noGlyph) noGlyph.style.display = 'none';
+
+		this._ensurePhotoCanvas();
+		if (photoSvg) photoSvg.style.display = 'block';
+
+		if (this.sheet) {
+			// Сначала ставим CSS-размер (zoom уже в this._photoZoom)
+			this._fitPhotoViewBox();
+
+			if (this._savedPhotoScroll) {
+				const container = document.querySelector('.canvas-container');
+				if (container) {
+					// requestAnimationFrame нужен, чтобы браузер успел посчитать layout
+					requestAnimationFrame(() => {
+						container.scrollLeft = this._savedPhotoScroll.left;
+						container.scrollTop  = this._savedPhotoScroll.top;
+					});
+				}
+			}
+
         this._renderPhotoSheet();
-    } else {
+		}
+	} else {
         if (tb) tb.style.display = 'none';
         if (photoSvg) photoSvg.style.display = 'none';
         if (this.currentGlyph) {
@@ -2567,6 +2597,7 @@ _loadPhotoSheet() {
                     rows: [], ticks: [], cells: [], contours: [],
                     uidCounter: 0
                 };
+				this._savedPhotoScroll = null;
 				this._setMode('photo');
                 // 2. Подгоняем viewBox
                 this._fitPhotoViewBox();
@@ -3318,17 +3349,30 @@ _showSheetCellPassport(cell) {
                 <button id="cell-create-glyph" style="width:100%;margin-bottom:10px;">
                     <i class="fas fa-plus"></i> Создать/обновить глиф для этой ячейки
                 </button>
+				<div style="margin:10px 0;">
+				<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+					<input type="checkbox" id="cell-goto-glyph" style = "width:20%;" >
+					<span style="font-size:13px;">Перейти к рисованию после создания</span>
+				</label>
+			</div>
                 <button class="secondary close-modal" style="width:100%;">Закрыть</button>
             </div>
         </div>`;
     document.body.appendChild(m);
     const close = () => m.remove();
+const gotoCb = m.querySelector('#cell-goto-glyph');
+if (gotoCb) {
+    gotoCb.checked = this._gotoGlyphAfterCreate;
+    gotoCb.addEventListener('change', () => {
+        this._gotoGlyphAfterCreate = gotoCb.checked;
+    });
+}
     m.querySelectorAll('.close-modal').forEach(b => b.onclick = close);
 
     const inp = m.querySelector('#cell-char');
 	setTimeout(() => {
         inp.focus();
-        inp.select();   // если хочешь, чтобы старое содержимое выделилось под замену
+        inp.select(); 
     }, 30);
     m.querySelector('#cell-space').onclick = () => { inp.value = ' '; };
 
@@ -3350,7 +3394,13 @@ _showSheetCellPassport(cell) {
 
         // 2. Применяем ОДНУ ячейку
         await this._applySingleCell(cell);
-
+		const goto = m.querySelector('#cell-goto-glyph')?.checked;
+		if (goto) {
+			this._setMode('glyphs');
+			// выбрать созданный/обновлённый глиф
+			const g = this.fontData.glyphs.find(x => x.unicode === cell.char);
+			if (g) this.selectGlyph(g);
+		}
         // 3. Перерисовать
         this._renderPhotoSheet();
         close();
@@ -6193,7 +6243,23 @@ handleKeyPress(e) {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
         return;
     }
-    
+    // === Переход к глифу по нажатой букве ===
+    // Одиночный символ, без модификаторов, не спецклавиша
+    if (
+        !e.ctrlKey && !e.metaKey && !e.altKey &&
+        e.key.length === 1 &&
+        e.key !== ' ' 
+    ) {
+        const ch = e.key;
+        const glyph = this.fontData.glyphs.find(g => g.unicode === ch);
+        if (glyph) {
+            e.preventDefault();
+            this._setMode('glyphs');
+            this.selectGlyph(glyph);
+            return;
+        }
+        // если глифа нет — не перехватываем, пусть идёт дальше
+    }
     // Ctrl+Стрелки для переключения глифов
     if (e.ctrlKey) {
         switch(e.key) {
