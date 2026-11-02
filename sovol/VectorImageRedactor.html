@@ -1437,7 +1437,7 @@ input[type="range"] {
 		let statusTimeout = null;
 		let zoomLevel = 1.0;
 		const ZOOM_MIN = 0.2;
-		const ZOOM_MAX = 5.0;
+		const ZOOM_MAX = 6.0;
 		const ZOOM_STEP = 0.1;
 		let currentMode = 'plotter';
 		let strokeColor = '#000000';
@@ -21409,8 +21409,8 @@ if (backgroundVisible && backgroundImage) {
 	ctx.lineWidth = 1;
 	ctx.strokeRect(0, 0, mainCanvas.width, mainCanvas.height);
 	
-	ctx.strokeStyle = '#f0f0f0';
-	ctx.lineWidth = 0.3;
+	ctx.strokeStyle = '#7F7F7F';
+	ctx.lineWidth = 0.1;
 	ctx.fillStyle = '#666666';
 	ctx.font = '10px Arial';
 	
